@@ -2511,6 +2511,70 @@ class _PracticeTimerScreenState extends State<PracticeTimerScreen> {
 Widget progress(double v) =>
     ClipRRect(borderRadius: BorderRadius.circular(20), child: LinearProgressIndicator(value: v, minHeight: 7));
 
+/// Tuile de statistique compacte (icone encadree + libelle + valeur), reprenant le
+/// meme langage visuel que la zone Tempo de la fiche Morceau (icone dans un badge
+/// colore, libelle discret au-dessus d'une valeur en gras). Reutilisee dans le
+/// Planning et les ecrans de bilan/stats pour harmoniser leur presentation.
+Widget _statTile(BuildContext c, {
+  required IconData icon,
+  required String label,
+  required String value,
+  String? sub,
+  Color? accent,
+  Widget? trailing,
+}) {
+  final scheme = Theme.of(c).colorScheme;
+  final color = accent ?? scheme.primary;
+  return Container(
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      color: scheme.surfaceContainerHighest.withOpacity(.42),
+      border: Border.all(color: scheme.outlineVariant.withOpacity(.45)),
+    ),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Container(
+        width: 38, height: 38, alignment: Alignment.center,
+        decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, size: 19, color: color),
+      ),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        if (sub != null) ...[
+          const SizedBox(height: 1),
+          Text(sub, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+        ],
+      ])),
+      if (trailing != null) trailing,
+    ]),
+  );
+}
+
+/// En-tete de section pour les ecrans de bilan/stats : icone encadree + titre,
+/// meme principe que l'en-tete de la zone Tempo de la fiche Morceau.
+Widget _sectionHeader(BuildContext c, IconData icon, String title, {String? subtitle, Color? accent}) {
+  final scheme = Theme.of(c).colorScheme;
+  final color = accent ?? scheme.primary;
+  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Container(
+      width: 30, height: 30, alignment: Alignment.center,
+      decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(10)),
+      child: Icon(icon, size: 16, color: color),
+    ),
+    const SizedBox(width: 10),
+    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      if (subtitle != null) ...[
+        const SizedBox(height: 2),
+        Text(subtitle, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12)),
+      ],
+    ])),
+  ]);
+}
+
 Widget emptyState(String message) => Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -2845,7 +2909,7 @@ class Home extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: ratio,
                           strokeWidth: 8,
-                          backgroundColor: Colors.deepPurple.withOpacity(.12),
+                          backgroundColor: Theme.of(c).colorScheme.primary.withOpacity(.12),
                         ),
                       ),
                       Text('${(ratio * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -2879,10 +2943,8 @@ class Home extends StatelessWidget {
             onTap: onOpenBilan,
             child: Row(
               children: [
-                const Icon(Icons.insights, color: Colors.deepPurple),
-                const SizedBox(width: 12),
-                const Expanded(child: Text('Voir mon bilan de la semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                Expanded(child: _sectionHeader(c, Icons.insights, 'Voir mon bilan de la semaine')),
+                Icon(Icons.chevron_right, color: Theme.of(c).colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -2894,7 +2956,7 @@ class Home extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🎯 Défis de la semaine', style: TextStyle(fontWeight: FontWeight.bold)),
+              _sectionHeader(c, Icons.flag_outlined, 'Défis de la semaine'),
                 const SizedBox(height: 12),
                 for (final ch in challenges)
                   Padding(
@@ -2935,15 +2997,10 @@ class Home extends StatelessWidget {
             onTap: onOpenBadges,
             child: Row(
               children: [
-                const Icon(Icons.emoji_events, color: Colors.amber),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Mes badges (${badges.where((b) => b.earned).length}/${badges.length})',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                Expanded(child: _sectionHeader(c, Icons.emoji_events_outlined,
+                  'Mes badges (${badges.where((b) => b.earned).length}/${badges.length})',
+                  accent: Colors.amber.shade700)),
+                Icon(Icons.chevron_right, color: Theme.of(c).colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -3020,33 +3077,78 @@ class Home extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(child: Text('Programme du jour', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
-                      Text('$todayRemaining min restantes', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      Expanded(child: _sectionHeader(c, Icons.today_outlined, 'Programme du jour')),
+                      Text('$todayRemaining min restantes', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                     ]),
                     const SizedBox(height: 10),
                     ...todayItems.map((item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(children: [
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => onTogglePlan(item),
-                              icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
-                              color: item.completed ? Colors.green : categoryColor(item.category),
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: (item.completed ? Colors.green : categoryColor(item.category)).withOpacity(.12),
+                              ),
+                              child: IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => onTogglePlan(item),
+                                icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
+                                iconSize: item.completed ? 26 : 22,
+                                color: item.completed ? Colors.green.shade600 : categoryColor(item.category),
+                              ),
                             ),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(item.title, style: TextStyle(fontWeight: FontWeight.bold, decoration: item.completed ? TextDecoration.lineThrough : null)),
-                              if (item.details.isNotEmpty) Text(item.details, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                            ])),
-                            if (item.duration > 0) ...[
-                              Text('${item.duration} min'),
-                              const SizedBox(width: 4),
+                            const SizedBox(width: 4),
+                            Expanded(child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                if (item.category != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        color: (item.completed ? Colors.grey : categoryColor(item.category)).withOpacity(.14),
+                                      ),
+                                      child: Text(item.category!, style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: item.completed ? Colors.grey : categoryColor(item.category),
+                                        decoration: item.completed ? TextDecoration.lineThrough : null,
+                                      )),
+                                    ),
+                                  ),
+                                Text(item.title, style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: item.completed ? Colors.grey : null,
+                                  decoration: item.completed ? TextDecoration.lineThrough : null,
+                                )),
+                                if (item.details.isNotEmpty) Text(item.details, style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                  decoration: item.completed ? TextDecoration.lineThrough : null,
+                                )),
+                                if (item.duration > 0) Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    avatar: Icon(Icons.timer_outlined, size: 13, color: item.completed ? Colors.grey : null),
+                                    label: Text('${item.duration} min', style: TextStyle(
+                                      fontSize: 11,
+                                      color: item.completed ? Colors.grey : null,
+                                      decoration: item.completed ? TextDecoration.lineThrough : null,
+                                    )),
+                                  ),
+                                ),
+                              ]),
+                            )),
+                            if (!item.completed)
                               IconButton(
                                 tooltip: 'Démarrer cette séance',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: item.completed ? null : () => onStart(item),
+                                onPressed: () => onStart(item),
                                 icon: const Icon(Icons.play_circle_outline),
                               ),
-                            ],
                           ]),
                         )),
                     const SizedBox(height: 6),
@@ -3215,7 +3317,10 @@ class _SessionsState extends State<Sessions> {
     final maxValue = days.map((d) => byDay[d] ?? 0).fold<int>(0, (a, b) => a > b ? a : b);
     final total = days.fold<int>(0, (a, d) => a + (byDay[d] ?? 0));
     return CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Expanded(child: Text('📊 Temps de pratique — 7 derniers jours', style: TextStyle(fontWeight: FontWeight.bold))), Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
+      Row(children: [
+        Expanded(child: _sectionHeader(c, Icons.bar_chart_outlined, 'Temps de pratique — 7 derniers jours')),
+        Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+      ]),
       const SizedBox(height: 14),
       SizedBox(height: 150, child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: days.map((d) {
         final value = byDay[d] ?? 0;
@@ -3237,9 +3342,31 @@ class _SessionsState extends State<Sessions> {
     final maxValue = byDay.values.fold<int>(0, (a, b) => a > b ? a : b);
     final total = List.generate(84, (i) => byDay[_day(start.add(Duration(days: i)))] ?? 0).fold<int>(0, (a, b) => a + b);
     return CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Expanded(child: Text('📅 Journal de bord & régularité', style: TextStyle(fontWeight: FontWeight.bold))), Text('Total : ${_mins(total)}')]),
-      const SizedBox(height: 6),
-      Text('🔥 Série actuelle : ${_currentStreak(byDay)} jours   ·   Meilleure série : ${_bestStreak(byDay)} jours', style: const TextStyle(fontWeight: FontWeight.w600)),
+      Row(children: [
+        Expanded(child: _sectionHeader(c, Icons.calendar_view_month_outlined, 'Journal de bord & régularité')),
+        Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+      ]),
+      const SizedBox(height: 10),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: Colors.deepOrange.withOpacity(.12), borderRadius: BorderRadius.circular(20)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('🔥', style: TextStyle(fontSize: 13)),
+            const SizedBox(width: 5),
+            Text('Série actuelle : ${_currentStreak(byDay)} j', style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.deepOrange, fontSize: 12)),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: Theme.of(c).colorScheme.primary.withOpacity(.12), borderRadius: BorderRadius.circular(20)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.emoji_events_outlined, size: 14, color: Theme.of(c).colorScheme.primary),
+            const SizedBox(width: 5),
+            Text('Meilleure série : ${_bestStreak(byDay)} j', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary, fontSize: 12)),
+          ]),
+        ),
+      ]),
       const SizedBox(height: 14),
       Wrap(spacing: 3, runSpacing: 3, children: List.generate(84, (i) {
         final d = _day(start.add(Duration(days: i)));
@@ -3263,7 +3390,7 @@ class _SessionsState extends State<Sessions> {
         _journal(c, byDay),
         const SizedBox(height: 12),
         CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [const Expanded(child: Text('🔎 Filtrer / trier', style: TextStyle(fontWeight: FontWeight.bold))), if (search.isNotEmpty || typeFilter != null || methodFilter != null || periodDays != 0) TextButton(onPressed: () => setState(() { search=''; typeFilter=null; methodFilter=null; periodDays=0; }), child: const Text('Réinitialiser'))]),
+          Row(children: [Expanded(child: _sectionHeader(c, Icons.filter_alt_outlined, 'Filtrer / trier')), if (search.isNotEmpty || typeFilter != null || methodFilter != null || periodDays != 0) TextButton(onPressed: () => setState(() { search=''; typeFilter=null; methodFilter=null; periodDays=0; }), child: const Text('Réinitialiser'))]),
           const SizedBox(height: 10),
           TextField(decoration: const InputDecoration(labelText: 'Rechercher morceau, catégorie, méthode...', prefixIcon: Icon(Icons.search), isDense: true), onChanged: (v) => setState(() => search = v)),
           const SizedBox(height: 10),
@@ -3278,7 +3405,70 @@ class _SessionsState extends State<Sessions> {
         ])),
         const SizedBox(height: 12),
         if (list.isEmpty) emptyState('Aucune session ne correspond aux critères.')
-        else ...list.map((s) => Padding(padding: const EdgeInsets.only(bottom: 10), child: swipeToDelete(key: ValueKey(s.id), what: 'cette session', onDelete: () => widget.onDelete(s), child: CardBox(child: InkWell(onTap: () => widget.onEdit(s), child: ListTile(contentPadding: EdgeInsets.zero, leading: const CircleAvatar(child: Icon(Icons.music_note)), title: Text(widget.projectById(s.projectId)?.name ?? 'Pratique libre'), subtitle: Text('${s.date.day}/${s.date.month} · ${s.duration} min · ${s.type}${s.method != null ? ' · ${s.method}' : ''}'), trailing: Row(mainAxisSize: MainAxisSize.min, children: [Text('★' * s.rating, style: const TextStyle(color: Colors.amber)), IconButton(icon: const Icon(Icons.delete_outline, size: 20), onPressed: () async { if (await confirmDelete(c, 'cette session')) widget.onDelete(s); })]))))))),
+        else ...list.map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: swipeToDelete(
+                key: ValueKey(s.id),
+                what: 'cette session',
+                onDelete: () => widget.onDelete(s),
+                child: CardBox(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => widget.onEdit(s),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 40, height: 40, alignment: Alignment.center,
+                          decoration: BoxDecoration(color: categoryColor(s.type).withOpacity(.15), borderRadius: BorderRadius.circular(13)),
+                          child: Icon(categoryIcon(s.type), size: 19, color: categoryColor(s.type)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Expanded(child: Text(widget.projectById(s.projectId)?.name ?? 'Pratique libre', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                                if (s.rating > 0) Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 13)),
+                              ]),
+                              const SizedBox(height: 2),
+                              Text('${s.date.day}/${s.date.month}', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
+                              const SizedBox(height: 6),
+                              Wrap(spacing: 6, runSpacing: 6, children: [
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  avatar: const Icon(Icons.timer_outlined, size: 13),
+                                  label: Text('${s.duration} min', style: const TextStyle(fontSize: 11)),
+                                ),
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  avatar: Icon(categoryIcon(s.type), size: 13, color: categoryColor(s.type)),
+                                  label: Text(s.type, style: const TextStyle(fontSize: 11)),
+                                ),
+                                if (s.method != null)
+                                  Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    avatar: const Icon(Icons.smartphone, size: 13),
+                                    label: Text(s.method!, style: const TextStyle(fontSize: 11)),
+                                  ),
+                              ]),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          tooltip: 'Supprimer',
+                          onPressed: () async {
+                            if (await confirmDelete(c, 'cette session')) widget.onDelete(s);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )),
       ])),
     ]);
   }
@@ -4302,22 +4492,25 @@ class _WeekState extends State<Week> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      const Expanded(child: Text('Pratiqué cette semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Text('${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}'),
-                    ]),
-                    const SizedBox(height: 10),
+                    _statTile(
+                      c,
+                      icon: Icons.timer_outlined,
+                      label: 'Pratiqué cette semaine',
+                      value: '${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}',
+                    ),
+                    const SizedBox(height: 12),
                     progress((widget.minutes / widget.weeklyTarget).clamp(0, 1).toDouble()),
                     if (cats.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      const Text('Répartition recommandée vs planifiée', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Basée sur l\'avancement de tes morceaux : les moins avancés (et les morceaux prioritaires) reçoivent plus de temps.',
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
+                      const SizedBox(height: 22),
+                      _sectionHeader(c, Icons.pie_chart_outline, 'Répartition recommandée vs planifiée',
+                        subtitle: 'Basée sur l\'avancement de tes morceaux : les moins avancés (et les morceaux prioritaires) reçoivent plus de temps.'),
                       const SizedBox(height: 14),
-                      ...cats.map((cat) => categoryComparisonRow(cat, widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0)),
+                      ...(() {
+                        final sharedMax = cats
+                            .map((cat) => [widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0].reduce((a, b) => a > b ? a : b))
+                            .fold<int>(1, (a, b) => b > a ? b : a);
+                        return cats.map((cat) => categoryComparisonRow(cat, widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0, sharedMax));
+                      })(),
                     ],
                     const SizedBox(height: 4),
                     Align(
@@ -4337,7 +4530,7 @@ class _WeekState extends State<Week> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(child: Text('Filtrer les séances', style: TextStyle(fontWeight: FontWeight.bold))),
+                      Expanded(child: _sectionHeader(c, Icons.filter_alt_outlined, 'Filtrer les séances')),
                       if (filterActive)
                         TextButton(
                           onPressed: () => setState(() {
@@ -4404,45 +4597,87 @@ class _WeekState extends State<Week> {
                               onDelete: () => widget.onDelete(x),
                               child: CardBox(
                                 child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    IconButton(
-                                      onPressed: () => widget.onToggle(x),
-                                      icon: Icon(x.completed ? Icons.check_circle : Icons.circle_outlined),
-                                      iconSize: x.completed ? 32 : 26,
-                                      color: x.completed ? Colors.green.shade600 : categoryColor(x.category),
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 2),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: (x.completed ? Colors.green : categoryColor(x.category)).withOpacity(.12),
+                                      ),
+                                      child: IconButton(
+                                        onPressed: () => widget.onToggle(x),
+                                        icon: Icon(x.completed ? Icons.check_circle : Icons.circle_outlined),
+                                        iconSize: x.completed ? 30 : 24,
+                                        color: x.completed ? Colors.green.shade600 : categoryColor(x.category),
+                                      ),
                                     ),
+                                    const SizedBox(width: 4),
                                     Expanded(
                                       child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
                                         onTap: () => widget.onEdit(x),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(children: [
-                                              Icon(categoryIcon(x.category), size: 14, color: x.completed ? Colors.grey : categoryColor(x.category)),
-                                              const SizedBox(width: 4),
-                                              Text(x.category ?? 'Non catégorisé', style: TextStyle(
-                                                fontSize: 12,
-                                                color: x.completed ? Colors.grey : categoryColor(x.category),
-                                                decoration: x.completed ? TextDecoration.lineThrough : null,
-                                              )),
-                                            ]),
-                                            Text(x.title, style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: x.completed ? Colors.grey : null,
-                                              decoration: x.completed ? TextDecoration.lineThrough : null,
-                                            )),
-                                            if (x.details.isNotEmpty) Text(x.details, style: TextStyle(
-                                              color: Colors.grey,
-                                              decoration: x.completed ? TextDecoration.lineThrough : null,
-                                            )),
-                                            if (x.duration > 0 || x.method != null)
-                                              Text([
-                                                if (x.duration > 0) '${x.duration} min',
-                                                if (x.method != null) x.method!,
-                                              ].join(' · '), style: TextStyle(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 6),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                  color: (x.completed ? Colors.grey : categoryColor(x.category)).withOpacity(.14),
+                                                ),
+                                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                                  Icon(categoryIcon(x.category), size: 13, color: x.completed ? Colors.grey : categoryColor(x.category)),
+                                                  const SizedBox(width: 4),
+                                                  Text(x.category ?? 'Non catégorisé', style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: x.completed ? Colors.grey : categoryColor(x.category),
+                                                    decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                  )),
+                                                ]),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(x.title, style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
                                                 color: x.completed ? Colors.grey : null,
                                                 decoration: x.completed ? TextDecoration.lineThrough : null,
                                               )),
+                                              if (x.details.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                Text(x.details, style: TextStyle(
+                                                  color: Colors.grey,
+                                                  decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                )),
+                                              ],
+                                              if (x.duration > 0 || x.method != null) ...[
+                                                const SizedBox(height: 6),
+                                                Wrap(spacing: 6, runSpacing: 6, children: [
+                                                  if (x.duration > 0)
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text('${x.duration} min', style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
+                                                  if (x.method != null)
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.smartphone, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text(x.method!, style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
+                                                ]),
+                                              ],
                                             if (!x.completed) ...[
                                               const SizedBox(height: 6),
                                               Align(
@@ -4473,6 +4708,7 @@ class _WeekState extends State<Week> {
                                             ],
                                           ],
                                         ),
+                                      ),
                                       ),
                                     ),
                                     IconButton(
@@ -4505,8 +4741,8 @@ class _WeekState extends State<Week> {
   }
 }
 
-Widget categoryComparisonRow(String cat, int plannedMin, int targetMin) {
-  final maxVal = [plannedMin, targetMin, 1].reduce((a, b) => a > b ? a : b).toDouble();
+Widget categoryComparisonRow(String cat, int plannedMin, int targetMin, int sharedMax) {
+  final maxVal = sharedMax.toDouble();
   return Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: Column(
@@ -4659,14 +4895,24 @@ class _BilanScreenState extends State<BilanScreen> {
         Text('${start.day}/${start.month} → ${end.day}/${end.month}', style: const TextStyle(color: Colors.grey)),
         const SizedBox(height: 16),
         CardBox(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Text('Temps pratiqué', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(
-                '${bilan.totalMinutes ~/ 60}h${(bilan.totalMinutes % 60).toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              Container(
+                width: 52, height: 52, alignment: Alignment.center,
+                decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(16)),
+                child: Icon(Icons.timer_outlined, size: 26, color: Theme.of(c).colorScheme.primary),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Temps pratiqué', style: TextStyle(fontSize: 13, color: Theme.of(c).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                  Text(
+                    '${bilan.totalMinutes ~/ 60}h${(bilan.totalMinutes % 60).toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+                  ),
+                ],
               ),
             ],
           ),
@@ -4677,11 +4923,9 @@ class _BilanScreenState extends State<BilanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${bilan.pieces.length} morceau${bilan.pieces.length > 1 ? 'x' : ''} travaillé${bilan.pieces.length > 1 ? 's' : ''}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
+                _sectionHeader(c, Icons.music_note_outlined,
+                  '${bilan.pieces.length} morceau${bilan.pieces.length > 1 ? 'x' : ''} travaillé${bilan.pieces.length > 1 ? 's' : ''}'),
+                const SizedBox(height: 14),
                 for (final e in bilan.pieces)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -4689,8 +4933,8 @@ class _BilanScreenState extends State<BilanScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          Expanded(child: Text(e.key.name)),
-                          Text('${e.value} min', style: const TextStyle(color: Colors.grey)),
+                          Expanded(child: Text(e.key.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                          Text('${e.value} min', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                         ]),
                         const SizedBox(height: 4),
                         progress(e.key.progress),
@@ -4703,32 +4947,20 @@ class _BilanScreenState extends State<BilanScreen> {
         const SizedBox(height: 16),
         Row(children: [
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Meilleur jour', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    bilan.bestDay != null ? _weekdayNamesFull[bilan.bestDay!.weekday - 1] : '—',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  Text(bilan.bestDay != null ? '${bilan.bestDayMinutes} min' : ''),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.emoji_events_outlined,
+              label: 'Meilleur jour',
+              value: bilan.bestDay != null ? _weekdayNamesFull[bilan.bestDay!.weekday - 1] : '—',
+              sub: bilan.bestDay != null ? '${bilan.bestDayMinutes} min' : null,
+              accent: Colors.amber.shade700,
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Jours pratiqués', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text('${bilan.daysPracticed} / 7', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.calendar_month_outlined,
+              label: 'Jours pratiqués',
+              value: '${bilan.daysPracticed} / 7',
             ),
           ),
         ]),
@@ -4736,8 +4968,14 @@ class _BilanScreenState extends State<BilanScreen> {
           const SizedBox(height: 16),
           CardBox(
             child: Row(children: [
-              const Expanded(child: Text('Ressenti moyen de la semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-              Text('★' * bilan.avgRating!.round(), style: const TextStyle(color: Colors.amber)),
+              Container(
+                width: 38, height: 38, alignment: Alignment.center,
+                decoration: BoxDecoration(color: Colors.amber.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.star_rounded, size: 20, color: Colors.amber),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(child: Text('Ressenti moyen de la semaine', style: TextStyle(fontWeight: FontWeight.w700))),
+              Text('★' * bilan.avgRating!.round(), style: const TextStyle(color: Colors.amber, fontSize: 16)),
             ]),
           ),
         ],
@@ -4746,12 +4984,8 @@ class _BilanScreenState extends State<BilanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Orienter la semaine prochaine', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              const Text(
-                'Ajoute une priorité à tes consignes de planning pour la prochaine génération.',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
+              _sectionHeader(c, Icons.flag_outlined, 'Orienter la semaine prochaine',
+                subtitle: 'Ajoute une priorité à tes consignes de planning pour la prochaine génération.'),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -4827,42 +5061,19 @@ class _BilanScreenState extends State<BilanScreen> {
         const SizedBox(height: 16),
         Row(children: [
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Moyenne / semaine', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${avgPerWeek ~/ 60}h${(avgPerWeek % 60).round().toString().padLeft(2, '0')}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.bar_chart_outlined,
+              label: 'Moyenne / semaine',
+              value: '${avgPerWeek ~/ 60}h${(avgPerWeek % 60).round().toString().padLeft(2, '0')}',
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Tendance', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Icon(
-                      trendUp ? Icons.trending_up : (trendDown ? Icons.trending_down : Icons.trending_flat),
-                      color: trendUp ? Colors.green : (trendDown ? Colors.deepOrange : Colors.grey),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      trendUp ? 'En hausse' : (trendDown ? 'En baisse' : 'Stable'),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  ]),
-                ],
-              ),
+            child: _statTile(c,
+              icon: trendUp ? Icons.trending_up : (trendDown ? Icons.trending_down : Icons.trending_flat),
+              label: 'Tendance',
+              value: trendUp ? 'En hausse' : (trendDown ? 'En baisse' : 'Stable'),
+              accent: trendUp ? Colors.green.shade600 : (trendDown ? Colors.deepOrange : Colors.grey),
             ),
           ),
         ]),
@@ -4871,7 +5082,7 @@ class _BilanScreenState extends State<BilanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Minutes pratiquées par semaine', style: TextStyle(fontWeight: FontWeight.bold)),
+              _sectionHeader(c, Icons.show_chart, 'Minutes pratiquées par semaine'),
               const SizedBox(height: 16),
               SizedBox(
                 height: 140,
@@ -4897,7 +5108,9 @@ class _BilanScreenState extends State<BilanScreen> {
                                         heightFactor: ratio,
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: w.weekStart == history.last.weekStart ? Colors.deepPurple : Colors.deepPurple.withOpacity(.45),
+                                            color: w.weekStart == history.last.weekStart
+                                                ? Theme.of(c).colorScheme.primary
+                                                : Theme.of(c).colorScheme.primary.withOpacity(.35),
                                             borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                                           ),
                                         ),
@@ -4928,12 +5141,8 @@ class _BilanScreenState extends State<BilanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Répartition par morceau', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(
-                  'Sur les $selectedWeeks dernières semaines',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
+                _sectionHeader(c, Icons.pie_chart_outline, 'Répartition par morceau',
+                  subtitle: 'Sur les $selectedWeeks dernières semaines'),
                 const SizedBox(height: 14),
                 for (final id in topProjects)
                   Padding(
@@ -5034,39 +5243,19 @@ class TempoHistoryScreen extends StatelessWidget {
         children: [
           Row(children: [
             Expanded(
-              child: CardBox(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Tempo actuel', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text('$last BPM', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                  ],
-                ),
+              child: _statTile(c,
+                icon: Icons.speed_outlined,
+                label: 'Tempo actuel',
+                value: '$last BPM',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: CardBox(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Depuis le premier relevé', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      Icon(
-                        gained > 0 ? Icons.trending_up : (gained < 0 ? Icons.trending_down : Icons.trending_flat),
-                        color: gained > 0 ? Colors.green : (gained < 0 ? Colors.deepOrange : Colors.grey),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${gained > 0 ? '+' : ''}$gained BPM',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ]),
-                  ],
-                ),
+              child: _statTile(c,
+                icon: gained > 0 ? Icons.trending_up : (gained < 0 ? Icons.trending_down : Icons.trending_flat),
+                label: 'Depuis le premier relevé',
+                value: '${gained > 0 ? '+' : ''}$gained BPM',
+                accent: gained > 0 ? Colors.green.shade600 : (gained < 0 ? Colors.deepOrange : Colors.grey),
               ),
             ),
           ]),
@@ -5075,11 +5264,8 @@ class TempoHistoryScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Évolution du tempo', style: TextStyle(fontWeight: FontWeight.bold)),
-                if (targetTempo > 0) ...[
-                  const SizedBox(height: 2),
-                  Text('Ligne repère : objectif à $targetTempo BPM', style: const TextStyle(color: Colors.amber, fontSize: 12)),
-                ],
+                _sectionHeader(c, Icons.show_chart, 'Évolution du tempo',
+                  subtitle: targetTempo > 0 ? 'Ligne repère : objectif à $targetTempo BPM' : null),
                 const SizedBox(height: 16),
                 // Rangee des valeurs, au-dessus de chaque barre.
                 Row(
@@ -5188,20 +5374,31 @@ class MethodsScreen extends StatelessWidget {
     appBar: AppBar(title: const Text('Méthodes'), actions: [IconButton(onPressed: onAdd, icon: const Icon(Icons.add))]),
     body: methods.isEmpty ? Center(child: FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Créer une méthode'))) : ListView.separated(
       padding: const EdgeInsets.all(16), itemCount: methods.length, separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) { final m = methods[i]; return Card(child: ExpansionTile(
-        leading: const Icon(Icons.menu_book), title: Text(m.name), subtitle: Text('${m.level} · ${m.durationMinutes} min'),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemBuilder: (_, i) { final m = methods[i]; return CardBox(child: Theme(
+        data: Theme.of(c).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 10),
+          shape: const RoundedRectangleBorder(side: BorderSide.none),
+          collapsedShape: const RoundedRectangleBorder(side: BorderSide.none),
+          leading: Container(
+            width: 38, height: 38, alignment: Alignment.center,
+            decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.menu_book_outlined, size: 18, color: Theme.of(c).colorScheme.primary),
+          ),
+          title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('${m.level} · ${m.durationMinutes} min', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
         children: [
-          if (m.description.isNotEmpty) _info('Description', m.description),
-          if (m.objectives.isNotEmpty) _info('Objectifs', m.objectives),
-          if (m.exercises.isNotEmpty) _info('Exercices / déroulé', m.exercises),
+          if (m.description.isNotEmpty) _info(c, 'Description', m.description),
+          if (m.objectives.isNotEmpty) _info(c, 'Objectifs', m.objectives),
+          if (m.exercises.isNotEmpty) _info(c, 'Exercices / déroulé', m.exercises),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [TextButton.icon(onPressed: () => onEdit(m), icon: const Icon(Icons.edit_outlined), label: const Text('Modifier')), TextButton.icon(onPressed: () => onDelete(m), icon: const Icon(Icons.delete_outline), label: const Text('Supprimer'))]),
         ],
-      )); },
+      ))); },
     ),
     floatingActionButton: FloatingActionButton(onPressed: onAdd, child: const Icon(Icons.add)),
   );
-  static Widget _info(String title, String value) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Align(alignment: Alignment.centerLeft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 3), Text(value)])));
+  static Widget _info(BuildContext c, String title, String value) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Align(alignment: Alignment.centerLeft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)), const SizedBox(height: 3), Text(value)])));
 }
 
 class RoutineScreen extends StatelessWidget {
@@ -5291,14 +5488,18 @@ class RoutineScreen extends StatelessWidget {
                                   ],
                                 ),
                                 const SizedBox(width: 4),
-                                Icon(Icons.circle, size: 12, color: color),
+                                Container(
+                                  width: 34, height: 34, alignment: Alignment.center,
+                                  decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(11)),
+                                  child: Icon(Icons.repeat, size: 16, color: color),
+                                ),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(item.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      Text(_summary(item), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                      Text(item.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                      Text(_summary(item), style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
                                     ],
                                   ),
                                 ),
