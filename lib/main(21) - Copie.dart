@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '22.0';
+const String appVersion = '21.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -1028,7 +1027,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     var deepProgress = 0;
     for (final e in byProject.entries) {
       final base = badgeBaselineProjectMinutes[e.key] ?? 0;
-      deepProgress = math.max(deepProgress, (e.value - base).clamp(0, 1 << 30));
+      deepProgress = max(deepProgress, (e.value - base).clamp(0, 1 << 30));
     }
 
     return [

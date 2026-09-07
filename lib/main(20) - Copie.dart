@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '22.0';
+const String appVersion = '20.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -580,15 +579,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   bool darkMode = false;
   int bestStreakEver = 0;
   List<String> seenBadgeIds = [];
-  // Référence utilisée pour permettre une vraie réinitialisation des badges :
-  // les données de pratique sont conservées, mais les badges recommencent à
-  // compter à partir de cette référence.
-  int badgeBaselineMinutes = 0;
-  int badgeBaselineSessions = 0;
-  int badgeBaselinePieces = 0;
-  int badgeBaselineChallenges = 0;
-  int badgeBaselineStreak = 0;
-  Map<String, int> badgeBaselineProjectMinutes = {};
 
   int get weeklyTarget => dailyCapacity.fold(0, (a, b) => a + b);
 
@@ -1020,76 +1010,29 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       if (s.projectId == null) continue;
       byProject[s.projectId!] = (byProject[s.projectId!] ?? 0) + s.duration;
     }
-    final progressMinutes = (totalMinutesAllTime - badgeBaselineMinutes).clamp(0, 1 << 30);
-    final progressSessions = (totalSessions - badgeBaselineSessions).clamp(0, 1 << 30);
-    final progressPieces = (completedPieces - badgeBaselinePieces).clamp(0, 1 << 30);
-    final progressChallenges = (challengesWon - badgeBaselineChallenges).clamp(0, 1 << 30);
-    final progressStreak = (bestStreakEver - badgeBaselineStreak).clamp(0, 1 << 30);
-    var deepProgress = 0;
-    for (final e in byProject.entries) {
-      final base = badgeBaselineProjectMinutes[e.key] ?? 0;
-      deepProgress = math.max(deepProgress, (e.value - base).clamp(0, 1 << 30));
-    }
+    final maxSingleProjectMinutes = byProject.values.isEmpty ? 0 : byProject.values.reduce((a, b) => a > b ? a : b);
 
     return [
-      AppBadge('streak3', '🔥', '3 jours d\'affilée', 'Pratiquer 3 jours de suite', progressStreak >= 3, progress: progressStreak, target: 3),
-      AppBadge('streak7', '🔥', '7 jours d\'affilée', 'Une semaine complète sans interruption', progressStreak >= 7, progress: progressStreak, target: 7),
-      AppBadge('streak14', '🔥', '14 jours d\'affilée', 'Deux semaines de suite', progressStreak >= 14, progress: progressStreak, target: 14),
-      AppBadge('streak30', '🔥', '30 jours d\'affilée', 'Un mois complet sans interruption', progressStreak >= 30, progress: progressStreak, target: 30),
-      AppBadge('hours5', '⏱️', '5 h de pratique', 'Cumuler 5 heures de pratique au total', progressMinutes >= 300, progress: progressMinutes, target: 300),
-      AppBadge('hours20', '⏱️', '20 h de pratique', 'Cumuler 20 heures de pratique au total', progressMinutes >= 1200, progress: progressMinutes, target: 1200),
-      AppBadge('hours50', '⏱️', '50 h de pratique', 'Cumuler 50 heures de pratique au total', progressMinutes >= 3000, progress: progressMinutes, target: 3000),
-      AppBadge('hours100', '⏱️', '100 h de pratique', 'Cumuler 100 heures de pratique au total', progressMinutes >= 6000, progress: progressMinutes, target: 6000),
-      AppBadge('piece1', '🎉', 'Premier morceau terminé', 'Amener un morceau à 100 %', progressPieces >= 1, progress: progressPieces, target: 1),
-      AppBadge('piece5', '🏆', '5 morceaux terminés', 'Amener 5 morceaux à 100 %', progressPieces >= 5, progress: progressPieces, target: 5),
-      AppBadge('deep10', '🎹', '10 h sur un seul morceau', 'Approfondir un morceau en profondeur', deepProgress >= 600, progress: deepProgress, target: 600),
-      AppBadge('challenge1', '🎯', 'Premier défi relevé', 'Réussir un défi hebdomadaire', progressChallenges >= 1, progress: progressChallenges, target: 1),
-      AppBadge('challenge5', '🎯', '5 défis relevés', 'Réussir 5 défis hebdomadaires', progressChallenges >= 5, progress: progressChallenges, target: 5),
-      AppBadge('sessions10', '📈', '10 sessions loguées', 'Enregistrer 10 séances de pratique', progressSessions >= 10, progress: progressSessions, target: 10),
-      AppBadge('sessions50', '📈', '50 sessions loguées', 'Enregistrer 50 séances de pratique', progressSessions >= 50, progress: progressSessions, target: 50),
+      AppBadge('streak3', '🔥', '3 jours d\'affilée', 'Pratiquer 3 jours de suite', bestStreakEver >= 3),
+      AppBadge('streak7', '🔥', '7 jours d\'affilée', 'Une semaine complète sans interruption', bestStreakEver >= 7),
+      AppBadge('streak14', '🔥', '14 jours d\'affilée', 'Deux semaines de suite', bestStreakEver >= 14),
+      AppBadge('streak30', '🔥', '30 jours d\'affilée', 'Un mois complet sans interruption', bestStreakEver >= 30),
+      AppBadge('hours5', '⏱️', '5 h de pratique', 'Cumuler 5 heures de pratique au total', totalMinutesAllTime >= 300),
+      AppBadge('hours20', '⏱️', '20 h de pratique', 'Cumuler 20 heures de pratique au total', totalMinutesAllTime >= 1200),
+      AppBadge('hours50', '⏱️', '50 h de pratique', 'Cumuler 50 heures de pratique au total', totalMinutesAllTime >= 3000),
+      AppBadge('hours100', '⏱️', '100 h de pratique', 'Cumuler 100 heures de pratique au total', totalMinutesAllTime >= 6000),
+      AppBadge('piece1', '🎉', 'Premier morceau terminé', 'Amener un morceau à 100 %', completedPieces >= 1),
+      AppBadge('piece5', '🏆', '5 morceaux terminés', 'Amener 5 morceaux à 100 %', completedPieces >= 5),
+      AppBadge('deep10', '🎹', '10 h sur un seul morceau', 'Approfondir un morceau en profondeur', maxSingleProjectMinutes >= 600),
+      AppBadge('challenge1', '🎯', 'Premier défi relevé', 'Réussir un défi hebdomadaire', challengesWon >= 1),
+      AppBadge('challenge5', '🎯', '5 défis relevés', 'Réussir 5 défis hebdomadaires', challengesWon >= 5),
+      AppBadge('sessions10', '📈', '10 sessions loguées', 'Enregistrer 10 séances de pratique', totalSessions >= 10),
+      AppBadge('sessions50', '📈', '50 sessions loguées', 'Enregistrer 50 séances de pratique', totalSessions >= 50),
     ];
   }
 
-  Future<void> resetBadges() async {
-    final context = navKey.currentContext!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Réinitialiser les badges ?'),
-        content: const Text('Les séances, morceaux et défis seront conservés. Les badges recommenceront simplement à compter à partir de maintenant.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Réinitialiser')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final totalMinutes = sessions.fold(0, (a, s) => a + s.duration);
-    final completedPieces = projects.where((p) => p.progress >= 1).length;
-    final challengesWon = challenges.where((c) => c.celebrated).length;
-    final byProject = <String, int>{};
-    for (final s in sessions) {
-      if (s.projectId == null) continue;
-      byProject[s.projectId!] = (byProject[s.projectId!] ?? 0) + s.duration;
-    }
-    setState(() {
-      badgeBaselineMinutes = totalMinutes;
-      badgeBaselineSessions = sessions.length;
-      badgeBaselinePieces = completedPieces;
-      badgeBaselineChallenges = challengesWon;
-      badgeBaselineStreak = bestStreakEver;
-      badgeBaselineProjectMinutes = Map<String, int>.from(byProject);
-      seenBadgeIds = [];
-    });
-    await _persist();
-  }
-
   void openBadgesScreen() {
-    Navigator.of(navKey.currentContext!).push(MaterialPageRoute(builder: (_) => BadgesScreen(
-      badges: badges,
-      onReset: resetBadges,
-    )));
+    Navigator.of(navKey.currentContext!).push(MaterialPageRoute(builder: (_) => BadgesScreen(badges: badges)));
   }
 
   void _checkCelebrations() {
@@ -1151,15 +1094,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     darkMode = prefs.getBool('darkMode') ?? false;
     bestStreakEver = prefs.getInt('bestStreakEver') ?? 0;
     seenBadgeIds = (jsonDecode(prefs.getString('seenBadgeIds') ?? '[]') as List).map((e) => e as String).toList();
-    badgeBaselineMinutes = prefs.getInt('badgeBaselineMinutes') ?? 0;
-    badgeBaselineSessions = prefs.getInt('badgeBaselineSessions') ?? 0;
-    badgeBaselinePieces = prefs.getInt('badgeBaselinePieces') ?? 0;
-    badgeBaselineChallenges = prefs.getInt('badgeBaselineChallenges') ?? 0;
-    badgeBaselineStreak = prefs.getInt('badgeBaselineStreak') ?? 0;
-    final rawBadgeBaselineProjects = prefs.getString('badgeBaselineProjectMinutes');
-    badgeBaselineProjectMinutes = rawBadgeBaselineProjects == null
-        ? <String, int>{}
-        : Map<String, int>.from((jsonDecode(rawBadgeBaselineProjects) as Map).map((k, v) => MapEntry(k.toString(), (v as num).toInt())));
     final rawProjects = prefs.getString('projects');
     if (rawProjects == null) {
       _seedDemoData();
@@ -1222,12 +1156,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setBool('darkMode', darkMode);
     await prefs.setInt('bestStreakEver', bestStreakEver);
     await prefs.setString('seenBadgeIds', jsonEncode(seenBadgeIds));
-    await prefs.setInt('badgeBaselineMinutes', badgeBaselineMinutes);
-    await prefs.setInt('badgeBaselineSessions', badgeBaselineSessions);
-    await prefs.setInt('badgeBaselinePieces', badgeBaselinePieces);
-    await prefs.setInt('badgeBaselineChallenges', badgeBaselineChallenges);
-    await prefs.setInt('badgeBaselineStreak', badgeBaselineStreak);
-    await prefs.setString('badgeBaselineProjectMinutes', jsonEncode(badgeBaselineProjectMinutes));
     await prefs.setString('projects', jsonEncode(projects.map((e) => e.toJson()).toList()));
     await prefs.setString('sessions', jsonEncode(sessions.map((e) => e.toJson()).toList()));
     await prefs.setString('plan', jsonEncode(plan.map((e) => e.toJson()).toList()));
@@ -1268,12 +1196,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'darkMode': darkMode,
       'bestStreakEver': bestStreakEver,
       'seenBadgeIds': seenBadgeIds,
-      'badgeBaselineMinutes': badgeBaselineMinutes,
-      'badgeBaselineSessions': badgeBaselineSessions,
-      'badgeBaselinePieces': badgeBaselinePieces,
-      'badgeBaselineChallenges': badgeBaselineChallenges,
-      'badgeBaselineStreak': badgeBaselineStreak,
-      'badgeBaselineProjectMinutes': badgeBaselineProjectMinutes,
       'projects': projects.map((e) => e.toJson()).toList(),
       'sessions': sessions.map((e) => e.toJson()).toList(),
       'plan': plan.map((e) => e.toJson()).toList(),
@@ -1360,15 +1282,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         darkMode = data['darkMode'] as bool? ?? false;
         bestStreakEver = data['bestStreakEver'] as int? ?? 0;
         seenBadgeIds = ((data['seenBadgeIds'] as List?) ?? []).map((e) => e as String).toList();
-        badgeBaselineMinutes = (data['badgeBaselineMinutes'] as num?)?.toInt() ?? 0;
-        badgeBaselineSessions = (data['badgeBaselineSessions'] as num?)?.toInt() ?? 0;
-        badgeBaselinePieces = (data['badgeBaselinePieces'] as num?)?.toInt() ?? 0;
-        badgeBaselineChallenges = (data['badgeBaselineChallenges'] as num?)?.toInt() ?? 0;
-        badgeBaselineStreak = (data['badgeBaselineStreak'] as num?)?.toInt() ?? 0;
-        final importedBadgeProjects = data['badgeBaselineProjectMinutes'];
-        badgeBaselineProjectMinutes = importedBadgeProjects is Map
-            ? Map<String, int>.from(importedBadgeProjects.map((k, v) => MapEntry(k.toString(), (v as num).toInt())))
-            : <String, int>{};
         projects = ((data['projects'] as List?) ?? []).map((e) => Project.fromJson(e)).toList();
         sessions = ((data['sessions'] as List?) ?? []).map((e) => Session.fromJson(e)).toList();
         plan = ((data['plan'] as List?) ?? []).map((e) => PlanItem.fromJson(e)).toList();
@@ -3031,14 +2944,12 @@ class WeeklyBilan {
 }
 
 class AppBadge {
-  AppBadge(this.id, this.emoji, this.title, this.description, this.earned, {this.progress = 0, this.target = 1});
+  AppBadge(this.id, this.emoji, this.title, this.description, this.earned);
   final String id;
   final String emoji;
   final String title;
   final String description;
   final bool earned;
-  final int progress;
-  final int target;
 }
 
 class Challenge {
@@ -5336,117 +5247,53 @@ Widget categoryComparisonRow(String cat, int plannedMin, int targetMin, int shar
 // ---------------------------------------------------------------------------
 
 class BadgesScreen extends StatelessWidget {
-  const BadgesScreen({super.key, required this.badges, required this.onReset});
+  const BadgesScreen({super.key, required this.badges});
   final List<AppBadge> badges;
-  final Future<void> Function() onReset;
 
   @override
   Widget build(BuildContext c) {
     final earnedCount = badges.where((b) => b.earned).length;
-    final unlocked = earnedCount == badges.length;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Badges  •  $earnedCount/${badges.length}'),
-        actions: [
-          IconButton(
-            tooltip: 'Réinitialiser les badges',
-            icon: const Icon(Icons.restart_alt_rounded),
-            onPressed: onReset,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-            child: CardBox(
-              child: Row(
+      appBar: AppBar(title: Text('Badges ($earnedCount/${badges.length})')),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: badges.length,
+        itemBuilder: (_, i) {
+          final b = badges[i];
+          return CardBox(
+            child: Opacity(
+              opacity: b.earned ? 1 : 0.35,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 54, height: 54,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: unlocked ? [Colors.amber.shade300, Colors.orange.shade700] : [Colors.indigo.shade200, Colors.indigo.shade600]),
-                    ),
-                    child: Icon(unlocked ? Icons.emoji_events_rounded : Icons.auto_awesome_rounded, color: Colors.white, size: 29),
+                  Text(b.emoji, style: const TextStyle(fontSize: 34)),
+                  const SizedBox(height: 8),
+                  Text(
+                    b.title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(unlocked ? 'Collection complète ! 🏆' : 'Ta collection de badges', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text(unlocked ? 'Tous les badges sont débloqués.' : 'Continue à jouer : le prochain badge est peut-être tout proche !', style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-                  ])),
+                  const SizedBox(height: 4),
+                  Text(
+                    b.description,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                  if (!b.earned) ...[
+                    const SizedBox(height: 6),
+                    const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                  ],
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: .76),
-              itemCount: badges.length,
-              itemBuilder: (_, i) {
-                final b = badges[i];
-                final ratio = b.target <= 0 ? 1.0 : (b.progress / b.target).clamp(0.0, 1.0);
-                return _BadgeCard(badge: b, ratio: ratio);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BadgeCard extends StatelessWidget {
-  const _BadgeCard({required this.badge, required this.ratio});
-  final AppBadge badge;
-  final double ratio;
-
-  @override
-  Widget build(BuildContext context) {
-    final b = badge;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: b.earned
-              ? [Colors.amber.shade50, Colors.orange.shade100]
-              : [Theme.of(context).colorScheme.surface, Colors.grey.shade100],
-        ),
-        border: Border.all(color: b.earned ? Colors.amber.shade300 : Colors.grey.shade300, width: b.earned ? 1.5 : 1),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.07), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
-        child: Column(
-          children: [
-            Stack(alignment: Alignment.center, children: [
-              Container(
-                width: 70, height: 70,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: b.earned ? [Colors.amber.shade300, Colors.deepOrange.shade400] : [Colors.grey.shade300, Colors.grey.shade400]),
-                  boxShadow: b.earned ? [BoxShadow(color: Colors.orange.withOpacity(.28), blurRadius: 12, spreadRadius: 2)] : null,
-                ),
-              ),
-              Text(b.emoji, style: TextStyle(fontSize: 35, color: b.earned ? null : Colors.grey.shade600)),
-              if (!b.earned) Positioned(right: 0, bottom: 0, child: Container(padding: const EdgeInsets.all(5), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.lock_rounded, size: 15, color: Colors.grey))),
-            ]),
-            const SizedBox(height: 10),
-            Text(b.title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: b.earned ? Colors.brown.shade800 : Colors.grey.shade700)),
-            const SizedBox(height: 5),
-            Expanded(child: Text(b.description, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 11))),
-            const SizedBox(height: 7),
-            ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: ratio, minHeight: 7, backgroundColor: Colors.grey.shade300)),
-            const SizedBox(height: 5),
-            Text(b.earned ? 'DÉBLOQUÉ ✨' : '${b.progress} / ${b.target}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .5, color: b.earned ? Colors.orange.shade800 : Colors.grey.shade600)),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

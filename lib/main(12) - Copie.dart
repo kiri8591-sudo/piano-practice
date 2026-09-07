@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '22.0';
+const String appVersion = '10.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -26,69 +25,6 @@ const List<String> projectStatuses = [
   'Acquis',
   'Répertoire d’entretien',
 ];
-
-
-// Besoin de travail actuel du morceau. 'Automatique' laisse le moteur utiliser
-// les 4 étapes existantes pour déterminer le travail le plus utile.
-const List<String> workFocuses = [
-  'Automatique',
-  'Déchiffrage',
-  'Mains ensemble',
-  'Rythme',
-  'Accords',
-  'Passages difficiles',
-  'Mémorisation',
-  'Interprétation',
-  'Tempo',
-  'Consolidation',
-  'Entretien',
-];
-
-const List<String> workIntensities = ['Faible', 'Moyenne', 'Forte'];
-
-String workFocusEmoji(String focus) {
-  switch (focus) {
-    case 'Déchiffrage': return '📖';
-    case 'Mains ensemble': return '🤝';
-    case 'Rythme': return '🥁';
-    case 'Accords': return '🎹';
-    case 'Passages difficiles': return '🎯';
-    case 'Mémorisation': return '🧠';
-    case 'Interprétation': return '🎭';
-    case 'Tempo': return '⚡';
-    case 'Consolidation': return '🔧';
-    case 'Entretien': return '🎼';
-    default: return '✨';
-  }
-}
-
-int workFocusMaxMinutes(String focus) {
-  switch (focus) {
-    case 'Accords': return 20;
-    case 'Rythme': return 20;
-    case 'Passages difficiles': return 20;
-    case 'Tempo': return 25;
-    case 'Entretien': return 20;
-    case 'Mémorisation': return 25;
-    case 'Mains ensemble': return 30;
-    case 'Déchiffrage': return 30;
-    case 'Interprétation': return 30;
-    case 'Consolidation': return 25;
-    default: return 40;
-  }
-}
-
-int workFocusMinMinutes(String focus) {
-  switch (focus) {
-    case 'Accords': return 10;
-    case 'Rythme': return 10;
-    case 'Passages difficiles': return 10;
-    case 'Tempo': return 10;
-    case 'Entretien': return 10;
-    case 'Consolidation': return 15;
-    default: return 15;
-  }
-}
 
 String _normalizeProjectStatus(String? value) {
   if (value == 'À réviser') return 'Répertoire d’entretien';
@@ -135,8 +71,6 @@ class Project {
     required this.goal,
     this.method,
     this.priority = false,
-    this.workFocus = 'Automatique',
-    this.workIntensity = 'Moyenne',
     this.status = 'En cours de déchiffrement',
     this.statusIsManual = false,
     this.reading = 0,
@@ -156,8 +90,6 @@ class Project {
   String goal;
   String? method;
   bool priority;
-  String workFocus; // besoin de travail principal : automatique ou choisi
-  String workIntensity; // Faible / Moyenne / Forte
   String status; // Statut affiché / conservé
   bool statusIsManual; // false = statut déduit automatiquement des 4 étapes
   double reading;
@@ -178,8 +110,6 @@ class Project {
         'goal': goal,
         'method': method,
         'priority': priority,
-        'workFocus': workFocus,
-        'workIntensity': workIntensity,
         'status': status,
         'statusIsManual': statusIsManual,
         'reading': reading,
@@ -201,13 +131,7 @@ class Project {
         goal: j['goal'] as String,
         method: j['method'] as String?,
         priority: j['priority'] as bool? ?? false,
-        workFocus: workFocuses.contains(j['workFocus']) ? (j['workFocus'] as String) : 'Automatique',
-        workIntensity: workIntensities.contains(j['workIntensity']) ? (j['workIntensity'] as String) : 'Moyenne',
         status: _normalizeProjectStatus(j['status'] as String?),
-        // Important : le statut manuel doit être restauré. Sans ce champ, un
-        // morceau passé manuellement en « Répertoire d’entretien » revenait
-        // en mode automatique après restauration et perdait donc son statut.
-        statusIsManual: j['statusIsManual'] as bool? ?? false,
         reading: (j['reading'] as num?)?.toDouble() ?? (j['progress'] as num?)?.toDouble() ?? 0,
         handsTogether: (j['handsTogether'] as num?)?.toDouble() ?? (j['progress'] as num?)?.toDouble() ?? 0,
         memory: (j['memory'] as num?)?.toDouble() ?? (j['progress'] as num?)?.toDouble() ?? 0,
@@ -219,17 +143,6 @@ class Project {
         celebratedComplete: j['celebratedComplete'] as bool? ?? false,
         emoji: j['emoji'] as String? ?? '🎵',
       );
-
-  String get effectiveWorkFocus {
-    if (workFocus != 'Automatique') return workFocus;
-    final steps = <String, double>{
-      'Déchiffrage': reading,
-      'Mains ensemble': handsTogether,
-      'Mémorisation': memory,
-      'Interprétation': interpretation,
-    };
-    return steps.entries.reduce((a, b) => a.value <= b.value ? a : b).key;
-  }
 
   String get effectiveStatus => statusIsManual
       ? status
@@ -534,7 +447,7 @@ int daysSinceLastProjectSession(Project p, List<Session> sessions) {
 
 String reviewDueLabel(Project p, List<Session> sessions) {
   final days = daysSinceLastProjectSession(p, sessions);
-  if (days < 0 || days >= 999) return 'Jamais travaillé';
+  if (days < 0) return 'Jamais travaillé';
   if (days >= 14) return 'À revoir maintenant · $days j';
   if (days >= 7) return 'À revoir cette semaine · $days j';
   if (days >= 4) return 'À surveiller · $days j';
@@ -580,15 +493,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   bool darkMode = false;
   int bestStreakEver = 0;
   List<String> seenBadgeIds = [];
-  // Référence utilisée pour permettre une vraie réinitialisation des badges :
-  // les données de pratique sont conservées, mais les badges recommencent à
-  // compter à partir de cette référence.
-  int badgeBaselineMinutes = 0;
-  int badgeBaselineSessions = 0;
-  int badgeBaselinePieces = 0;
-  int badgeBaselineChallenges = 0;
-  int badgeBaselineStreak = 0;
-  Map<String, int> badgeBaselineProjectMinutes = {};
 
   int get weeklyTarget => dailyCapacity.fold(0, (a, b) => a + b);
 
@@ -642,7 +546,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     // 2) Morceaux du répertoire d’entretien pas revus depuis longtemps.
     final staleReview = projects.where((p) => p.effectiveStatus == 'Répertoire d’entretien').where((p) {
       final last = lastSessionOf(p.id);
-      return last != null && now.difference(last).inDays >= 14;
+      return last == null || now.difference(last).inDays >= 14;
     }).toList();
     if (staleReview.isNotEmpty) {
       final names = staleReview.map((p) => p.name).join(', ');
@@ -650,7 +554,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       suggestions.add(Suggestion(
         Icons.refresh,
         '${plural ? "Ces morceaux n'ont" : "Ce morceau n'a"} pas été révisé${plural ? 's' : ''} depuis 2 semaines ou plus : $names',
-        instruction: 'priorité à réviser : $names',
+        instruction: 'priorité à réviser',
         color: Colors.teal,
       ));
     }
@@ -845,33 +749,14 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final next = instruction.trim();
     if (next.isEmpty) return;
     final current = weeklyInstructions.trim();
-    final combined = _fold(current).contains(_fold(next))
-        ? current
-        : (current.isEmpty ? next : '$current, $next');
-
-    // Application directe : pas de passage par « Proposer un planning ».
-    // Une seule confirmation courte protège le planning existant ; les séances
-    // déjà réalisées restent conservées.
-    final apply = await showDialog<bool>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: const Text('Appliquer maintenant ?'),
-        content: const Text(
-          'Le planning de cette semaine sera régénéré avec cette priorité. Les séances déjà faites seront conservées.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Appliquer')),
-        ],
-      ),
-    );
-    if (apply != true) return;
-
-    if (combined != weeklyInstructions) {
-      setState(() => weeklyInstructions = combined);
+    final alreadyPresent = _fold(current).contains(_fold(next));
+    if (!alreadyPresent) {
+      setState(() {
+        weeklyInstructions = current.isEmpty ? next : '$current, $next';
+      });
       await _persist();
     }
-    await proposeWeeklyPlan(skipInstructionsDialog: true);
+    await proposeWeeklyPlan();
   }
 
   List<Challenge> get thisWeekChallenges {
@@ -1020,76 +905,29 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       if (s.projectId == null) continue;
       byProject[s.projectId!] = (byProject[s.projectId!] ?? 0) + s.duration;
     }
-    final progressMinutes = (totalMinutesAllTime - badgeBaselineMinutes).clamp(0, 1 << 30);
-    final progressSessions = (totalSessions - badgeBaselineSessions).clamp(0, 1 << 30);
-    final progressPieces = (completedPieces - badgeBaselinePieces).clamp(0, 1 << 30);
-    final progressChallenges = (challengesWon - badgeBaselineChallenges).clamp(0, 1 << 30);
-    final progressStreak = (bestStreakEver - badgeBaselineStreak).clamp(0, 1 << 30);
-    var deepProgress = 0;
-    for (final e in byProject.entries) {
-      final base = badgeBaselineProjectMinutes[e.key] ?? 0;
-      deepProgress = math.max(deepProgress, (e.value - base).clamp(0, 1 << 30));
-    }
+    final maxSingleProjectMinutes = byProject.values.isEmpty ? 0 : byProject.values.reduce((a, b) => a > b ? a : b);
 
     return [
-      AppBadge('streak3', '🔥', '3 jours d\'affilée', 'Pratiquer 3 jours de suite', progressStreak >= 3, progress: progressStreak, target: 3),
-      AppBadge('streak7', '🔥', '7 jours d\'affilée', 'Une semaine complète sans interruption', progressStreak >= 7, progress: progressStreak, target: 7),
-      AppBadge('streak14', '🔥', '14 jours d\'affilée', 'Deux semaines de suite', progressStreak >= 14, progress: progressStreak, target: 14),
-      AppBadge('streak30', '🔥', '30 jours d\'affilée', 'Un mois complet sans interruption', progressStreak >= 30, progress: progressStreak, target: 30),
-      AppBadge('hours5', '⏱️', '5 h de pratique', 'Cumuler 5 heures de pratique au total', progressMinutes >= 300, progress: progressMinutes, target: 300),
-      AppBadge('hours20', '⏱️', '20 h de pratique', 'Cumuler 20 heures de pratique au total', progressMinutes >= 1200, progress: progressMinutes, target: 1200),
-      AppBadge('hours50', '⏱️', '50 h de pratique', 'Cumuler 50 heures de pratique au total', progressMinutes >= 3000, progress: progressMinutes, target: 3000),
-      AppBadge('hours100', '⏱️', '100 h de pratique', 'Cumuler 100 heures de pratique au total', progressMinutes >= 6000, progress: progressMinutes, target: 6000),
-      AppBadge('piece1', '🎉', 'Premier morceau terminé', 'Amener un morceau à 100 %', progressPieces >= 1, progress: progressPieces, target: 1),
-      AppBadge('piece5', '🏆', '5 morceaux terminés', 'Amener 5 morceaux à 100 %', progressPieces >= 5, progress: progressPieces, target: 5),
-      AppBadge('deep10', '🎹', '10 h sur un seul morceau', 'Approfondir un morceau en profondeur', deepProgress >= 600, progress: deepProgress, target: 600),
-      AppBadge('challenge1', '🎯', 'Premier défi relevé', 'Réussir un défi hebdomadaire', progressChallenges >= 1, progress: progressChallenges, target: 1),
-      AppBadge('challenge5', '🎯', '5 défis relevés', 'Réussir 5 défis hebdomadaires', progressChallenges >= 5, progress: progressChallenges, target: 5),
-      AppBadge('sessions10', '📈', '10 sessions loguées', 'Enregistrer 10 séances de pratique', progressSessions >= 10, progress: progressSessions, target: 10),
-      AppBadge('sessions50', '📈', '50 sessions loguées', 'Enregistrer 50 séances de pratique', progressSessions >= 50, progress: progressSessions, target: 50),
+      AppBadge('streak3', '🔥', '3 jours d\'affilée', 'Pratiquer 3 jours de suite', bestStreakEver >= 3),
+      AppBadge('streak7', '🔥', '7 jours d\'affilée', 'Une semaine complète sans interruption', bestStreakEver >= 7),
+      AppBadge('streak14', '🔥', '14 jours d\'affilée', 'Deux semaines de suite', bestStreakEver >= 14),
+      AppBadge('streak30', '🔥', '30 jours d\'affilée', 'Un mois complet sans interruption', bestStreakEver >= 30),
+      AppBadge('hours5', '⏱️', '5 h de pratique', 'Cumuler 5 heures de pratique au total', totalMinutesAllTime >= 300),
+      AppBadge('hours20', '⏱️', '20 h de pratique', 'Cumuler 20 heures de pratique au total', totalMinutesAllTime >= 1200),
+      AppBadge('hours50', '⏱️', '50 h de pratique', 'Cumuler 50 heures de pratique au total', totalMinutesAllTime >= 3000),
+      AppBadge('hours100', '⏱️', '100 h de pratique', 'Cumuler 100 heures de pratique au total', totalMinutesAllTime >= 6000),
+      AppBadge('piece1', '🎉', 'Premier morceau terminé', 'Amener un morceau à 100 %', completedPieces >= 1),
+      AppBadge('piece5', '🏆', '5 morceaux terminés', 'Amener 5 morceaux à 100 %', completedPieces >= 5),
+      AppBadge('deep10', '🎹', '10 h sur un seul morceau', 'Approfondir un morceau en profondeur', maxSingleProjectMinutes >= 600),
+      AppBadge('challenge1', '🎯', 'Premier défi relevé', 'Réussir un défi hebdomadaire', challengesWon >= 1),
+      AppBadge('challenge5', '🎯', '5 défis relevés', 'Réussir 5 défis hebdomadaires', challengesWon >= 5),
+      AppBadge('sessions10', '📈', '10 sessions loguées', 'Enregistrer 10 séances de pratique', totalSessions >= 10),
+      AppBadge('sessions50', '📈', '50 sessions loguées', 'Enregistrer 50 séances de pratique', totalSessions >= 50),
     ];
   }
 
-  Future<void> resetBadges() async {
-    final context = navKey.currentContext!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Réinitialiser les badges ?'),
-        content: const Text('Les séances, morceaux et défis seront conservés. Les badges recommenceront simplement à compter à partir de maintenant.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Réinitialiser')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final totalMinutes = sessions.fold(0, (a, s) => a + s.duration);
-    final completedPieces = projects.where((p) => p.progress >= 1).length;
-    final challengesWon = challenges.where((c) => c.celebrated).length;
-    final byProject = <String, int>{};
-    for (final s in sessions) {
-      if (s.projectId == null) continue;
-      byProject[s.projectId!] = (byProject[s.projectId!] ?? 0) + s.duration;
-    }
-    setState(() {
-      badgeBaselineMinutes = totalMinutes;
-      badgeBaselineSessions = sessions.length;
-      badgeBaselinePieces = completedPieces;
-      badgeBaselineChallenges = challengesWon;
-      badgeBaselineStreak = bestStreakEver;
-      badgeBaselineProjectMinutes = Map<String, int>.from(byProject);
-      seenBadgeIds = [];
-    });
-    await _persist();
-  }
-
   void openBadgesScreen() {
-    Navigator.of(navKey.currentContext!).push(MaterialPageRoute(builder: (_) => BadgesScreen(
-      badges: badges,
-      onReset: resetBadges,
-    )));
+    Navigator.of(navKey.currentContext!).push(MaterialPageRoute(builder: (_) => BadgesScreen(badges: badges)));
   }
 
   void _checkCelebrations() {
@@ -1151,15 +989,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     darkMode = prefs.getBool('darkMode') ?? false;
     bestStreakEver = prefs.getInt('bestStreakEver') ?? 0;
     seenBadgeIds = (jsonDecode(prefs.getString('seenBadgeIds') ?? '[]') as List).map((e) => e as String).toList();
-    badgeBaselineMinutes = prefs.getInt('badgeBaselineMinutes') ?? 0;
-    badgeBaselineSessions = prefs.getInt('badgeBaselineSessions') ?? 0;
-    badgeBaselinePieces = prefs.getInt('badgeBaselinePieces') ?? 0;
-    badgeBaselineChallenges = prefs.getInt('badgeBaselineChallenges') ?? 0;
-    badgeBaselineStreak = prefs.getInt('badgeBaselineStreak') ?? 0;
-    final rawBadgeBaselineProjects = prefs.getString('badgeBaselineProjectMinutes');
-    badgeBaselineProjectMinutes = rawBadgeBaselineProjects == null
-        ? <String, int>{}
-        : Map<String, int>.from((jsonDecode(rawBadgeBaselineProjects) as Map).map((k, v) => MapEntry(k.toString(), (v as num).toInt())));
     final rawProjects = prefs.getString('projects');
     if (rawProjects == null) {
       _seedDemoData();
@@ -1222,12 +1051,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setBool('darkMode', darkMode);
     await prefs.setInt('bestStreakEver', bestStreakEver);
     await prefs.setString('seenBadgeIds', jsonEncode(seenBadgeIds));
-    await prefs.setInt('badgeBaselineMinutes', badgeBaselineMinutes);
-    await prefs.setInt('badgeBaselineSessions', badgeBaselineSessions);
-    await prefs.setInt('badgeBaselinePieces', badgeBaselinePieces);
-    await prefs.setInt('badgeBaselineChallenges', badgeBaselineChallenges);
-    await prefs.setInt('badgeBaselineStreak', badgeBaselineStreak);
-    await prefs.setString('badgeBaselineProjectMinutes', jsonEncode(badgeBaselineProjectMinutes));
     await prefs.setString('projects', jsonEncode(projects.map((e) => e.toJson()).toList()));
     await prefs.setString('sessions', jsonEncode(sessions.map((e) => e.toJson()).toList()));
     await prefs.setString('plan', jsonEncode(plan.map((e) => e.toJson()).toList()));
@@ -1268,12 +1091,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'darkMode': darkMode,
       'bestStreakEver': bestStreakEver,
       'seenBadgeIds': seenBadgeIds,
-      'badgeBaselineMinutes': badgeBaselineMinutes,
-      'badgeBaselineSessions': badgeBaselineSessions,
-      'badgeBaselinePieces': badgeBaselinePieces,
-      'badgeBaselineChallenges': badgeBaselineChallenges,
-      'badgeBaselineStreak': badgeBaselineStreak,
-      'badgeBaselineProjectMinutes': badgeBaselineProjectMinutes,
       'projects': projects.map((e) => e.toJson()).toList(),
       'sessions': sessions.map((e) => e.toJson()).toList(),
       'plan': plan.map((e) => e.toJson()).toList(),
@@ -1360,15 +1177,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         darkMode = data['darkMode'] as bool? ?? false;
         bestStreakEver = data['bestStreakEver'] as int? ?? 0;
         seenBadgeIds = ((data['seenBadgeIds'] as List?) ?? []).map((e) => e as String).toList();
-        badgeBaselineMinutes = (data['badgeBaselineMinutes'] as num?)?.toInt() ?? 0;
-        badgeBaselineSessions = (data['badgeBaselineSessions'] as num?)?.toInt() ?? 0;
-        badgeBaselinePieces = (data['badgeBaselinePieces'] as num?)?.toInt() ?? 0;
-        badgeBaselineChallenges = (data['badgeBaselineChallenges'] as num?)?.toInt() ?? 0;
-        badgeBaselineStreak = (data['badgeBaselineStreak'] as num?)?.toInt() ?? 0;
-        final importedBadgeProjects = data['badgeBaselineProjectMinutes'];
-        badgeBaselineProjectMinutes = importedBadgeProjects is Map
-            ? Map<String, int>.from(importedBadgeProjects.map((k, v) => MapEntry(k.toString(), (v as num).toInt())))
-            : <String, int>{};
         projects = ((data['projects'] as List?) ?? []).map((e) => Project.fromJson(e)).toList();
         sessions = ((data['sessions'] as List?) ?? []).map((e) => Session.fromJson(e)).toList();
         plan = ((data['plan'] as List?) ?? []).map((e) => PlanItem.fromJson(e)).toList();
@@ -1423,20 +1231,28 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     if (review.isNotEmpty) {
       final desired = review.length * _reviewMinutesPerPiece;
       final normalCap = (weeklyTarget * _reviewShareCap).round();
-      reviewBudget = desired < normalCap ? desired : normalCap;
 
-      // Une consigne de priorité sélectionne les morceaux concernés, mais ne
-      // multiplie pas leur durée individuelle. Une révision standard reste de
-      // 20 min par morceau : la priorité doit surtout garantir leur présence
-      // dans le planning, pas transformer automatiquement 20 min en 50 min.
-      final perPiece = review.isEmpty ? 0 : reviewBudget ~/ review.length;
-      final effectivePerPiece = perPiece > 0 ? perPiece : (weeklyTarget > 0 ? 1 : 0);
+      // Si la consigne contient "priorité à réviser" (avec ou sans accent),
+      // le parser donne un multiplicateur > 1 aux morceaux concernés. Dans ce
+      // cas, on augmente aussi le budget global de révision : sinon le plafond
+      // de 30 % pouvait rendre la priorité presque invisible, surtout avec
+      // plusieurs morceaux à réviser.
+      final reviewIsPriority = review.any((p) => (multipliers?[p.id] ?? 1.0) > 1.0);
+      final priorityCap = (weeklyTarget * 0.60).round();
+      final cap = reviewIsPriority ? priorityCap : normalCap;
+      reviewBudget = desired > cap ? cap : desired;
+
+      // Toujours réserver au moins 1 minute par morceau sélectionné quand la
+      // priorité est demandée, même si le budget hebdomadaire est très faible.
+      final perPiece = reviewBudget ~/ review.length;
+      final minimumPerPiece = reviewIsPriority && weeklyTarget > 0 ? 1 : 0;
+      final effectivePerPiece = perPiece > 0 ? perPiece : minimumPerPiece;
 
       if (effectivePerPiece > 0) {
         for (final p in review) {
           final m = multipliers?[p.id] ?? 1.0;
           if (m <= 0) continue;
-          result[p.id] = effectivePerPiece;
+          result[p.id] = (effectivePerPiece * m).round();
         }
       }
     }
@@ -1462,8 +1278,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         final daysSince = last == null ? 999 : now.difference(last).inDays;
         final recencyBonus = daysSince >= 14 ? 1.65 : (daysSince >= 7 ? 1.35 : (daysSince >= 3 ? 1.12 : 1.0));
         final stageBonus = 1.0 + (1.0 - p.weakestStageValue) * .35;
-        final focusBonus = p.workIntensity == 'Forte' ? 1.18 : (p.workIntensity == 'Faible' ? .90 : 1.0);
-        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * recencyBonus * stageBonus * focusBonus * m;
+        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * recencyBonus * stageBonus * m;
       }
       final totalWeight = weightById.values.fold<double>(0, (a, b) => a + b);
       if (totalWeight > 0) {
@@ -1605,17 +1420,21 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     return words.any(wordBoundaryMatch);
   }
 
+  /// Interprete un texte de consignes libres (ex: "priorité Sonate, moins de Skoove") et
+  /// retourne un multiplicateur de poids par projet mentionne. Reconnait les noms de
+  /// projets, les categories d'objectif et les methodes/applications, independamment des
+  /// accents. Approche par mots-cles simple (pas un veritable LLM) : elle decoupe le texte
+  /// en segments separes par virgule/point-virgule/"et", puis cherche dans chaque segment
+  /// un mot d'intention (priorite/plus/moins/pas de) et une entite connue.
   String _methodPlanningDetails(Project project) {
+    final base = project.goal.trim();
+    final method = project.method == null ? null : methodDefinitions.where((m) => m.name.toLowerCase() == project.method!.toLowerCase()).firstOrNull;
+    if (method == null) return base;
     final parts = <String>[];
-    if (project.measures.trim().isNotEmpty) parts.add('Mesures ${project.measures.trim()}');
-    final focus = project.effectiveWorkFocus;
-    if (focus.isNotEmpty) parts.add('${workFocusEmoji(focus)} $focus');
-    if (project.workIntensity != 'Moyenne' && project.workFocus != 'Automatique') parts.add('intensité ${project.workIntensity.toLowerCase()}');
-    if (project.currentTempo > 0 && project.targetTempo > 0 && project.currentTempo < project.targetTempo && (focus == 'Tempo' || focus == 'Automatique')) {
-      parts.add('${project.currentTempo} → ${project.targetTempo} BPM');
-    }
-    if (project.method != null && project.method!.trim().isNotEmpty) parts.add(project.method!.trim());
-    return parts.isEmpty ? 'Travail ciblé du morceau' : parts.join(' · ');
+    if (base.isNotEmpty) parts.add(base);
+    if (method.exercises.isNotEmpty) parts.add('Méthode : ${method.exercises}');
+    if (method.objectives.isNotEmpty) parts.add('Objectif méthode : ${method.objectives}');
+    return parts.join(' — ');
   }
 
   Map<String, double> _parseWeeklyInstructions(String text) {
@@ -1659,27 +1478,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         }
       }
       if (segment.contains('revis')) {
-        // Une consigne du type « priorité à réviser : A, B » doit cibler
-        // uniquement A et B. Si aucun morceau n'est nommé dans le segment,
-        // on conserve le comportement générique : tous les morceaux du
-        // répertoire d'entretien sont concernés.
-        final namedReview = projects.where((p) =>
-            p.effectiveStatus == 'Répertoire d’entretien' && _mentions(segment, p.name)).toList();
-        if (namedReview.isNotEmpty) {
-          for (final p in namedReview) {
-            multipliers[p.id] = mult;
-          }
-        } else {
-          // Cas particulier : la suggestion automatique peut contenir
-          // plusieurs noms séparés par des virgules. On analyse alors
-          // l'ensemble de la consigne, pas seulement le segment courant.
-          final isExplicitReviewPriority = folded.contains('priorite a reviser') ||
-              folded.contains('priorite a reviser :');
-          if (!isExplicitReviewPriority) {
-            for (final p in projects.where((p) => p.effectiveStatus == 'Répertoire d’entretien')) {
-              multipliers[p.id] = mult;
-            }
-          }
+        for (final p in projects.where((p) => p.effectiveStatus == 'Répertoire d’entretien')) {
+          multipliers[p.id] = mult;
         }
       }
       if (segment.contains(_fold('en cours'))) {
@@ -1916,11 +1716,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// en priorite), puis le temps restant chaque jour est reparti entre tes morceaux actifs
   /// selon leur avancement/priorite. La routine est un complement au planning, pas un
   /// remplacement : les deux se combinent dans une seule generation.
-  Future<void> proposeWeeklyPlan({bool skipInstructionsDialog = false}) async {
+  Future<void> proposeWeeklyPlan() async {
     final ctrl = TextEditingController(text: weeklyInstructions);
-    final instructions = skipInstructionsDialog
-        ? weeklyInstructions
-        : await showDialog<String>(
+    final instructions = await showDialog<String>(
       context: navKey.currentContext!,
       builder: (c) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -2011,7 +1809,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     // On demande confirmation avant cette opération destructive. Les séances déjà
     // réalisées restent toujours conservées.
     final pendingCount = plan.where((x) => !x.completed).length;
-    if (pendingCount > 0 && !skipInstructionsDialog) {
+    if (pendingCount > 0) {
       final replace = await showDialog<bool>(
         context: navKey.currentContext!,
         builder: (c) => AlertDialog(
@@ -2097,123 +1895,53 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         }
       }
 
-      // --- Passe 2 : répartition quotidienne intelligente des morceaux. ---
-      // V20 : le type de travail du morceau influence désormais la durée naturelle du bloc.
-      // Les accords, le rythme ou un passage difficile restent volontairement courts,
-      // tandis que le déchiffrage ou l'interprétation peuvent prendre plus de temps.
-      // La priorité reste indépendante du besoin de travail.
-      // L'objectif est d'obtenir des journées naturelles plutôt que 80/10/10.
+      // --- Passe 2 : le temps qui reste chaque jour va aux morceaux actifs. ---
       if (rec.isNotEmpty) {
-        final remainingByProject = <String, int>{
-          for (final e in rec.entries.where((e) => e.value > 0)) e.key: e.value,
-        };
+        final remainingByProject = {...rec};
+        final orderedIds = remainingByProject.keys.toList()
+          ..sort((a, b) => remainingByProject[b]!.compareTo(remainingByProject[a]!));
+        // Un seul PlanItem par (jour, projet) genere : les creneaux suivants s'y ajoutent
+        // au lieu de dupliquer le meme morceau plusieurs fois sur la meme journee.
         final itemByDayAndProject = <String, PlanItem>{};
-        final lastProjectByDay = <DateTime, String>{};
-        const minUsefulMinutes = 10;
-        const maxDailyMinutes = 40;
 
-        double projectNeed(String projectId) {
-          final p = projectById(projectId);
-          if (p == null) return 0;
-          // Même logique générale que la recommandation, mais volontairement
-          // moins agressive : elle sert à choisir le prochain morceau du jour.
-          final last = sessions
-              .where((s) => s.projectId == projectId)
-              .map((s) => s.date)
-              .fold<DateTime?>(null, (latest, d) => latest == null || d.isAfter(latest) ? d : latest);
-          final daysSince = last == null ? 999 : DateTime.now().difference(last).inDays;
-          final recency = daysSince >= 14 ? 1.25 : (daysSince >= 7 ? 1.12 : 1.0);
-          final stage = 1.0 + (1.0 - p.weakestStageValue) * .20;
-          final priority = p.priority ? 1.30 : 1.0;
-          return (1.0 + (1.0 - p.progress) * .80) * recency * stage * priority;
-        }
+        // Répartition équilibrée : on fait tourner les morceaux afin que le
+        // planning ne s'arrête pas prématurément sur les premiers jours lorsque
+        // plusieurs projets sont disponibles. Chaque jour reçoit sa capacité,
+        // du lundi au dimanche.
+        var madeProgress = true;
+        var projectCursor = 0;
+        while (madeProgress) {
+          madeProgress = false;
+          for (final day in days) {
+            if ((remainingByDay[day] ?? 0) <= 0 || orderedIds.isEmpty) continue;
 
-        // On remplit chaque journée par petits blocs, en donnant d'abord à chaque
-        // morceau présent une vraie durée de travail, puis en ajoutant du temps
-        // aux morceaux qui en ont encore besoin. La rotation empêche le même
-        // morceau de reprendre immédiatement la main.
-        for (final day in days) {
-          var guard = 0;
-          while ((remainingByDay[day] ?? 0) >= minUsefulMinutes && remainingByProject.isNotEmpty && guard++ < 50) {
-            final dayRemaining = remainingByDay[day]!;
-            final candidates = remainingByProject.keys.where((id) => remainingByProject[id]! > 0).toList();
-            if (candidates.isEmpty) break;
-
-            // 1) Tant que plusieurs morceaux doivent encore être travaillés,
-            //    favoriser ceux qui n'ont pas encore eu leur bloc aujourd'hui.
-            final untouched = candidates.where((id) => !itemByDayAndProject.containsKey('${day.toIso8601String()}|$id')).toList();
-            final pool = untouched.isNotEmpty && candidates.length > 1 ? untouched : candidates;
-
-            // 2) Choix par score : besoin + poids hebdomadaire restant + bonus
-            //    de rotation. Un morceau déjà travaillé aujourd'hui est pénalisé.
-            String bestId = pool.first;
-            var bestScore = -1.0;
-            for (final id in pool) {
-              final remaining = remainingByProject[id]!.toDouble();
-              final weeklyShare = remaining / candidates.map((x) => remainingByProject[x]!.toDouble()).fold(0.0, (a, b) => a + b);
-              final already = itemByDayAndProject['${day.toIso8601String()}|$id']?.duration ?? 0;
-              final alternation = lastProjectByDay[day] == id ? 0.55 : 1.0;
-              final need = projectNeed(id);
-              final score = (weeklyShare * .75 + need * .25) * alternation * (already == 0 ? 1.15 : 1.0);
-              if (score > bestScore) {
-                bestScore = score;
-                bestId = id;
+            String projectId = '';
+            for (var attempt = 0; attempt < orderedIds.length; attempt++) {
+              final candidate = orderedIds[projectCursor % orderedIds.length];
+              projectCursor++;
+              if ((remainingByProject[candidate] ?? 0) > 0) {
+                projectId = candidate;
+                break;
               }
             }
+            if (projectId.isEmpty) continue;
 
-            final key = '${day.toIso8601String()}|$bestId';
-            final alreadyToday = itemByDayAndProject[key]?.duration ?? 0;
-            final otherProjects = candidates.where((id) => id != bestId).toList();
-            final focusMax = workFocusMaxMinutes(projectById(bestId)?.effectiveWorkFocus ?? 'Automatique');
-            final focusMin = workFocusMinMinutes(projectById(bestId)?.effectiveWorkFocus ?? 'Automatique');
-            final cap = otherProjects.isNotEmpty ? (focusMax < maxDailyMinutes ? focusMax : maxDailyMinutes) : (dayRemaining < focusMax ? dayRemaining : focusMax);
-            var room = cap - alreadyToday;
-            if (room <= 0) {
-              // Ce morceau a atteint son plafond pour aujourd'hui. On ne touche
-              // surtout pas à son budget hebdomadaire : il sera repris un autre jour.
-              final alternative = candidates.where((id) {
-                final k = '${day.toIso8601String()}|$id';
-                return (itemByDayAndProject[k]?.duration ?? 0) < maxDailyMinutes;
-              }).toList();
-              if (alternative.isEmpty) break;
-              bestId = alternative.first;
-              continue;
-            }
-
-            // Quand plusieurs morceaux sont disponibles, on privilégie un bloc
-            // d'au moins 15 min. Le dernier bloc de la journée peut être plus court
-            // uniquement s'il reste moins de 15 min disponibles.
-            var chunk = [remainingByProject[bestId]!, dayRemaining, room].reduce((a, b) => a < b ? a : b);
-            if (chunk >= focusMin) {
-              if (chunk > focusMax) chunk = focusMax;
-              // Ne pas laisser un reliquat ridicule pour le même morceau :
-              // lorsqu'il reste 30 min ou moins, on les prend en une seule fois.
-              final projectRemainingAfter = remainingByProject[bestId]! - chunk;
-              if (projectRemainingAfter > 0 && projectRemainingAfter < minUsefulMinutes && chunk < room) {
-                final adjusted = chunk + projectRemainingAfter;
-                if (adjusted <= room && adjusted <= maxDailyMinutes) chunk = adjusted;
-              }
-            }
-            if (chunk > 0 && chunk < focusMin && dayRemaining < focusMin) {
-              // Dernier petit reliquat de la journée : on l'autorise plutôt que de perdre le temps.
-            } else if (chunk > 0 && chunk < focusMin) {
-              // Si le morceau demande un travail court (accords, rythme...), on peut
-              // tout de même planifier son minimum utile de 10 min si la place le permet.
-              if (focusMin <= room && focusMin <= remainingByProject[bestId]!) chunk = focusMin;
-              else break;
-            }
-            if (chunk <= 0) break;
-
-            final project = projectById(bestId);
+            final project = projectById(projectId);
             if (project == null) {
-              remainingByProject.remove(bestId);
+              remainingByProject[projectId] = 0;
               continue;
             }
 
+            final chunk = [remainingByProject[projectId]!, remainingByDay[day]!, 40]
+                .reduce((a, b) => a < b ? a : b);
+            if (chunk <= 0) continue;
+
+            final key = '${day.toIso8601String()}|$projectId';
             final existing = itemByDayAndProject[key];
             if (existing != null) {
               existing.duration += chunk;
             } else {
+              final cat = project.weakestCategory;
               final item = PlanItem(
                 id: newId(),
                 date: day,
@@ -2221,17 +1949,15 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
                 title: project.name,
                 details: _methodPlanningDetails(project),
                 projectId: project.id,
-                category: project.weakestCategory,
+                category: cat,
                 method: project.method,
               );
               itemByDayAndProject[key] = item;
               plan.add(item);
             }
-
-            remainingByProject[bestId] = remainingByProject[bestId]! - chunk;
+            remainingByProject[projectId] = remainingByProject[projectId]! - chunk;
             remainingByDay[day] = remainingByDay[day]! - chunk;
-            lastProjectByDay[day] = bestId;
-            if (remainingByProject[bestId]! <= 0) remainingByProject.remove(bestId);
+            madeProgress = true;
           }
         }
       }
@@ -2655,7 +2381,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onImport: importData,
         projectById: projectById,
         onOrientSuggestion: orientSuggestion,
-        onOrientSuggestionThisWeek: orientSuggestionThisWeek,
       ),
       Sessions(
         items: sessions,
@@ -3031,14 +2756,12 @@ class WeeklyBilan {
 }
 
 class AppBadge {
-  AppBadge(this.id, this.emoji, this.title, this.description, this.earned, {this.progress = 0, this.target = 1});
+  AppBadge(this.id, this.emoji, this.title, this.description, this.earned);
   final String id;
   final String emoji;
   final String title;
   final String description;
   final bool earned;
-  final int progress;
-  final int target;
 }
 
 class Challenge {
@@ -4572,8 +4295,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
   String name = '';
   String? method;
   bool priority = false;
-  String workFocus = 'Automatique';
-  String workIntensity = 'Moyenne';
   String emoji = '🎵';
   double progress = 0;
   String status = 'En cours de déchiffrement';
@@ -4592,8 +4313,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
     goalCtrl = TextEditingController(text: widget.existing?.goal ?? '');
     method = widget.existing?.method;
     priority = widget.existing?.priority ?? false;
-    workFocus = widget.existing?.workFocus ?? 'Automatique';
-    workIntensity = widget.existing?.workIntensity ?? 'Moyenne';
     emoji = widget.existing?.emoji ?? '🎵';
     progress = widget.existing?.progress ?? 0;
     status = _normalizeProjectStatus(widget.existing?.status);
@@ -4830,42 +4549,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
               ],
               onChanged: (v) => setState(() => method = v),
             ),
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.45),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Besoin de travail actuel', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                const Text('Indique ce qui mérite le plus de temps maintenant. « Automatique » utilise les étapes du morceau.', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: workFocus,
-                  decoration: const InputDecoration(labelText: 'Travail principal', prefixIcon: Icon(Icons.track_changes_outlined)),
-                  items: workFocuses.map((v) => DropdownMenuItem(value: v, child: Text('${workFocusEmoji(v)}  $v'))).toList(),
-                  onChanged: (v) => setState(() => workFocus = v ?? 'Automatique'),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: workIntensity,
-                  decoration: const InputDecoration(labelText: 'Intensité du besoin', prefixIcon: Icon(Icons.speed_outlined)),
-                  items: workIntensities.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                  onChanged: (v) => setState(() => workIntensity = v ?? 'Moyenne'),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  workFocus == 'Automatique'
-                      ? 'Le planning choisira automatiquement l’étape la plus faible.'
-                      : 'Durée indicative : ${workFocusMinMinutes(workFocus)}–${workFocusMaxMinutes(workFocus)} min par bloc.',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Priorité'),
@@ -4923,8 +4606,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
                       goal: goalCtrl.text,
                       method: method,
                       priority: priority,
-                      workFocus: workFocus,
-                      workIntensity: workIntensity,
                       status: status,
                       statusIsManual: statusIsManual,
                       reading: reading,
@@ -5336,117 +5017,53 @@ Widget categoryComparisonRow(String cat, int plannedMin, int targetMin, int shar
 // ---------------------------------------------------------------------------
 
 class BadgesScreen extends StatelessWidget {
-  const BadgesScreen({super.key, required this.badges, required this.onReset});
+  const BadgesScreen({super.key, required this.badges});
   final List<AppBadge> badges;
-  final Future<void> Function() onReset;
 
   @override
   Widget build(BuildContext c) {
     final earnedCount = badges.where((b) => b.earned).length;
-    final unlocked = earnedCount == badges.length;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Badges  •  $earnedCount/${badges.length}'),
-        actions: [
-          IconButton(
-            tooltip: 'Réinitialiser les badges',
-            icon: const Icon(Icons.restart_alt_rounded),
-            onPressed: onReset,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-            child: CardBox(
-              child: Row(
+      appBar: AppBar(title: Text('Badges ($earnedCount/${badges.length})')),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: badges.length,
+        itemBuilder: (_, i) {
+          final b = badges[i];
+          return CardBox(
+            child: Opacity(
+              opacity: b.earned ? 1 : 0.35,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 54, height: 54,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: unlocked ? [Colors.amber.shade300, Colors.orange.shade700] : [Colors.indigo.shade200, Colors.indigo.shade600]),
-                    ),
-                    child: Icon(unlocked ? Icons.emoji_events_rounded : Icons.auto_awesome_rounded, color: Colors.white, size: 29),
+                  Text(b.emoji, style: const TextStyle(fontSize: 34)),
+                  const SizedBox(height: 8),
+                  Text(
+                    b.title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(unlocked ? 'Collection complète ! 🏆' : 'Ta collection de badges', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text(unlocked ? 'Tous les badges sont débloqués.' : 'Continue à jouer : le prochain badge est peut-être tout proche !', style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-                  ])),
+                  const SizedBox(height: 4),
+                  Text(
+                    b.description,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                  if (!b.earned) ...[
+                    const SizedBox(height: 6),
+                    const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                  ],
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: .76),
-              itemCount: badges.length,
-              itemBuilder: (_, i) {
-                final b = badges[i];
-                final ratio = b.target <= 0 ? 1.0 : (b.progress / b.target).clamp(0.0, 1.0);
-                return _BadgeCard(badge: b, ratio: ratio);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BadgeCard extends StatelessWidget {
-  const _BadgeCard({required this.badge, required this.ratio});
-  final AppBadge badge;
-  final double ratio;
-
-  @override
-  Widget build(BuildContext context) {
-    final b = badge;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: b.earned
-              ? [Colors.amber.shade50, Colors.orange.shade100]
-              : [Theme.of(context).colorScheme.surface, Colors.grey.shade100],
-        ),
-        border: Border.all(color: b.earned ? Colors.amber.shade300 : Colors.grey.shade300, width: b.earned ? 1.5 : 1),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.07), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
-        child: Column(
-          children: [
-            Stack(alignment: Alignment.center, children: [
-              Container(
-                width: 70, height: 70,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: b.earned ? [Colors.amber.shade300, Colors.deepOrange.shade400] : [Colors.grey.shade300, Colors.grey.shade400]),
-                  boxShadow: b.earned ? [BoxShadow(color: Colors.orange.withOpacity(.28), blurRadius: 12, spreadRadius: 2)] : null,
-                ),
-              ),
-              Text(b.emoji, style: TextStyle(fontSize: 35, color: b.earned ? null : Colors.grey.shade600)),
-              if (!b.earned) Positioned(right: 0, bottom: 0, child: Container(padding: const EdgeInsets.all(5), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.lock_rounded, size: 15, color: Colors.grey))),
-            ]),
-            const SizedBox(height: 10),
-            Text(b.title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: b.earned ? Colors.brown.shade800 : Colors.grey.shade700)),
-            const SizedBox(height: 5),
-            Expanded(child: Text(b.description, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 11))),
-            const SizedBox(height: 7),
-            ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: ratio, minHeight: 7, backgroundColor: Colors.grey.shade300)),
-            const SizedBox(height: 5),
-            Text(b.earned ? 'DÉBLOQUÉ ✨' : '${b.progress} / ${b.target}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .5, color: b.earned ? Colors.orange.shade800 : Colors.grey.shade600)),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
