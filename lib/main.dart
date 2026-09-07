@@ -4,6 +4,8 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+const String appVersion = '10.0';
+
 void main() => runApp(const PianoPracticeApp());
 
 int _idCounter = 0;
@@ -154,6 +156,8 @@ class Project {
   /// Categorie dominante du morceau, deduite automatiquement de son etape la plus
   /// faible parmi les 4 curseurs — remplace l'ancien besoin de creer un "objectif"
   /// separe juste pour etiqueter un projet.
+  double get weakestStageValue => [reading, handsTogether, memory, interpretation].reduce((a, b) => a < b ? a : b);
+
   String get weakestCategory {
     final dims = <String, double>{
       'Répertoire': reading,
@@ -368,7 +372,7 @@ class MethodDefinition {
   factory MethodDefinition.fromJson(Map<String, dynamic> j) => MethodDefinition(name: j['name'] as String? ?? '', description: j['description'] as String? ?? '', objectives: j['objectives'] as String? ?? '', exercises: j['exercises'] as String? ?? '', durationMinutes: (j['durationMinutes'] as num?)?.toInt() ?? 20, level: j['level'] as String? ?? 'Tous niveaux');
 }
 
-const objectiveCategories = ['Répertoire', 'Technique', 'Mémorisation', 'Interprétation'];
+const objectiveCategories = ['Répertoire', 'Technique', 'Mémorisation', 'Interprétation', 'Lecture', 'Improvisation'];
 
 List<String> learningMethods = ['Playground Sessions', 'MyPianoPop', 'Skoove', 'Pianoforall', 'Udemy'];
 List<MethodDefinition> methodDefinitions = learningMethods.map((n) => MethodDefinition(name: n)).toList();
@@ -383,6 +387,10 @@ Color categoryColor(String? cat) {
       return const Color(0xFFE64A19);
     case 'Interprétation':
       return const Color(0xFF8E24AA);
+    case 'Lecture':
+      return const Color(0xFF1976D2);
+    case 'Improvisation':
+      return const Color(0xFFFFA000);
     default:
       return Colors.blueGrey;
   }
@@ -398,9 +406,61 @@ IconData categoryIcon(String? cat) {
       return Icons.psychology;
     case 'Interprétation':
       return Icons.theater_comedy;
+    case 'Lecture':
+      return Icons.menu_book;
+    case 'Improvisation':
+      return Icons.auto_awesome;
     default:
       return Icons.music_note;
   }
+}
+
+String nextWorkRecommendation(Project p) {
+  final dims = <String, double>{
+    'Lecture / mains séparées': p.reading,
+    'Mains ensemble': p.handsTogether,
+    'Mémorisation': p.memory,
+    'Interprétation': p.interpretation,
+  };
+  final weakest = dims.entries.reduce((a, b) => a.value <= b.value ? a : b);
+  final parts = <String>[];
+  if (p.measures.trim().isNotEmpty) parts.add('Mesures ${p.measures.trim()}');
+  parts.add(weakest.key);
+  if (p.currentTempo > 0 && p.targetTempo > 0 && p.currentTempo < p.targetTempo) {
+    parts.add('${p.currentTempo} → ${p.targetTempo} BPM');
+  }
+  return parts.join(' · ');
+}
+
+int daysSinceLastProjectSession(Project p, List<Session> sessions) {
+  DateTime? latest;
+  for (final s in sessions) {
+    if (s.projectId != p.id) continue;
+    if (latest == null || s.date.isAfter(latest!)) latest = s.date;
+  }
+  if (latest == null) return 999;
+  final today = DateTime.now();
+  final lastDay = DateTime(latest!.year, latest!.month, latest!.day);
+  final todayDay = DateTime(today.year, today.month, today.day);
+  return todayDay.difference(lastDay).inDays;
+}
+
+String reviewDueLabel(Project p, List<Session> sessions) {
+  final days = daysSinceLastProjectSession(p, sessions);
+  if (days >= 14) return 'À revoir maintenant · $days j';
+  if (days >= 7) return 'À revoir cette semaine · $days j';
+  if (days >= 4) return 'À surveiller · $days j';
+  if (days == 0) return 'Vu aujourd’hui';
+  return 'Vu il y a $days j';
+}
+
+String practiceBalanceLabel({required int practiced, required int target}) {
+  if (target <= 0) return 'Aucune cible définie';
+  final ratio = practiced / target;
+  if (ratio >= 1) return 'Objectif atteint 🎯';
+  if (ratio >= .8) return 'Bonne dynamique';
+  if (ratio >= .5) return 'En bonne voie';
+  return 'À renforcer';
 }
 
 DateTime startOfWeek(DateTime d) {
@@ -1069,10 +1129,17 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       builder: (c) => AlertDialog(
         title: const Text('Restaurer cette sauvegarde ?'),
         content: const Text(
-          'Toutes les donnees actuelles (morceaux, sessions, routine, planning) seront remplacees par celles du fichier. Cette action est irreversible.',
+          'Toutes les donnees actuelles (morceaux, sessions, routine, planning) seront remplacees. Avant de continuer, il est recommande de creer une sauvegarde de securite.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () {
+              exportData();
+              Navigator.pop(c, false);
+            },
+            child: const Text('Sauvegarder puis annuler'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(c, true),
@@ -1176,10 +1243,25 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final remainingBudget = weeklyTarget - reviewBudget;
     if (active.isNotEmpty && remainingBudget > 0) {
       final weightById = <String, double>{};
+      final now = DateTime.now();
+      DateTime? lastSessionOf(String projectId) {
+        DateTime? latest;
+        for (final s in sessions.where((s) => s.projectId == projectId)) {
+          if (latest == null || s.date.isAfter(latest!)) latest = s.date;
+        }
+        return latest;
+      }
       for (final p in active) {
         final m = multipliers?[p.id] ?? 1.0;
         if (m <= 0) continue;
-        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * m;
+        // V10 : le générateur tient aussi compte de la fréquence de contact.
+        // Un morceau peu travaillé récemment reçoit un bonus, sans écraser
+        // l'avancement ni la priorité.
+        final last = lastSessionOf(p.id);
+        final daysSince = last == null ? 999 : now.difference(last).inDays;
+        final recencyBonus = daysSince >= 14 ? 1.65 : (daysSince >= 7 ? 1.35 : (daysSince >= 3 ? 1.12 : 1.0));
+        final stageBonus = 1.0 + (1.0 - p.weakestStageValue) * .35;
+        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * recencyBonus * stageBonus * m;
       }
       final totalWeight = weightById.values.fold<double>(0, (a, b) => a + b);
       if (totalWeight > 0) {
@@ -1206,13 +1288,21 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   }
 
   /// Minutes deja planifiees cette semaine, regroupees par categorie.
+  /// Note : 'Lecture' et 'Improvisation' restent des categories a part entiere
+  /// partout ailleurs (tag, couleur, icone), mais le moteur de recommandation
+  /// ne raisonne qu'en 4 categories (issues de Project.weakestCategory). On les
+  /// rattache donc ici a leur categorie de recommandation la plus proche
+  /// ('Lecture' -> 'Répertoire', 'Improvisation' -> 'Technique') pour que la
+  /// comparaison recommande/planifie reste juste, sans jamais afficher une
+  /// cible a 0 min pour ces deux categories.
   Map<String, int> get plannedMinutesByCategory {
     final start = startOfWeek(DateTime.now());
     final end = start.add(const Duration(days: 7));
+    const mergeForComparison = {'Lecture': 'Répertoire', 'Improvisation': 'Technique'};
     final map = <String, int>{};
     for (final x in plan) {
       if (x.date.isBefore(start) || !x.date.isBefore(end)) continue;
-      final cat = x.category ?? 'Non catégorisé';
+      final cat = mergeForComparison[x.category] ?? x.category ?? 'Non catégorisé';
       map[cat] = (map[cat] ?? 0) + x.duration;
     }
     return map;
@@ -1354,7 +1444,11 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
       for (final cat in objectiveCategories) {
         if (segment.contains(_fold(cat))) {
-          for (final p in projects.where((p) => p.weakestCategory == cat)) {
+          // 'Lecture' et 'Improvisation' n'existent pas comme etape de morceau
+          // (Project.weakestCategory) : on les fait pointer vers la categorie de
+          // recommandation la plus proche, comme pour plannedMinutesByCategory.
+          final effectiveCat = const {'Lecture': 'Répertoire', 'Improvisation': 'Technique'}[cat] ?? cat;
+          for (final p in projects.where((p) => p.weakestCategory == effectiveCat)) {
             multipliers[p.id] = mult;
           }
         }
@@ -1693,10 +1787,33 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final days = List<DateTime>.generate(7, (i) => weekStart.add(Duration(days: i)));
     final sortedRoutine = [...routine]..sort((a, b) => a.order.compareTo(b.order));
 
+    // Une nouvelle génération remplace les séances non terminées de l'ancien
+    // planning, y compris celles qui sont en retard (ex. 31/8 -> 6/9).
+    // On demande confirmation avant cette opération destructive. Les séances déjà
+    // réalisées restent toujours conservées.
+    final pendingCount = plan.where((x) => !x.completed).length;
+    if (pendingCount > 0) {
+      final replace = await showDialog<bool>(
+        context: navKey.currentContext!,
+        builder: (c) => AlertDialog(
+          title: const Text('Remplacer l’ancien planning ?'),
+          content: Text(
+            '$pendingCount séance${pendingCount > 1 ? 's' : ''} non terminée${pendingCount > 1 ? 's' : ''} vont être remplacée${pendingCount > 1 ? 's' : ''} par le nouveau planning des 7 prochains jours.\n\nLes séances déjà réalisées seront conservées dans l’historique.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remplacer')),
+          ],
+        ),
+      );
+      if (replace != true) return;
+    }
+
     setState(() {
-      // Une nouvelle génération remplace toutes les séances non terminées
-      // de la semaine entière, lundi -> dimanche.
-      plan.removeWhere((x) => !x.completed && !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd));
+      // Repart proprement de zéro pour le planning à venir : toutes les séances
+      // non terminées, quelle que soit leur date, sont supprimées. Les séances
+      // déjà réalisées sont conservées pour l'historique et les statistiques.
+      plan.removeWhere((x) => !x.completed);
 
       // Capacite restante par jour, entamee au fil des deux passes ci-dessous.
       final remainingByDay = {for (final d in days) d: dailyCapacity[d.weekday - 1]};
@@ -2049,12 +2166,24 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         p.handsTogether = s.previousHandsTogether!;
         p.memory = s.previousMemory!;
         p.interpretation = s.previousInterpretation!;
+        // p.progress est un champ stocké indépendant des 4 étapes ci-dessus
+        // (voir ProjectDialog) : sans ce recalcul, il restait figé à l'ancienne
+        // valeur (celle incluant la session qu'on vient de supprimer) pour tout
+        // morceau en mode manuel — _updateAutoProgress() ne s'applique qu'aux
+        // morceaux en mode "heures visées". Cela faussait ensuite le badge
+        // "morceaux terminés", la fiche du morceau et les recommandations.
+        if (p.targetHours == null || p.targetHours! <= 0) {
+          p.progress = (p.reading + p.handsTogether + p.memory + p.interpretation) / 4;
+        }
       }
       if (wasLatestForProject && p != null && s.previousTempo != null) {
         p.currentTempo = s.previousTempo!;
       }
 
       _updateAutoProgress(s.projectId);
+      // Si le morceau repasse sous 100 % suite à cette suppression, on doit
+      // pouvoir re-déclencher la célébration de fin de morceau plus tard.
+      if (p != null && p.progress < 1) p.celebratedComplete = false;
     });
     _persist();
   }
@@ -2768,7 +2897,7 @@ class Home extends StatelessWidget {
     showDialog<void>(
       context: c,
       builder: (dc) => SimpleDialog(
-        title: const Text('Réglages'),
+        title: const Text('Réglages · V11'),
         children: [
           SimpleDialogOption(
             onPressed: () {
@@ -2856,7 +2985,7 @@ class Home extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   const SizedBox(height: 3),
-                  Text(todayItems.isEmpty ? 'Tu peux commencer une session libre.' : '$todayRemaining min à faire', style: const TextStyle(color: Colors.grey)),
+                  Text(todayItems.isEmpty ? 'Tu peux commencer une session libre.' : '$todayRemaining min à faire · ${todayItems.where((x) => x.completed).fold(0, (a, x) => a + x.duration)} min réalisés', style: const TextStyle(color: Colors.grey)),
                 ]),
               ),
               if (todayItems.any((x) => !x.completed))
@@ -2868,7 +2997,65 @@ class Home extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        if (todayItems.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Builder(builder: (c) {
+            final todayTarget = todayItems.fold(0, (a, x) => a + x.duration);
+            final todayDone = todayItems.where((x) => x.completed).fold(0, (a, x) => a + x.duration);
+            final todayRatio = todayTarget == 0 ? 0.0 : (todayDone / todayTarget).clamp(0.0, 1.0).toDouble();
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              progress(todayRatio),
+              const SizedBox(height: 4),
+              Text('${(todayRatio * 100).round()} % de la journée · ${practiceBalanceLabel(practiced: todayDone, target: todayTarget)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ]);
+          }),
+        ],
+        // Répertoire d'entretien : visibilité immédiate des morceaux qui commencent
+        // à être oubliés. Aucun nouveau champ n'est stocké : la date est calculée
+        // directement depuis l'historique réel des sessions.
+        Builder(builder: (c) {
+          final review = projects
+              .where((p) => p.effectiveStatus == 'Répertoire d’entretien')
+              .toList()
+            ..sort((a, b) => daysSinceLastProjectSession(b, sessions)
+                .compareTo(daysSinceLastProjectSession(a, sessions)));
+          if (review.isEmpty) return const SizedBox.shrink();
+          final urgent = review.where((p) => daysSinceLastProjectSession(p, sessions) >= 7).toList();
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Répertoire d’entretien', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            CardBox(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.library_music_outlined, color: Theme.of(c).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    urgent.isEmpty ? 'Tout est à jour' : '${urgent.length} morceau${urgent.length > 1 ? 'x' : ''} à revoir',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  )),
+                  if (urgent.isNotEmpty) Text('${urgent.length}', style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                ]),
+                const SizedBox(height: 10),
+                ...review.take(3).map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    Text(p.emoji, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(reviewDueLabel(p, sessions), style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                    ])),
+                    TextButton(
+                      onPressed: () => onStart(PlanItem(id: newId(), date: DateTime.now(), duration: 20, title: p.name, details: 'Révision · ${nextWorkRecommendation(p)}', projectId: p.id, category: 'Répertoire', method: p.method)),
+                      child: const Text('20 min'),
+                    ),
+                  ]),
+                )),
+              ]),
+            ),
+            const SizedBox(height: 16),
+          ]);
+        }),
         const Text('Semaine en cours', style: TextStyle(color: Colors.grey)),
         if (streak > 0) ...[
           const SizedBox(height: 10),
@@ -3182,6 +3369,12 @@ class Home extends StatelessWidget {
                       ]),
                       const SizedBox(height: 8),
                       progress(p.progress),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        Icon(Icons.lightbulb_outline, size: 15, color: Theme.of(c).colorScheme.primary),
+                        const SizedBox(width: 5),
+                        Expanded(child: Text('À travailler : ${nextWorkRecommendation(p)}', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+                      ]),
                     ],
                   ),
                 ),
@@ -3395,7 +3588,7 @@ class _SessionsState extends State<Sessions> {
           TextField(decoration: const InputDecoration(labelText: 'Rechercher morceau, catégorie, méthode...', prefixIcon: Icon(Icons.search), isDense: true), onChanged: (v) => setState(() => search = v)),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), ...['Technique','Lecture','Mémorisation','Interprétation','Improvisation','Répertoire'].map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
+            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), ...objectiveCategories.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
             DropdownButton<String?>(value: methodFilter, hint: const Text('Méthode'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Toutes les méthodes')), ...methods.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => methodFilter=v)),
             DropdownButton<int>(value: periodDays, items: const [DropdownMenuItem(value:0,child:Text('Toute la période')),DropdownMenuItem(value:7,child:Text('7 derniers jours')),DropdownMenuItem(value:30,child:Text('30 derniers jours'))], onChanged:(v)=>setState(()=>periodDays=v??0)),
             DropdownButton<String>(value: sort, items: const [DropdownMenuItem(value:'recent',child:Text('Plus récentes')),DropdownMenuItem(value:'long',child:Text('Durée longue')),DropdownMenuItem(value:'short',child:Text('Durée courte')),DropdownMenuItem(value:'piece',child:Text('Par morceau'))], onChanged:(v)=>setState(()=>sort=v??'recent')),
@@ -3551,7 +3744,7 @@ class _SessionDialogState extends State<SessionDialog> {
             DropdownButtonFormField<String>(
               value: type,
               decoration: const InputDecoration(labelText: 'Type de travail'),
-              items: ['Technique', 'Lecture', 'Mémorisation', 'Interprétation', 'Improvisation', 'Répertoire']
+              items: objectiveCategories
                   .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                   .toList(),
               onChanged: (v) => setState(() => type = v ?? type),

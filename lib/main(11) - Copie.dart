@@ -4,6 +4,8 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+const String appVersion = '10.0';
+
 void main() => runApp(const PianoPracticeApp());
 
 int _idCounter = 0;
@@ -154,6 +156,8 @@ class Project {
   /// Categorie dominante du morceau, deduite automatiquement de son etape la plus
   /// faible parmi les 4 curseurs — remplace l'ancien besoin de creer un "objectif"
   /// separe juste pour etiqueter un projet.
+  double get weakestStageValue => [reading, handsTogether, memory, interpretation].reduce((a, b) => a < b ? a : b);
+
   String get weakestCategory {
     final dims = <String, double>{
       'Répertoire': reading,
@@ -368,7 +372,7 @@ class MethodDefinition {
   factory MethodDefinition.fromJson(Map<String, dynamic> j) => MethodDefinition(name: j['name'] as String? ?? '', description: j['description'] as String? ?? '', objectives: j['objectives'] as String? ?? '', exercises: j['exercises'] as String? ?? '', durationMinutes: (j['durationMinutes'] as num?)?.toInt() ?? 20, level: j['level'] as String? ?? 'Tous niveaux');
 }
 
-const objectiveCategories = ['Répertoire', 'Technique', 'Mémorisation', 'Interprétation'];
+const objectiveCategories = ['Répertoire', 'Technique', 'Mémorisation', 'Interprétation', 'Lecture', 'Improvisation'];
 
 List<String> learningMethods = ['Playground Sessions', 'MyPianoPop', 'Skoove', 'Pianoforall', 'Udemy'];
 List<MethodDefinition> methodDefinitions = learningMethods.map((n) => MethodDefinition(name: n)).toList();
@@ -383,6 +387,10 @@ Color categoryColor(String? cat) {
       return const Color(0xFFE64A19);
     case 'Interprétation':
       return const Color(0xFF8E24AA);
+    case 'Lecture':
+      return const Color(0xFF1976D2);
+    case 'Improvisation':
+      return const Color(0xFFFFA000);
     default:
       return Colors.blueGrey;
   }
@@ -398,9 +406,61 @@ IconData categoryIcon(String? cat) {
       return Icons.psychology;
     case 'Interprétation':
       return Icons.theater_comedy;
+    case 'Lecture':
+      return Icons.menu_book;
+    case 'Improvisation':
+      return Icons.auto_awesome;
     default:
       return Icons.music_note;
   }
+}
+
+String nextWorkRecommendation(Project p) {
+  final dims = <String, double>{
+    'Lecture / mains séparées': p.reading,
+    'Mains ensemble': p.handsTogether,
+    'Mémorisation': p.memory,
+    'Interprétation': p.interpretation,
+  };
+  final weakest = dims.entries.reduce((a, b) => a.value <= b.value ? a : b);
+  final parts = <String>[];
+  if (p.measures.trim().isNotEmpty) parts.add('Mesures ${p.measures.trim()}');
+  parts.add(weakest.key);
+  if (p.currentTempo > 0 && p.targetTempo > 0 && p.currentTempo < p.targetTempo) {
+    parts.add('${p.currentTempo} → ${p.targetTempo} BPM');
+  }
+  return parts.join(' · ');
+}
+
+int daysSinceLastProjectSession(Project p, List<Session> sessions) {
+  DateTime? latest;
+  for (final s in sessions) {
+    if (s.projectId != p.id) continue;
+    if (latest == null || s.date.isAfter(latest!)) latest = s.date;
+  }
+  if (latest == null) return 999;
+  final today = DateTime.now();
+  final lastDay = DateTime(latest!.year, latest!.month, latest!.day);
+  final todayDay = DateTime(today.year, today.month, today.day);
+  return todayDay.difference(lastDay).inDays;
+}
+
+String reviewDueLabel(Project p, List<Session> sessions) {
+  final days = daysSinceLastProjectSession(p, sessions);
+  if (days >= 14) return 'À revoir maintenant · $days j';
+  if (days >= 7) return 'À revoir cette semaine · $days j';
+  if (days >= 4) return 'À surveiller · $days j';
+  if (days == 0) return 'Vu aujourd’hui';
+  return 'Vu il y a $days j';
+}
+
+String practiceBalanceLabel({required int practiced, required int target}) {
+  if (target <= 0) return 'Aucune cible définie';
+  final ratio = practiced / target;
+  if (ratio >= 1) return 'Objectif atteint 🎯';
+  if (ratio >= .8) return 'Bonne dynamique';
+  if (ratio >= .5) return 'En bonne voie';
+  return 'À renforcer';
 }
 
 DateTime startOfWeek(DateTime d) {
@@ -1069,10 +1129,17 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       builder: (c) => AlertDialog(
         title: const Text('Restaurer cette sauvegarde ?'),
         content: const Text(
-          'Toutes les donnees actuelles (morceaux, sessions, routine, planning) seront remplacees par celles du fichier. Cette action est irreversible.',
+          'Toutes les donnees actuelles (morceaux, sessions, routine, planning) seront remplacees. Avant de continuer, il est recommande de creer une sauvegarde de securite.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () {
+              exportData();
+              Navigator.pop(c, false);
+            },
+            child: const Text('Sauvegarder puis annuler'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(c, true),
@@ -1176,10 +1243,25 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final remainingBudget = weeklyTarget - reviewBudget;
     if (active.isNotEmpty && remainingBudget > 0) {
       final weightById = <String, double>{};
+      final now = DateTime.now();
+      DateTime? lastSessionOf(String projectId) {
+        DateTime? latest;
+        for (final s in sessions.where((s) => s.projectId == projectId)) {
+          if (latest == null || s.date.isAfter(latest!)) latest = s.date;
+        }
+        return latest;
+      }
       for (final p in active) {
         final m = multipliers?[p.id] ?? 1.0;
         if (m <= 0) continue;
-        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * m;
+        // V10 : le générateur tient aussi compte de la fréquence de contact.
+        // Un morceau peu travaillé récemment reçoit un bonus, sans écraser
+        // l'avancement ni la priorité.
+        final last = lastSessionOf(p.id);
+        final daysSince = last == null ? 999 : now.difference(last).inDays;
+        final recencyBonus = daysSince >= 14 ? 1.65 : (daysSince >= 7 ? 1.35 : (daysSince >= 3 ? 1.12 : 1.0));
+        final stageBonus = 1.0 + (1.0 - p.weakestStageValue) * .35;
+        weightById[p.id] = (1 - p.progress) * (p.priority ? 1.75 : 1) * recencyBonus * stageBonus * m;
       }
       final totalWeight = weightById.values.fold<double>(0, (a, b) => a + b);
       if (totalWeight > 0) {
@@ -1206,13 +1288,21 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   }
 
   /// Minutes deja planifiees cette semaine, regroupees par categorie.
+  /// Note : 'Lecture' et 'Improvisation' restent des categories a part entiere
+  /// partout ailleurs (tag, couleur, icone), mais le moteur de recommandation
+  /// ne raisonne qu'en 4 categories (issues de Project.weakestCategory). On les
+  /// rattache donc ici a leur categorie de recommandation la plus proche
+  /// ('Lecture' -> 'Répertoire', 'Improvisation' -> 'Technique') pour que la
+  /// comparaison recommande/planifie reste juste, sans jamais afficher une
+  /// cible a 0 min pour ces deux categories.
   Map<String, int> get plannedMinutesByCategory {
     final start = startOfWeek(DateTime.now());
     final end = start.add(const Duration(days: 7));
+    const mergeForComparison = {'Lecture': 'Répertoire', 'Improvisation': 'Technique'};
     final map = <String, int>{};
     for (final x in plan) {
       if (x.date.isBefore(start) || !x.date.isBefore(end)) continue;
-      final cat = x.category ?? 'Non catégorisé';
+      final cat = mergeForComparison[x.category] ?? x.category ?? 'Non catégorisé';
       map[cat] = (map[cat] ?? 0) + x.duration;
     }
     return map;
@@ -1354,7 +1444,11 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
       for (final cat in objectiveCategories) {
         if (segment.contains(_fold(cat))) {
-          for (final p in projects.where((p) => p.weakestCategory == cat)) {
+          // 'Lecture' et 'Improvisation' n'existent pas comme etape de morceau
+          // (Project.weakestCategory) : on les fait pointer vers la categorie de
+          // recommandation la plus proche, comme pour plannedMinutesByCategory.
+          final effectiveCat = const {'Lecture': 'Répertoire', 'Improvisation': 'Technique'}[cat] ?? cat;
+          for (final p in projects.where((p) => p.weakestCategory == effectiveCat)) {
             multipliers[p.id] = mult;
           }
         }
@@ -1693,10 +1787,33 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final days = List<DateTime>.generate(7, (i) => weekStart.add(Duration(days: i)));
     final sortedRoutine = [...routine]..sort((a, b) => a.order.compareTo(b.order));
 
+    // Une nouvelle génération remplace les séances non terminées de l'ancien
+    // planning, y compris celles qui sont en retard (ex. 31/8 -> 6/9).
+    // On demande confirmation avant cette opération destructive. Les séances déjà
+    // réalisées restent toujours conservées.
+    final pendingCount = plan.where((x) => !x.completed).length;
+    if (pendingCount > 0) {
+      final replace = await showDialog<bool>(
+        context: navKey.currentContext!,
+        builder: (c) => AlertDialog(
+          title: const Text('Remplacer l’ancien planning ?'),
+          content: Text(
+            '$pendingCount séance${pendingCount > 1 ? 's' : ''} non terminée${pendingCount > 1 ? 's' : ''} vont être remplacée${pendingCount > 1 ? 's' : ''} par le nouveau planning des 7 prochains jours.\n\nLes séances déjà réalisées seront conservées dans l’historique.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remplacer')),
+          ],
+        ),
+      );
+      if (replace != true) return;
+    }
+
     setState(() {
-      // Une nouvelle génération remplace toutes les séances non terminées
-      // de la semaine entière, lundi -> dimanche.
-      plan.removeWhere((x) => !x.completed && !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd));
+      // Repart proprement de zéro pour le planning à venir : toutes les séances
+      // non terminées, quelle que soit leur date, sont supprimées. Les séances
+      // déjà réalisées sont conservées pour l'historique et les statistiques.
+      plan.removeWhere((x) => !x.completed);
 
       // Capacite restante par jour, entamee au fil des deux passes ci-dessous.
       final remainingByDay = {for (final d in days) d: dailyCapacity[d.weekday - 1]};
@@ -2049,12 +2166,24 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         p.handsTogether = s.previousHandsTogether!;
         p.memory = s.previousMemory!;
         p.interpretation = s.previousInterpretation!;
+        // p.progress est un champ stocké indépendant des 4 étapes ci-dessus
+        // (voir ProjectDialog) : sans ce recalcul, il restait figé à l'ancienne
+        // valeur (celle incluant la session qu'on vient de supprimer) pour tout
+        // morceau en mode manuel — _updateAutoProgress() ne s'applique qu'aux
+        // morceaux en mode "heures visées". Cela faussait ensuite le badge
+        // "morceaux terminés", la fiche du morceau et les recommandations.
+        if (p.targetHours == null || p.targetHours! <= 0) {
+          p.progress = (p.reading + p.handsTogether + p.memory + p.interpretation) / 4;
+        }
       }
       if (wasLatestForProject && p != null && s.previousTempo != null) {
         p.currentTempo = s.previousTempo!;
       }
 
       _updateAutoProgress(s.projectId);
+      // Si le morceau repasse sous 100 % suite à cette suppression, on doit
+      // pouvoir re-déclencher la célébration de fin de morceau plus tard.
+      if (p != null && p.progress < 1) p.celebratedComplete = false;
     });
     _persist();
   }
@@ -2511,6 +2640,70 @@ class _PracticeTimerScreenState extends State<PracticeTimerScreen> {
 Widget progress(double v) =>
     ClipRRect(borderRadius: BorderRadius.circular(20), child: LinearProgressIndicator(value: v, minHeight: 7));
 
+/// Tuile de statistique compacte (icone encadree + libelle + valeur), reprenant le
+/// meme langage visuel que la zone Tempo de la fiche Morceau (icone dans un badge
+/// colore, libelle discret au-dessus d'une valeur en gras). Reutilisee dans le
+/// Planning et les ecrans de bilan/stats pour harmoniser leur presentation.
+Widget _statTile(BuildContext c, {
+  required IconData icon,
+  required String label,
+  required String value,
+  String? sub,
+  Color? accent,
+  Widget? trailing,
+}) {
+  final scheme = Theme.of(c).colorScheme;
+  final color = accent ?? scheme.primary;
+  return Container(
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      color: scheme.surfaceContainerHighest.withOpacity(.42),
+      border: Border.all(color: scheme.outlineVariant.withOpacity(.45)),
+    ),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Container(
+        width: 38, height: 38, alignment: Alignment.center,
+        decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, size: 19, color: color),
+      ),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        if (sub != null) ...[
+          const SizedBox(height: 1),
+          Text(sub, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+        ],
+      ])),
+      if (trailing != null) trailing,
+    ]),
+  );
+}
+
+/// En-tete de section pour les ecrans de bilan/stats : icone encadree + titre,
+/// meme principe que l'en-tete de la zone Tempo de la fiche Morceau.
+Widget _sectionHeader(BuildContext c, IconData icon, String title, {String? subtitle, Color? accent}) {
+  final scheme = Theme.of(c).colorScheme;
+  final color = accent ?? scheme.primary;
+  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Container(
+      width: 30, height: 30, alignment: Alignment.center,
+      decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(10)),
+      child: Icon(icon, size: 16, color: color),
+    ),
+    const SizedBox(width: 10),
+    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      if (subtitle != null) ...[
+        const SizedBox(height: 2),
+        Text(subtitle, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12)),
+      ],
+    ])),
+  ]);
+}
+
 Widget emptyState(String message) => Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -2704,7 +2897,7 @@ class Home extends StatelessWidget {
     showDialog<void>(
       context: c,
       builder: (dc) => SimpleDialog(
-        title: const Text('Réglages'),
+        title: const Text('Réglages · V11'),
         children: [
           SimpleDialogOption(
             onPressed: () {
@@ -2792,7 +2985,7 @@ class Home extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   const SizedBox(height: 3),
-                  Text(todayItems.isEmpty ? 'Tu peux commencer une session libre.' : '$todayRemaining min à faire', style: const TextStyle(color: Colors.grey)),
+                  Text(todayItems.isEmpty ? 'Tu peux commencer une session libre.' : '$todayRemaining min à faire · ${todayItems.where((x) => x.completed).fold(0, (a, x) => a + x.duration)} min réalisés', style: const TextStyle(color: Colors.grey)),
                 ]),
               ),
               if (todayItems.any((x) => !x.completed))
@@ -2804,7 +2997,65 @@ class Home extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        if (todayItems.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Builder(builder: (c) {
+            final todayTarget = todayItems.fold(0, (a, x) => a + x.duration);
+            final todayDone = todayItems.where((x) => x.completed).fold(0, (a, x) => a + x.duration);
+            final todayRatio = todayTarget == 0 ? 0.0 : (todayDone / todayTarget).clamp(0.0, 1.0).toDouble();
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              progress(todayRatio),
+              const SizedBox(height: 4),
+              Text('${(todayRatio * 100).round()} % de la journée · ${practiceBalanceLabel(practiced: todayDone, target: todayTarget)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ]);
+          }),
+        ],
+        // Répertoire d'entretien : visibilité immédiate des morceaux qui commencent
+        // à être oubliés. Aucun nouveau champ n'est stocké : la date est calculée
+        // directement depuis l'historique réel des sessions.
+        Builder(builder: (c) {
+          final review = projects
+              .where((p) => p.effectiveStatus == 'Répertoire d’entretien')
+              .toList()
+            ..sort((a, b) => daysSinceLastProjectSession(b, sessions)
+                .compareTo(daysSinceLastProjectSession(a, sessions)));
+          if (review.isEmpty) return const SizedBox.shrink();
+          final urgent = review.where((p) => daysSinceLastProjectSession(p, sessions) >= 7).toList();
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Répertoire d’entretien', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            CardBox(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.library_music_outlined, color: Theme.of(c).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    urgent.isEmpty ? 'Tout est à jour' : '${urgent.length} morceau${urgent.length > 1 ? 'x' : ''} à revoir',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  )),
+                  if (urgent.isNotEmpty) Text('${urgent.length}', style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                ]),
+                const SizedBox(height: 10),
+                ...review.take(3).map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    Text(p.emoji, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(reviewDueLabel(p, sessions), style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                    ])),
+                    TextButton(
+                      onPressed: () => onStart(PlanItem(id: newId(), date: DateTime.now(), duration: 20, title: p.name, details: 'Révision · ${nextWorkRecommendation(p)}', projectId: p.id, category: 'Répertoire', method: p.method)),
+                      child: const Text('20 min'),
+                    ),
+                  ]),
+                )),
+              ]),
+            ),
+            const SizedBox(height: 16),
+          ]);
+        }),
         const Text('Semaine en cours', style: TextStyle(color: Colors.grey)),
         if (streak > 0) ...[
           const SizedBox(height: 10),
@@ -2845,7 +3096,7 @@ class Home extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: ratio,
                           strokeWidth: 8,
-                          backgroundColor: Colors.deepPurple.withOpacity(.12),
+                          backgroundColor: Theme.of(c).colorScheme.primary.withOpacity(.12),
                         ),
                       ),
                       Text('${(ratio * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -2879,10 +3130,8 @@ class Home extends StatelessWidget {
             onTap: onOpenBilan,
             child: Row(
               children: [
-                const Icon(Icons.insights, color: Colors.deepPurple),
-                const SizedBox(width: 12),
-                const Expanded(child: Text('Voir mon bilan de la semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                Expanded(child: _sectionHeader(c, Icons.insights, 'Voir mon bilan de la semaine')),
+                Icon(Icons.chevron_right, color: Theme.of(c).colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -2894,7 +3143,7 @@ class Home extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🎯 Défis de la semaine', style: TextStyle(fontWeight: FontWeight.bold)),
+              _sectionHeader(c, Icons.flag_outlined, 'Défis de la semaine'),
                 const SizedBox(height: 12),
                 for (final ch in challenges)
                   Padding(
@@ -2935,15 +3184,10 @@ class Home extends StatelessWidget {
             onTap: onOpenBadges,
             child: Row(
               children: [
-                const Icon(Icons.emoji_events, color: Colors.amber),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Mes badges (${badges.where((b) => b.earned).length}/${badges.length})',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: Colors.grey),
+                Expanded(child: _sectionHeader(c, Icons.emoji_events_outlined,
+                  'Mes badges (${badges.where((b) => b.earned).length}/${badges.length})',
+                  accent: Colors.amber.shade700)),
+                Icon(Icons.chevron_right, color: Theme.of(c).colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -3020,33 +3264,78 @@ class Home extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(child: Text('Programme du jour', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
-                      Text('$todayRemaining min restantes', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      Expanded(child: _sectionHeader(c, Icons.today_outlined, 'Programme du jour')),
+                      Text('$todayRemaining min restantes', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                     ]),
                     const SizedBox(height: 10),
                     ...todayItems.map((item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(children: [
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => onTogglePlan(item),
-                              icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
-                              color: item.completed ? Colors.green : categoryColor(item.category),
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: (item.completed ? Colors.green : categoryColor(item.category)).withOpacity(.12),
+                              ),
+                              child: IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => onTogglePlan(item),
+                                icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
+                                iconSize: item.completed ? 26 : 22,
+                                color: item.completed ? Colors.green.shade600 : categoryColor(item.category),
+                              ),
                             ),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(item.title, style: TextStyle(fontWeight: FontWeight.bold, decoration: item.completed ? TextDecoration.lineThrough : null)),
-                              if (item.details.isNotEmpty) Text(item.details, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                            ])),
-                            if (item.duration > 0) ...[
-                              Text('${item.duration} min'),
-                              const SizedBox(width: 4),
+                            const SizedBox(width: 4),
+                            Expanded(child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                if (item.category != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        color: (item.completed ? Colors.grey : categoryColor(item.category)).withOpacity(.14),
+                                      ),
+                                      child: Text(item.category!, style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: item.completed ? Colors.grey : categoryColor(item.category),
+                                        decoration: item.completed ? TextDecoration.lineThrough : null,
+                                      )),
+                                    ),
+                                  ),
+                                Text(item.title, style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: item.completed ? Colors.grey : null,
+                                  decoration: item.completed ? TextDecoration.lineThrough : null,
+                                )),
+                                if (item.details.isNotEmpty) Text(item.details, style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                  decoration: item.completed ? TextDecoration.lineThrough : null,
+                                )),
+                                if (item.duration > 0) Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    avatar: Icon(Icons.timer_outlined, size: 13, color: item.completed ? Colors.grey : null),
+                                    label: Text('${item.duration} min', style: TextStyle(
+                                      fontSize: 11,
+                                      color: item.completed ? Colors.grey : null,
+                                      decoration: item.completed ? TextDecoration.lineThrough : null,
+                                    )),
+                                  ),
+                                ),
+                              ]),
+                            )),
+                            if (!item.completed)
                               IconButton(
                                 tooltip: 'Démarrer cette séance',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: item.completed ? null : () => onStart(item),
+                                onPressed: () => onStart(item),
                                 icon: const Icon(Icons.play_circle_outline),
                               ),
-                            ],
                           ]),
                         )),
                     const SizedBox(height: 6),
@@ -3080,6 +3369,12 @@ class Home extends StatelessWidget {
                       ]),
                       const SizedBox(height: 8),
                       progress(p.progress),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        Icon(Icons.lightbulb_outline, size: 15, color: Theme.of(c).colorScheme.primary),
+                        const SizedBox(width: 5),
+                        Expanded(child: Text('À travailler : ${nextWorkRecommendation(p)}', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+                      ]),
                     ],
                   ),
                 ),
@@ -3215,7 +3510,10 @@ class _SessionsState extends State<Sessions> {
     final maxValue = days.map((d) => byDay[d] ?? 0).fold<int>(0, (a, b) => a > b ? a : b);
     final total = days.fold<int>(0, (a, d) => a + (byDay[d] ?? 0));
     return CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Expanded(child: Text('📊 Temps de pratique — 7 derniers jours', style: TextStyle(fontWeight: FontWeight.bold))), Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
+      Row(children: [
+        Expanded(child: _sectionHeader(c, Icons.bar_chart_outlined, 'Temps de pratique — 7 derniers jours')),
+        Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+      ]),
       const SizedBox(height: 14),
       SizedBox(height: 150, child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: days.map((d) {
         final value = byDay[d] ?? 0;
@@ -3237,9 +3535,31 @@ class _SessionsState extends State<Sessions> {
     final maxValue = byDay.values.fold<int>(0, (a, b) => a > b ? a : b);
     final total = List.generate(84, (i) => byDay[_day(start.add(Duration(days: i)))] ?? 0).fold<int>(0, (a, b) => a + b);
     return CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Expanded(child: Text('📅 Journal de bord & régularité', style: TextStyle(fontWeight: FontWeight.bold))), Text('Total : ${_mins(total)}')]),
-      const SizedBox(height: 6),
-      Text('🔥 Série actuelle : ${_currentStreak(byDay)} jours   ·   Meilleure série : ${_bestStreak(byDay)} jours', style: const TextStyle(fontWeight: FontWeight.w600)),
+      Row(children: [
+        Expanded(child: _sectionHeader(c, Icons.calendar_view_month_outlined, 'Journal de bord & régularité')),
+        Text('Total : ${_mins(total)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+      ]),
+      const SizedBox(height: 10),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: Colors.deepOrange.withOpacity(.12), borderRadius: BorderRadius.circular(20)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('🔥', style: TextStyle(fontSize: 13)),
+            const SizedBox(width: 5),
+            Text('Série actuelle : ${_currentStreak(byDay)} j', style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.deepOrange, fontSize: 12)),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: Theme.of(c).colorScheme.primary.withOpacity(.12), borderRadius: BorderRadius.circular(20)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.emoji_events_outlined, size: 14, color: Theme.of(c).colorScheme.primary),
+            const SizedBox(width: 5),
+            Text('Meilleure série : ${_bestStreak(byDay)} j', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary, fontSize: 12)),
+          ]),
+        ),
+      ]),
       const SizedBox(height: 14),
       Wrap(spacing: 3, runSpacing: 3, children: List.generate(84, (i) {
         final d = _day(start.add(Duration(days: i)));
@@ -3263,12 +3583,12 @@ class _SessionsState extends State<Sessions> {
         _journal(c, byDay),
         const SizedBox(height: 12),
         CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [const Expanded(child: Text('🔎 Filtrer / trier', style: TextStyle(fontWeight: FontWeight.bold))), if (search.isNotEmpty || typeFilter != null || methodFilter != null || periodDays != 0) TextButton(onPressed: () => setState(() { search=''; typeFilter=null; methodFilter=null; periodDays=0; }), child: const Text('Réinitialiser'))]),
+          Row(children: [Expanded(child: _sectionHeader(c, Icons.filter_alt_outlined, 'Filtrer / trier')), if (search.isNotEmpty || typeFilter != null || methodFilter != null || periodDays != 0) TextButton(onPressed: () => setState(() { search=''; typeFilter=null; methodFilter=null; periodDays=0; }), child: const Text('Réinitialiser'))]),
           const SizedBox(height: 10),
           TextField(decoration: const InputDecoration(labelText: 'Rechercher morceau, catégorie, méthode...', prefixIcon: Icon(Icons.search), isDense: true), onChanged: (v) => setState(() => search = v)),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), ...['Technique','Lecture','Mémorisation','Interprétation','Improvisation','Répertoire'].map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
+            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), ...objectiveCategories.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
             DropdownButton<String?>(value: methodFilter, hint: const Text('Méthode'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Toutes les méthodes')), ...methods.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => methodFilter=v)),
             DropdownButton<int>(value: periodDays, items: const [DropdownMenuItem(value:0,child:Text('Toute la période')),DropdownMenuItem(value:7,child:Text('7 derniers jours')),DropdownMenuItem(value:30,child:Text('30 derniers jours'))], onChanged:(v)=>setState(()=>periodDays=v??0)),
             DropdownButton<String>(value: sort, items: const [DropdownMenuItem(value:'recent',child:Text('Plus récentes')),DropdownMenuItem(value:'long',child:Text('Durée longue')),DropdownMenuItem(value:'short',child:Text('Durée courte')),DropdownMenuItem(value:'piece',child:Text('Par morceau'))], onChanged:(v)=>setState(()=>sort=v??'recent')),
@@ -3278,7 +3598,70 @@ class _SessionsState extends State<Sessions> {
         ])),
         const SizedBox(height: 12),
         if (list.isEmpty) emptyState('Aucune session ne correspond aux critères.')
-        else ...list.map((s) => Padding(padding: const EdgeInsets.only(bottom: 10), child: swipeToDelete(key: ValueKey(s.id), what: 'cette session', onDelete: () => widget.onDelete(s), child: CardBox(child: InkWell(onTap: () => widget.onEdit(s), child: ListTile(contentPadding: EdgeInsets.zero, leading: const CircleAvatar(child: Icon(Icons.music_note)), title: Text(widget.projectById(s.projectId)?.name ?? 'Pratique libre'), subtitle: Text('${s.date.day}/${s.date.month} · ${s.duration} min · ${s.type}${s.method != null ? ' · ${s.method}' : ''}'), trailing: Row(mainAxisSize: MainAxisSize.min, children: [Text('★' * s.rating, style: const TextStyle(color: Colors.amber)), IconButton(icon: const Icon(Icons.delete_outline, size: 20), onPressed: () async { if (await confirmDelete(c, 'cette session')) widget.onDelete(s); })]))))))),
+        else ...list.map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: swipeToDelete(
+                key: ValueKey(s.id),
+                what: 'cette session',
+                onDelete: () => widget.onDelete(s),
+                child: CardBox(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => widget.onEdit(s),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 40, height: 40, alignment: Alignment.center,
+                          decoration: BoxDecoration(color: categoryColor(s.type).withOpacity(.15), borderRadius: BorderRadius.circular(13)),
+                          child: Icon(categoryIcon(s.type), size: 19, color: categoryColor(s.type)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Expanded(child: Text(widget.projectById(s.projectId)?.name ?? 'Pratique libre', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                                if (s.rating > 0) Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 13)),
+                              ]),
+                              const SizedBox(height: 2),
+                              Text('${s.date.day}/${s.date.month}', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
+                              const SizedBox(height: 6),
+                              Wrap(spacing: 6, runSpacing: 6, children: [
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  avatar: const Icon(Icons.timer_outlined, size: 13),
+                                  label: Text('${s.duration} min', style: const TextStyle(fontSize: 11)),
+                                ),
+                                Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  avatar: Icon(categoryIcon(s.type), size: 13, color: categoryColor(s.type)),
+                                  label: Text(s.type, style: const TextStyle(fontSize: 11)),
+                                ),
+                                if (s.method != null)
+                                  Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    avatar: const Icon(Icons.smartphone, size: 13),
+                                    label: Text(s.method!, style: const TextStyle(fontSize: 11)),
+                                  ),
+                              ]),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          tooltip: 'Supprimer',
+                          onPressed: () async {
+                            if (await confirmDelete(c, 'cette session')) widget.onDelete(s);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )),
       ])),
     ]);
   }
@@ -3361,7 +3744,7 @@ class _SessionDialogState extends State<SessionDialog> {
             DropdownButtonFormField<String>(
               value: type,
               decoration: const InputDecoration(labelText: 'Type de travail'),
-              items: ['Technique', 'Lecture', 'Mémorisation', 'Interprétation', 'Improvisation', 'Répertoire']
+              items: objectiveCategories
                   .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                   .toList(),
               onChanged: (v) => setState(() => type = v ?? type),
@@ -3495,8 +3878,8 @@ class _ProjectsState extends State<Projects> {
                                   const Icon(Icons.star, color: Colors.amber, size: 20),
                                   const SizedBox(width: 6),
                                 ],
-                                Expanded(child: Text(p.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                                Text('${(p.progress * 100).round()} %'),
+                                Expanded(child: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
                                 IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 20),
                                   tooltip: 'Supprimer',
@@ -3538,6 +3921,15 @@ class _ProjectsState extends State<Projects> {
                               _stepProgressTile(c, 'Mains ensemble', Icons.pan_tool_alt_outlined, p.handsTogether),
                               _stepProgressTile(c, 'Mémorisation', Icons.psychology_outlined, p.memory),
                               _stepProgressTile(c, 'Interprétation', Icons.music_note_outlined, p.interpretation),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                                child: Row(children: [
+                                  Icon(Icons.trending_up, size: 15, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                  const SizedBox(width: 6),
+                                  Text('À renforcer : ${_weakestStepLabel(p)}',
+                                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                                ]),
+                              ),
                               if (p.currentTempo > 0 || p.targetTempo > 0 || p.measures.isNotEmpty) ...[
                                 const SizedBox(height: 12),
                                 Container(
@@ -3561,6 +3953,17 @@ class _ProjectsState extends State<Projects> {
                                       if (p.currentTempo > 0 && p.targetTempo > 0) ...[
                                         const SizedBox(height: 6),
                                         ClipRRect(borderRadius: BorderRadius.circular(5), child: LinearProgressIndicator(value: (p.currentTempo / p.targetTempo).clamp(0.0, 1.0), minHeight: 5)),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          p.currentTempo >= p.targetTempo
+                                              ? '🎯 Objectif de tempo atteint'
+                                              : '${p.targetTempo - p.currentTempo} BPM restants',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: p.currentTempo >= p.targetTempo ? FontWeight.w700 : FontWeight.normal,
+                                            color: p.currentTempo >= p.targetTempo ? Colors.green.shade700 : Theme.of(c).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
                                       ],
                                     ])),
                                     if (p.measures.isNotEmpty) ...[
@@ -3608,37 +4011,77 @@ class _ProjectsState extends State<Projects> {
   }
 }
 
-Widget _progressSlider(String label, double value, ValueChanged<double> onChanged) => Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+Widget _progressSlider(String label, double value, ValueChanged<double> onChanged) {
+  final parts = label.trim().split(RegExp(r'\s+'));
+  final iconText = parts.isNotEmpty && parts.first.length <= 2 ? parts.first : '🎵';
+  final title = parts.length > 1 ? parts.sublist(1).join(' ') : label;
+  final pct = (value * 100).round();
+
+  return Builder(builder: (c) {
+    final scheme = Theme.of(c).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 6),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.grey.withOpacity(.07),
+        borderRadius: BorderRadius.circular(16),
+        color: scheme.surfaceContainerHighest.withOpacity(.42),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(.45)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
-            Text('${(value * 100).round()}%', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-          ]),
-          Slider(value: value, onChanged: onChanged),
-        ],
-      ),
+      child: Column(children: [
+        Row(children: [
+          Container(width: 34, height: 34, alignment: Alignment.center,
+            decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
+            child: Text(iconText, style: const TextStyle(fontSize: 18))),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+          Text('$pct %', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.primary)),
+        ]),
+        Slider(value: value.clamp(0.0, 1.0), onChanged: onChanged, padding: const EdgeInsets.only(top: 4)),
+      ]),
     );
+  });
+}
 
 Widget _stepProgressTile(BuildContext c, String label, IconData icon, double value) {
+  final scheme = Theme.of(c).colorScheme;
   final pct = (value * 100).round();
   return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.only(bottom: 9),
     child: Row(children: [
-      SizedBox(width: 28, child: Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary)),
-      SizedBox(width: 118, child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-      Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(5), child: LinearProgressIndicator(value: value, minHeight: 7))),
-      const SizedBox(width: 8),
-      SizedBox(width: 38, child: Text('$pct%', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))),
+      Container(width: 30, height: 30, alignment: Alignment.center,
+        decoration: BoxDecoration(color: scheme.primaryContainer.withOpacity(.75), borderRadius: BorderRadius.circular(9)),
+        child: Icon(icon, size: 17, color: scheme.primary)),
+      const SizedBox(width: 9),
+      SizedBox(width: 112, child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+      Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(6),
+        child: LinearProgressIndicator(value: value.clamp(0.0, 1.0), minHeight: 8))),
+      const SizedBox(width: 9),
+      SizedBox(width: 38, child: Text('$pct %', textAlign: TextAlign.right,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))),
     ]),
   );
+}
+
+/// Etape la plus faible parmi les 4 curseurs du morceau, avec les memes libelles
+/// que ceux affiches dans la fiche (_stepProgressTile) — volontairement distinct
+/// de Project.weakestCategory, qui utilise la taxonomie des categories de
+/// planning/sessions (Répertoire, Technique...) et n'a pas les memes libelles.
+String _weakestStepLabel(Project p) {
+  final steps = <String, double>{
+    'Lecture': p.reading,
+    'Mains ensemble': p.handsTogether,
+    'Mémorisation': p.memory,
+    'Interprétation': p.interpretation,
+  };
+  var label = 'Lecture';
+  var lowest = steps[label]!;
+  for (final e in steps.entries) {
+    if (e.value < lowest) {
+      lowest = e.value;
+      label = e.key;
+    }
+  }
+  return label;
 }
 
 class _DetailedProgressResult {
@@ -3688,51 +4131,119 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
 
   @override
   Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final avg = (reading + handsTogether + memory + interpretation) / 4;
+    final currentTempo = widget.project.currentTempo;
+    final targetTempo = widget.project.targetTempo;
+    final tempoProgress = currentTempo > 0 && targetTempo > 0
+        ? (currentTempo / targetTempo).clamp(0.0, 1.0)
+        : 0.0;
+
     return AlertDialog(
-      title: Text('Avancement de ${widget.project.name}'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
+      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+      title: Row(children: [
+        Text(widget.project.emoji, style: const TextStyle(fontSize: 27)),
+        const SizedBox(width: 10),
+        Expanded(child: Text(widget.project.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800))),
+      ]),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Session terminée. Tu peux mettre à jour les étapes du morceau maintenant.\n\n'
-              'Ces informations sont conservées même si l’avancement automatique est activé.',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            _progressSlider('📖  Lecture / mains séparées', reading, (v) => setState(() => reading = v)),
-            _progressSlider('🤝  Mains ensemble', handsTogether, (v) => setState(() => handsTogether = v)),
-            _progressSlider('🧠  Mémorisation', memory, (v) => setState(() => memory = v)),
-            _progressSlider('🎭  Interprétation', interpretation, (v) => setState(() => interpretation = v)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: tempoCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Tempo atteint aujourd’hui (BPM)',
-                hintText: 'Laisser vide si non applicable',
+            Text('Bilan de la session', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.primary)),
+            const SizedBox(height: 5),
+            Text('Mets à jour ce qui a réellement progressé aujourd’hui. Ces données restent disponibles même avec l’avancement automatique.',
+              style: TextStyle(fontSize: 12.5, height: 1.35, color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: scheme.primaryContainer.withOpacity(.45),
+                border: Border.all(color: scheme.primary.withOpacity(.15)),
               ),
+              child: Row(children: [
+                SizedBox(width: 58, height: 58, child: Stack(alignment: Alignment.center, children: [
+                  CircularProgressIndicator(value: avg.clamp(0.0, 1.0), strokeWidth: 6, backgroundColor: scheme.surface.withOpacity(.7)),
+                  Text('${(avg * 100).round()}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.primary)),
+                ])),
+                const SizedBox(width: 13),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Progression des étapes', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 3),
+                  Text('Ajuste uniquement les étapes qui ont changé.',
+                    style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                ])),
+              ]),
+            ),
+            const SizedBox(height: 14),
+            _progressSlider('📖 Lecture / mains séparées', reading, (v) => setState(() => reading = v)),
+            _progressSlider('🤝 Mains ensemble', handsTogether, (v) => setState(() => handsTogether = v)),
+            _progressSlider('🧠 Mémorisation', memory, (v) => setState(() => memory = v)),
+            _progressSlider('🎭 Interprétation', interpretation, (v) => setState(() => interpretation = v)),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: scheme.surfaceContainerHighest.withOpacity(.42),
+                border: Border.all(color: scheme.outlineVariant.withOpacity(.45)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.speed_outlined, size: 20, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Tempo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+                  if (currentTempo > 0) Text(
+                    targetTempo > 0 ? '$currentTempo → $targetTempo BPM' : '$currentTempo BPM',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: scheme.primary)),
+                ]),
+                if (currentTempo > 0 && targetTempo > 0) ...[
+                  const SizedBox(height: 9),
+                  ClipRRect(borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(value: tempoProgress, minHeight: 7)),
+                  const SizedBox(height: 4),
+                  Text(
+                    tempoProgress >= 1 ? '🎯 Objectif de tempo atteint' : '${targetTempo - currentTempo} BPM restants',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: tempoProgress >= 1 ? FontWeight.w700 : FontWeight.normal,
+                      color: tempoProgress >= 1 ? Colors.green.shade700 : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: tempoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Tempo atteint aujourd’hui',
+                    suffixText: 'BPM',
+                    hintText: targetTempo > 0 ? 'Cible : $targetTempo BPM' : 'Laisser vide si non applicable',
+                    prefixIcon: const Icon(Icons.music_note_outlined),
+                  ),
+                ),
+              ]),
             ),
           ],
-        ),
+        )),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c), child: const Text('Plus tard')),
-        FilledButton(
+        FilledButton.icon(
           onPressed: () {
             final tempo = int.tryParse(tempoCtrl.text) ?? 0;
-            Navigator.pop(
-              c,
-              _DetailedProgressResult(
-                reading: reading,
-                handsTogether: handsTogether,
-                memory: memory,
-                interpretation: interpretation,
-                tempo: tempo,
-              ),
-            );
+            Navigator.pop(c, _DetailedProgressResult(
+              reading: reading, handsTogether: handsTogether, memory: memory,
+              interpretation: interpretation, tempo: tempo,
+            ));
           },
-          child: const Text('Enregistrer'),
+          icon: const Icon(Icons.check),
+          label: const Text('Enregistrer'),
         ),
       ],
     );
@@ -4174,22 +4685,25 @@ class _WeekState extends State<Week> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      const Expanded(child: Text('Pratiqué cette semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Text('${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}'),
-                    ]),
-                    const SizedBox(height: 10),
+                    _statTile(
+                      c,
+                      icon: Icons.timer_outlined,
+                      label: 'Pratiqué cette semaine',
+                      value: '${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}',
+                    ),
+                    const SizedBox(height: 12),
                     progress((widget.minutes / widget.weeklyTarget).clamp(0, 1).toDouble()),
                     if (cats.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      const Text('Répartition recommandée vs planifiée', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Basée sur l\'avancement de tes morceaux : les moins avancés (et les morceaux prioritaires) reçoivent plus de temps.',
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
+                      const SizedBox(height: 22),
+                      _sectionHeader(c, Icons.pie_chart_outline, 'Répartition recommandée vs planifiée',
+                        subtitle: 'Basée sur l\'avancement de tes morceaux : les moins avancés (et les morceaux prioritaires) reçoivent plus de temps.'),
                       const SizedBox(height: 14),
-                      ...cats.map((cat) => categoryComparisonRow(cat, widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0)),
+                      ...(() {
+                        final sharedMax = cats
+                            .map((cat) => [widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0].reduce((a, b) => a > b ? a : b))
+                            .fold<int>(1, (a, b) => b > a ? b : a);
+                        return cats.map((cat) => categoryComparisonRow(cat, widget.planned[cat] ?? 0, widget.recommended[cat] ?? 0, sharedMax));
+                      })(),
                     ],
                     const SizedBox(height: 4),
                     Align(
@@ -4209,7 +4723,7 @@ class _WeekState extends State<Week> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(child: Text('Filtrer les séances', style: TextStyle(fontWeight: FontWeight.bold))),
+                      Expanded(child: _sectionHeader(c, Icons.filter_alt_outlined, 'Filtrer les séances')),
                       if (filterActive)
                         TextButton(
                           onPressed: () => setState(() {
@@ -4276,31 +4790,88 @@ class _WeekState extends State<Week> {
                               onDelete: () => widget.onDelete(x),
                               child: CardBox(
                                 child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    IconButton(
-                                      onPressed: () => widget.onToggle(x),
-                                      icon: Icon(x.completed ? Icons.check_circle : Icons.circle_outlined),
-                                      color: x.completed ? Colors.green : categoryColor(x.category),
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 2),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: (x.completed ? Colors.green : categoryColor(x.category)).withOpacity(.12),
+                                      ),
+                                      child: IconButton(
+                                        onPressed: () => widget.onToggle(x),
+                                        icon: Icon(x.completed ? Icons.check_circle : Icons.circle_outlined),
+                                        iconSize: x.completed ? 30 : 24,
+                                        color: x.completed ? Colors.green.shade600 : categoryColor(x.category),
+                                      ),
                                     ),
+                                    const SizedBox(width: 4),
                                     Expanded(
                                       child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
                                         onTap: () => widget.onEdit(x),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(children: [
-                                              Icon(categoryIcon(x.category), size: 14, color: categoryColor(x.category)),
-                                              const SizedBox(width: 4),
-                                              Text(x.category ?? 'Non catégorisé', style: TextStyle(fontSize: 12, color: categoryColor(x.category))),
-                                            ]),
-                                            Text(x.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                            if (x.details.isNotEmpty) Text(x.details, style: const TextStyle(color: Colors.grey)),
-                                            if (x.duration > 0 || x.method != null)
-                                              Text([
-                                                if (x.duration > 0) '${x.duration} min',
-                                                if (x.method != null) x.method!,
-                                              ].join(' · ')),
-                                            if (!x.completed && x.duration > 0) ...[
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 6),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                  color: (x.completed ? Colors.grey : categoryColor(x.category)).withOpacity(.14),
+                                                ),
+                                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                                  Icon(categoryIcon(x.category), size: 13, color: x.completed ? Colors.grey : categoryColor(x.category)),
+                                                  const SizedBox(width: 4),
+                                                  Text(x.category ?? 'Non catégorisé', style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: x.completed ? Colors.grey : categoryColor(x.category),
+                                                    decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                  )),
+                                                ]),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(x.title, style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: x.completed ? Colors.grey : null,
+                                                decoration: x.completed ? TextDecoration.lineThrough : null,
+                                              )),
+                                              if (x.details.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                Text(x.details, style: TextStyle(
+                                                  color: Colors.grey,
+                                                  decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                )),
+                                              ],
+                                              if (x.duration > 0 || x.method != null) ...[
+                                                const SizedBox(height: 6),
+                                                Wrap(spacing: 6, runSpacing: 6, children: [
+                                                  if (x.duration > 0)
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text('${x.duration} min', style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
+                                                  if (x.method != null)
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.smartphone, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text(x.method!, style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
+                                                ]),
+                                              ],
+                                            if (!x.completed) ...[
                                               const SizedBox(height: 6),
                                               Align(
                                                 alignment: Alignment.centerLeft,
@@ -4330,6 +4901,7 @@ class _WeekState extends State<Week> {
                                             ],
                                           ],
                                         ),
+                                      ),
                                       ),
                                     ),
                                     IconButton(
@@ -4362,8 +4934,8 @@ class _WeekState extends State<Week> {
   }
 }
 
-Widget categoryComparisonRow(String cat, int plannedMin, int targetMin) {
-  final maxVal = [plannedMin, targetMin, 1].reduce((a, b) => a > b ? a : b).toDouble();
+Widget categoryComparisonRow(String cat, int plannedMin, int targetMin, int sharedMax) {
+  final maxVal = sharedMax.toDouble();
   return Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: Column(
@@ -4516,14 +5088,24 @@ class _BilanScreenState extends State<BilanScreen> {
         Text('${start.day}/${start.month} → ${end.day}/${end.month}', style: const TextStyle(color: Colors.grey)),
         const SizedBox(height: 16),
         CardBox(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Text('Temps pratiqué', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(
-                '${bilan.totalMinutes ~/ 60}h${(bilan.totalMinutes % 60).toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              Container(
+                width: 52, height: 52, alignment: Alignment.center,
+                decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(16)),
+                child: Icon(Icons.timer_outlined, size: 26, color: Theme.of(c).colorScheme.primary),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Temps pratiqué', style: TextStyle(fontSize: 13, color: Theme.of(c).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                  Text(
+                    '${bilan.totalMinutes ~/ 60}h${(bilan.totalMinutes % 60).toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+                  ),
+                ],
               ),
             ],
           ),
@@ -4534,11 +5116,9 @@ class _BilanScreenState extends State<BilanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${bilan.pieces.length} morceau${bilan.pieces.length > 1 ? 'x' : ''} travaillé${bilan.pieces.length > 1 ? 's' : ''}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
+                _sectionHeader(c, Icons.music_note_outlined,
+                  '${bilan.pieces.length} morceau${bilan.pieces.length > 1 ? 'x' : ''} travaillé${bilan.pieces.length > 1 ? 's' : ''}'),
+                const SizedBox(height: 14),
                 for (final e in bilan.pieces)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -4546,8 +5126,8 @@ class _BilanScreenState extends State<BilanScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          Expanded(child: Text(e.key.name)),
-                          Text('${e.value} min', style: const TextStyle(color: Colors.grey)),
+                          Expanded(child: Text(e.key.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                          Text('${e.value} min', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                         ]),
                         const SizedBox(height: 4),
                         progress(e.key.progress),
@@ -4560,32 +5140,20 @@ class _BilanScreenState extends State<BilanScreen> {
         const SizedBox(height: 16),
         Row(children: [
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Meilleur jour', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    bilan.bestDay != null ? _weekdayNamesFull[bilan.bestDay!.weekday - 1] : '—',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  Text(bilan.bestDay != null ? '${bilan.bestDayMinutes} min' : ''),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.emoji_events_outlined,
+              label: 'Meilleur jour',
+              value: bilan.bestDay != null ? _weekdayNamesFull[bilan.bestDay!.weekday - 1] : '—',
+              sub: bilan.bestDay != null ? '${bilan.bestDayMinutes} min' : null,
+              accent: Colors.amber.shade700,
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Jours pratiqués', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text('${bilan.daysPracticed} / 7', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.calendar_month_outlined,
+              label: 'Jours pratiqués',
+              value: '${bilan.daysPracticed} / 7',
             ),
           ),
         ]),
@@ -4593,8 +5161,14 @@ class _BilanScreenState extends State<BilanScreen> {
           const SizedBox(height: 16),
           CardBox(
             child: Row(children: [
-              const Expanded(child: Text('Ressenti moyen de la semaine', style: TextStyle(fontWeight: FontWeight.bold))),
-              Text('★' * bilan.avgRating!.round(), style: const TextStyle(color: Colors.amber)),
+              Container(
+                width: 38, height: 38, alignment: Alignment.center,
+                decoration: BoxDecoration(color: Colors.amber.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.star_rounded, size: 20, color: Colors.amber),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(child: Text('Ressenti moyen de la semaine', style: TextStyle(fontWeight: FontWeight.w700))),
+              Text('★' * bilan.avgRating!.round(), style: const TextStyle(color: Colors.amber, fontSize: 16)),
             ]),
           ),
         ],
@@ -4603,12 +5177,8 @@ class _BilanScreenState extends State<BilanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Orienter la semaine prochaine', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              const Text(
-                'Ajoute une priorité à tes consignes de planning pour la prochaine génération.',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
+              _sectionHeader(c, Icons.flag_outlined, 'Orienter la semaine prochaine',
+                subtitle: 'Ajoute une priorité à tes consignes de planning pour la prochaine génération.'),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -4684,42 +5254,19 @@ class _BilanScreenState extends State<BilanScreen> {
         const SizedBox(height: 16),
         Row(children: [
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Moyenne / semaine', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${avgPerWeek ~/ 60}h${(avgPerWeek % 60).round().toString().padLeft(2, '0')}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ],
-              ),
+            child: _statTile(c,
+              icon: Icons.bar_chart_outlined,
+              label: 'Moyenne / semaine',
+              value: '${avgPerWeek ~/ 60}h${(avgPerWeek % 60).round().toString().padLeft(2, '0')}',
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: CardBox(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Tendance', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Icon(
-                      trendUp ? Icons.trending_up : (trendDown ? Icons.trending_down : Icons.trending_flat),
-                      color: trendUp ? Colors.green : (trendDown ? Colors.deepOrange : Colors.grey),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      trendUp ? 'En hausse' : (trendDown ? 'En baisse' : 'Stable'),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  ]),
-                ],
-              ),
+            child: _statTile(c,
+              icon: trendUp ? Icons.trending_up : (trendDown ? Icons.trending_down : Icons.trending_flat),
+              label: 'Tendance',
+              value: trendUp ? 'En hausse' : (trendDown ? 'En baisse' : 'Stable'),
+              accent: trendUp ? Colors.green.shade600 : (trendDown ? Colors.deepOrange : Colors.grey),
             ),
           ),
         ]),
@@ -4728,7 +5275,7 @@ class _BilanScreenState extends State<BilanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Minutes pratiquées par semaine', style: TextStyle(fontWeight: FontWeight.bold)),
+              _sectionHeader(c, Icons.show_chart, 'Minutes pratiquées par semaine'),
               const SizedBox(height: 16),
               SizedBox(
                 height: 140,
@@ -4754,7 +5301,9 @@ class _BilanScreenState extends State<BilanScreen> {
                                         heightFactor: ratio,
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: w.weekStart == history.last.weekStart ? Colors.deepPurple : Colors.deepPurple.withOpacity(.45),
+                                            color: w.weekStart == history.last.weekStart
+                                                ? Theme.of(c).colorScheme.primary
+                                                : Theme.of(c).colorScheme.primary.withOpacity(.35),
                                             borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                                           ),
                                         ),
@@ -4785,12 +5334,8 @@ class _BilanScreenState extends State<BilanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Répartition par morceau', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(
-                  'Sur les $selectedWeeks dernières semaines',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
+                _sectionHeader(c, Icons.pie_chart_outline, 'Répartition par morceau',
+                  subtitle: 'Sur les $selectedWeeks dernières semaines'),
                 const SizedBox(height: 14),
                 for (final id in topProjects)
                   Padding(
@@ -4891,39 +5436,19 @@ class TempoHistoryScreen extends StatelessWidget {
         children: [
           Row(children: [
             Expanded(
-              child: CardBox(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Tempo actuel', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text('$last BPM', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                  ],
-                ),
+              child: _statTile(c,
+                icon: Icons.speed_outlined,
+                label: 'Tempo actuel',
+                value: '$last BPM',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: CardBox(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Depuis le premier relevé', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      Icon(
-                        gained > 0 ? Icons.trending_up : (gained < 0 ? Icons.trending_down : Icons.trending_flat),
-                        color: gained > 0 ? Colors.green : (gained < 0 ? Colors.deepOrange : Colors.grey),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${gained > 0 ? '+' : ''}$gained BPM',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ]),
-                  ],
-                ),
+              child: _statTile(c,
+                icon: gained > 0 ? Icons.trending_up : (gained < 0 ? Icons.trending_down : Icons.trending_flat),
+                label: 'Depuis le premier relevé',
+                value: '${gained > 0 ? '+' : ''}$gained BPM',
+                accent: gained > 0 ? Colors.green.shade600 : (gained < 0 ? Colors.deepOrange : Colors.grey),
               ),
             ),
           ]),
@@ -4932,11 +5457,8 @@ class TempoHistoryScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Évolution du tempo', style: TextStyle(fontWeight: FontWeight.bold)),
-                if (targetTempo > 0) ...[
-                  const SizedBox(height: 2),
-                  Text('Ligne repère : objectif à $targetTempo BPM', style: const TextStyle(color: Colors.amber, fontSize: 12)),
-                ],
+                _sectionHeader(c, Icons.show_chart, 'Évolution du tempo',
+                  subtitle: targetTempo > 0 ? 'Ligne repère : objectif à $targetTempo BPM' : null),
                 const SizedBox(height: 16),
                 // Rangee des valeurs, au-dessus de chaque barre.
                 Row(
@@ -5045,20 +5567,31 @@ class MethodsScreen extends StatelessWidget {
     appBar: AppBar(title: const Text('Méthodes'), actions: [IconButton(onPressed: onAdd, icon: const Icon(Icons.add))]),
     body: methods.isEmpty ? Center(child: FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Créer une méthode'))) : ListView.separated(
       padding: const EdgeInsets.all(16), itemCount: methods.length, separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) { final m = methods[i]; return Card(child: ExpansionTile(
-        leading: const Icon(Icons.menu_book), title: Text(m.name), subtitle: Text('${m.level} · ${m.durationMinutes} min'),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemBuilder: (_, i) { final m = methods[i]; return CardBox(child: Theme(
+        data: Theme.of(c).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 10),
+          shape: const RoundedRectangleBorder(side: BorderSide.none),
+          collapsedShape: const RoundedRectangleBorder(side: BorderSide.none),
+          leading: Container(
+            width: 38, height: 38, alignment: Alignment.center,
+            decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.menu_book_outlined, size: 18, color: Theme.of(c).colorScheme.primary),
+          ),
+          title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('${m.level} · ${m.durationMinutes} min', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
         children: [
-          if (m.description.isNotEmpty) _info('Description', m.description),
-          if (m.objectives.isNotEmpty) _info('Objectifs', m.objectives),
-          if (m.exercises.isNotEmpty) _info('Exercices / déroulé', m.exercises),
+          if (m.description.isNotEmpty) _info(c, 'Description', m.description),
+          if (m.objectives.isNotEmpty) _info(c, 'Objectifs', m.objectives),
+          if (m.exercises.isNotEmpty) _info(c, 'Exercices / déroulé', m.exercises),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [TextButton.icon(onPressed: () => onEdit(m), icon: const Icon(Icons.edit_outlined), label: const Text('Modifier')), TextButton.icon(onPressed: () => onDelete(m), icon: const Icon(Icons.delete_outline), label: const Text('Supprimer'))]),
         ],
-      )); },
+      ))); },
     ),
     floatingActionButton: FloatingActionButton(onPressed: onAdd, child: const Icon(Icons.add)),
   );
-  static Widget _info(String title, String value) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Align(alignment: Alignment.centerLeft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 3), Text(value)])));
+  static Widget _info(BuildContext c, String title, String value) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Align(alignment: Alignment.centerLeft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)), const SizedBox(height: 3), Text(value)])));
 }
 
 class RoutineScreen extends StatelessWidget {
@@ -5148,14 +5681,18 @@ class RoutineScreen extends StatelessWidget {
                                   ],
                                 ),
                                 const SizedBox(width: 4),
-                                Icon(Icons.circle, size: 12, color: color),
+                                Container(
+                                  width: 34, height: 34, alignment: Alignment.center,
+                                  decoration: BoxDecoration(color: color.withOpacity(.15), borderRadius: BorderRadius.circular(11)),
+                                  child: Icon(Icons.repeat, size: 16, color: color),
+                                ),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(item.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      Text(_summary(item), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                      Text(item.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                      Text(_summary(item), style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
                                     ],
                                   ),
                                 ),
