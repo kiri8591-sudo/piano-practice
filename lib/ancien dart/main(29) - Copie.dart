@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '42.0';
+const String appVersion = '29.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -280,13 +280,7 @@ class Session {
     this.previousInterpretation,
     this.previousTempo,
     this.newTempo,
-    this.newReading,
-    this.newHandsTogether,
-    this.newMemory,
-    this.newInterpretation,
     this.coachFeeling,
-    this.coachFocus,
-    this.coachRecommendation,
   });
   final String id;
   DateTime date;
@@ -311,18 +305,9 @@ class Session {
   int? previousTempo;
   int? newTempo;
 
-  // Etat des 4 etapes APRES cette session. Ces valeurs permettent de reconstruire
-  // l'evolution reelle du morceau dans le temps, meme si l'avancement global est automatique.
-  double? newReading;
-  double? newHandsTogether;
-  double? newMemory;
-  double? newInterpretation;
-
   // Retour rapide donne par l'utilisateur a la fin de la session :
   // facile / correct / difficile. Utilise par le coach pour les prochaines recommandations.
   String? coachFeeling;
-  String? coachFocus;
-  String? coachRecommendation;
 
   bool get hasProgressSnapshot =>
       previousReading != null &&
@@ -345,13 +330,7 @@ class Session {
         'previousInterpretation': previousInterpretation,
         'previousTempo': previousTempo,
         'newTempo': newTempo,
-        'newReading': newReading,
-        'newHandsTogether': newHandsTogether,
-        'newMemory': newMemory,
-        'newInterpretation': newInterpretation,
         'coachFeeling': coachFeeling,
-        'coachFocus': coachFocus,
-        'coachRecommendation': coachRecommendation,
       };
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
@@ -369,13 +348,6 @@ class Session {
         previousInterpretation: (j['previousInterpretation'] as num?)?.toDouble(),
         previousTempo: (j['previousTempo'] as num?)?.toInt(),
         newTempo: (j['newTempo'] as num?)?.toInt(),
-        newReading: (j['newReading'] as num?)?.toDouble(),
-        newHandsTogether: (j['newHandsTogether'] as num?)?.toDouble(),
-        newMemory: (j['newMemory'] as num?)?.toDouble(),
-        newInterpretation: (j['newInterpretation'] as num?)?.toDouble(),
-        coachFeeling: j['coachFeeling'] as String?,
-        coachFocus: j['coachFocus'] as String?,
-        coachRecommendation: j['coachRecommendation'] as String?,
       );
 }
 
@@ -2448,10 +2420,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       p.interpretation = result.interpretation;
       if (result.tempo > 0) p.currentTempo = result.tempo;
       session.newTempo = result.tempo > 0 ? result.tempo : null;
-      session.newReading = result.reading;
-      session.newHandsTogether = result.handsTogether;
-      session.newMemory = result.memory;
-      session.newInterpretation = result.interpretation;
     });
     _persist();
   }
@@ -2516,8 +2484,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     );
     if (feeling == null) return;
     session.coachFeeling = feeling;
-    session.coachFocus = p.effectiveWorkFocus;
-    session.coachRecommendation = recommendation(feeling);
     await _persist();
 
     final labels = {'facile': '😊 Facile', 'correct': '😐 Correct', 'difficile': '😓 Difficile'};
@@ -2601,19 +2567,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
   }
 
-  Future<void> _scheduleCoachSession(PlanItem item) async {
-    setState(() {
-      plan.add(item);
-      plan.sort((a, b) => a.date.compareTo(b.date));
-    });
-    _persist();
-    if (navKey.currentContext != null) {
-      ScaffoldMessenger.of(navKey.currentContext!).showSnackBar(
-        SnackBar(content: Text('Séance ajoutée au planning : ${item.date.day}/${item.date.month} · ${item.duration} min')),
-      );
-    }
-  }
-
   Future<void> addOrEditProject([Project? existing]) async {
     final totalMinutes = existing == null
         ? 0
@@ -2623,7 +2576,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         : (sessions.where((s) => s.projectId == existing.id).toList()..sort((a, b) => b.date.compareTo(a.date)));
     final r = await showDialog<Project>(
       context: navKey.currentContext!,
-      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions, onScheduleCoachSession: _scheduleCoachSession),
+      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions),
     );
     if (r == null) return;
     setState(() {
@@ -2799,7 +2752,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onEdit: addOrEditSession,
         onDelete: deleteSession,
         projectById: projectById,
-        onOpenProject: (p) => addOrEditProject(p),
       ),
       Projects(items: projects, onAdd: () => addOrEditProject(), onEdit: addOrEditProject, onDelete: deleteProject),
       Week(
@@ -3906,14 +3858,14 @@ class CoachHome extends StatelessWidget {
         .where((s) => s.projectId == projectId && s.coachFeeling != null)
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-    return recent.take(3).where((s) => s.coachFeeling == 'difficile').length;
+    return recent.take(3).where((s) => s.coachFeeling == 'Difficile').length;
   }
 
   String _feelingLabel(String? feeling) {
     switch (feeling) {
-      case 'facile': return '😊 Facile';
-      case 'difficile': return '😓 Difficile';
-      case 'correct': return '😐 Correct';
+      case 'Facile': return '😊 Facile';
+      case 'Difficile': return '😓 Difficile';
+      case 'Correct': return '😐 Correct';
       default: return '';
     }
   }
@@ -3922,9 +3874,9 @@ class CoachHome extends StatelessWidget {
     final last = _lastFeeling(p.id);
     final difficult = _recentDifficultSessions(p.id);
     if (difficult >= 2) return 'Le coach allège la prochaine reprise : petit passage, tempo confortable, puis progression.';
-    if (last == 'difficile') return 'Dernière séance difficile : on consolide avant d’augmenter la difficulté.';
-    if (last == 'facile') return 'Dernière séance facile : tu peux légèrement augmenter la difficulté ou le tempo.';
-    if (last == 'correct') return 'Dernière séance correcte : on consolide encore avant de pousser.';
+    if (last == 'Difficile') return 'Dernière séance difficile : on consolide avant d’augmenter la difficulté.';
+    if (last == 'Facile') return 'Dernière séance facile : tu peux légèrement augmenter la difficulté ou le tempo.';
+    if (last == 'Correct') return 'Dernière séance correcte : on consolide encore avant de pousser.';
     return 'Pas encore de ressenti enregistré : le coach va apprendre de cette séance.';
   }
 
@@ -3988,24 +3940,6 @@ class CoachHome extends StatelessWidget {
       return a.id.compareTo(b.id);
     });
     return ranked.first;
-  }
-
-  int _recommendedMinutes(Project p) {
-    final feeling = _lastFeeling(p.id);
-    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'Difficile') return 15;
-    if (feeling == 'Facile') return 25;
-    return 20;
-  }
-
-  String _recommendedFocus(Project p) => _focusFor(p);
-
-  int? _recommendedTempo(Project p) {
-    if (p.currentTempo <= 0) return null;
-    final feeling = _lastFeeling(p.id);
-    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'Difficile') {
-      return math.max(1, p.currentTempo - 5);
-    }
-    return p.currentTempo;
   }
 
   String _coachMessage(DateTime now, PlanItem? next) {
@@ -4094,35 +4028,6 @@ class CoachHome extends StatelessWidget {
             Chip(avatar: const Icon(Icons.timer_outlined, size: 16), label: Text('${next.duration} min')),
             if (nextProject != null) Chip(avatar: Text(workFocusEmoji(nextProject!.workFocus == 'Automatique' ? nextProject!.effectiveWorkFocus : nextProject!.workFocus)), label: Text(nextProject!.workFocus == 'Automatique' ? nextProject!.effectiveWorkFocus : nextProject!.workFocus)),
           ]),
-          if (nextProject != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.18)),
-                color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.28),
-              ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(Icons.route_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
-                const SizedBox(width: 9),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('PLAN COACH · PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary, letterSpacing: .5)),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${_recommendedMinutes(nextProject!)} min · ${_recommendedFocus(nextProject!)}${_recommendedTempo(nextProject!) != null ? ' · ${_recommendedTempo(nextProject!)} BPM' : ''}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'La recommandation de la fiche morceau est appliquée à ta mission du jour.',
-                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.25),
-                  ),
-                ])),
-              ]),
-            ),
-          ],
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => onStart(next), icon: const Icon(Icons.play_arrow_rounded), label: const Text('COMMENCER MAINTENANT'))),
         ] else if (todayItems.isEmpty) ...[
@@ -4209,14 +4114,12 @@ class Sessions extends StatefulWidget {
     required this.onEdit,
     required this.onDelete,
     required this.projectById,
-    required this.onOpenProject,
   });
   final List<Session> items;
   final VoidCallback onAdd;
   final void Function(Session) onEdit;
   final void Function(Session) onDelete;
   final Project? Function(String?) projectById;
-  final Future<void> Function(Project) onOpenProject;
 
   @override
   State<Sessions> createState() => _SessionsState();
@@ -4300,25 +4203,6 @@ class _SessionsState extends State<Sessions> {
   String _mins(int m) => m >= 60 ? '${m ~/ 60} h ${m % 60} min' : '$m min';
   String _wd(int weekday) => const ['L', 'M', 'M', 'J', 'V', 'S', 'D'][weekday - 1];
 
-  String _feelingLabel(String? feeling) {
-    switch (feeling) {
-      case 'facile': return '😊 Facile';
-      case 'correct': return '😐 Correct';
-      case 'difficile': return '😓 Difficile';
-      default: return '';
-    }
-  }
-
-  Widget _feelingChip(BuildContext c, Session s) {
-    final label = _feelingLabel(s.coachFeeling);
-    if (label.isEmpty) return const SizedBox.shrink();
-    return Chip(
-      visualDensity: VisualDensity.compact,
-      avatar: const Icon(Icons.psychology_outlined, size: 14),
-      label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-    );
-  }
-
   Widget _weeklyChart(BuildContext c, Map<DateTime, int> byDay) {
     final today = _day(DateTime.now());
     final days = List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
@@ -4383,87 +4267,6 @@ class _SessionsState extends State<Sessions> {
         return Tooltip(message: '${d.day}/${d.month}/${d.year} · $m min', child: InkWell(onTap: () => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('${d.day}/${d.month}/${d.year} : ${_mins(m)}'))), child: Container(width: 15, height: 15, decoration: BoxDecoration(color: m == 0 ? Theme.of(c).colorScheme.surfaceContainerHighest : Theme.of(c).colorScheme.primary.withAlpha(35 + level * 45), borderRadius: BorderRadius.circular(3)))));
       })),
     ]));
-  }
-
-  Future<void> _showSessionDetails(BuildContext c, Session s) async {
-    final p = widget.projectById(s.projectId);
-    String pct(double? v) => v == null ? '—' : '${(v * 100).round()}%';
-    await showDialog<void>(
-      context: c,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(children: [
-          Icon(categoryIcon(s.type), color: categoryColor(s.type)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(p?.name ?? 'Pratique libre')),
-        ]),
-        content: SingleChildScrollView(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year} · ${s.duration} min', style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              Chip(label: Text(s.type)),
-              if (s.method != null && s.method!.isNotEmpty) Chip(label: Text(s.method!)),
-              if (_feelingLabel(s.coachFeeling).isNotEmpty) Chip(label: Text(_feelingLabel(s.coachFeeling))),
-              if (s.rating > 0) Chip(label: Text('★' * s.rating)),
-            ]),
-            if (s.coachFocus != null && s.coachFocus!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('Focus travaillé', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.coachFocus!),
-            ],
-            if (s.coachRecommendation != null && s.coachRecommendation!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('🎯 Recommandation du coach', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.coachRecommendation!, style: const TextStyle(height: 1.35)),
-            ],
-            if (s.hasProgressSnapshot) ...[
-              const SizedBox(height: 14),
-              const Text('État du morceau avant cette séance', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Text('Lecture / mains séparées : ${pct(s.previousReading)}'),
-              Text('Mains ensemble : ${pct(s.previousHandsTogether)}'),
-              Text('Mémorisation : ${pct(s.previousMemory)}'),
-              Text('Interprétation : ${pct(s.previousInterpretation)}'),
-            ],
-            if (p != null) ...[
-              const SizedBox(height: 14),
-              const Text('État actuel du morceau', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Text('Lecture / mains séparées : ${pct(p.reading)}'),
-              Text('Mains ensemble : ${pct(p.handsTogether)}'),
-              Text('Mémorisation : ${pct(p.memory)}'),
-              Text('Interprétation : ${pct(p.interpretation)}'),
-              if (p.currentTempo > 0) Text('Tempo : ${p.currentTempo} BPM${p.targetTempo > 0 ? ' / cible ${p.targetTempo} BPM' : ''}'),
-            ],
-            if (s.notes.trim().isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const Text('Notes', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.notes, style: const TextStyle(height: 1.35)),
-            ],
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Fermer')),
-          if (p != null)
-            OutlinedButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await widget.onOpenProject(p);
-              },
-              icon: const Icon(Icons.music_note_outlined),
-              label: const Text('Voir le morceau'),
-            ),
-          FilledButton.icon(
-            onPressed: () { Navigator.pop(dialogContext); widget.onEdit(s); },
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Modifier'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -4541,27 +4344,9 @@ class _SessionsState extends State<Sessions> {
                                     avatar: const Icon(Icons.smartphone, size: 13),
                                     label: Text(s.method!, style: const TextStyle(fontSize: 11)),
                                   ),
-                                if (s.coachFeeling != null) _feelingChip(c, s),
                               ]),
-                              if (s.coachFocus != null || s.coachRecommendation != null) ...[
-                                const SizedBox(height: 4),
-                                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Icon(Icons.auto_awesome, size: 14, color: Theme.of(c).colorScheme.primary),
-                                  const SizedBox(width: 5),
-                                  Expanded(child: Text(
-                                    s.coachRecommendation ?? 'Focus : ${s.coachFocus}',
-                                    maxLines: 2, overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                                  )),
-                                ]),
-                              ],
                             ],
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.info_outline, size: 20),
-                          tooltip: 'Voir le bilan',
-                          onPressed: () => _showSessionDetails(c, s),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline, size: 20),
@@ -4700,19 +4485,6 @@ class _SessionDialogState extends State<SessionDialog> {
               rating: rating,
               notes: notesCtrl.text,
               method: method,
-              previousReading: widget.existing?.previousReading,
-              previousHandsTogether: widget.existing?.previousHandsTogether,
-              previousMemory: widget.existing?.previousMemory,
-              previousInterpretation: widget.existing?.previousInterpretation,
-              previousTempo: widget.existing?.previousTempo,
-              newTempo: widget.existing?.newTempo,
-              newReading: widget.existing?.newReading,
-              newHandsTogether: widget.existing?.newHandsTogether,
-              newMemory: widget.existing?.newMemory,
-              newInterpretation: widget.existing?.newInterpretation,
-              coachFeeling: widget.existing?.coachFeeling,
-              coachFocus: widget.existing?.coachFocus,
-              coachRecommendation: widget.existing?.coachRecommendation,
             ),
           ),
           child: const Text('Enregistrer'),
@@ -5177,590 +4949,11 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
   }
 }
 
-
-
-class _ProjectCoachDashboard extends StatelessWidget {
-  const _ProjectCoachDashboard({required this.project, required this.sessions, required this.onScheduleCoachSession});
-  final Project project;
-  final List<Session> sessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
-
-  String _feeling(String? value) {
-    switch (value) {
-      case 'facile': return '😊 Facile';
-      case 'correct': return '😐 Correct';
-      case 'difficile': return '😓 Difficile';
-      default: return '—';
-    }
-  }
-
-  double _weakestStage() {
-    final values = [project.reading, project.handsTogether, project.memory, project.interpretation];
-    return values.reduce(math.min);
-  }
-
-  String _weakestLabel() {
-    final values = <String, double>{
-      'Lecture': project.reading,
-      'Mains ensemble': project.handsTogether,
-      'Mémorisation': project.memory,
-      'Interprétation': project.interpretation,
-    };
-    return values.entries.reduce((a, b) => a.value <= b.value ? a : b).key;
-  }
-
-  double? _after(Session s, int stage) {
-    final direct = [s.newReading, s.newHandsTogether, s.newMemory, s.newInterpretation][stage];
-    if (direct != null) return direct;
-    final index = sessions.indexOf(s);
-    if (index >= 0 && index + 1 < sessions.length) {
-      final next = sessions[index + 1];
-      return [next.previousReading, next.previousHandsTogether, next.previousMemory, next.previousInterpretation][stage];
-    }
-    return [project.reading, project.handsTogether, project.memory, project.interpretation][stage];
-  }
-
-  double? _before(Session s, int stage) {
-    return [s.previousReading, s.previousHandsTogether, s.previousMemory, s.previousInterpretation][stage];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final ordered = [...sessions]..sort((a, b) => a.date.compareTo(b.date));
-    final recent = ordered.length >= 2 ? ordered.sublist(ordered.length - 2) : ordered;
-    final last = ordered.isNotEmpty ? ordered.last : null;
-    final stageNames = ['Lecture', 'Mains ensemble', 'Mémorisation', 'Interprétation'];
-    final deltas = <MapEntry<String, double>>[];
-    if (last != null) {
-      for (var i = 0; i < 4; i++) {
-        final before = _before(last, i);
-        final after = _after(last, i);
-        if (before != null && after != null) deltas.add(MapEntry(stageNames[i], after - before));
-      }
-    }
-    final improved = deltas.where((e) => e.value >= 0.05).toList();
-    final stagnant = deltas.where((e) => e.value.abs() < 0.05).toList();
-    final difficult = recent.where((s) => s.coachFeeling == 'difficile').length;
-    final tempoGap = project.targetTempo > 0 && project.currentTempo > 0 ? project.targetTempo - project.currentTempo : 0;
-    String progressText;
-    if (improved.isNotEmpty) {
-      progressText = improved.map((e) => '${e.key} +${(e.value * 100).round()}%').join(' · ');
-    } else if (sessions.isEmpty) {
-      progressText = 'Pas encore assez de séances pour mesurer la progression.';
-    } else {
-      progressText = 'Les étapes évoluent peu sur la dernière séance.';
-    }
-    String stableText;
-    if (stagnant.isNotEmpty) {
-      stableText = stagnant.map((e) => e.key).join(' · ');
-    } else {
-      stableText = 'Aucune étape clairement stagnante sur la dernière séance.';
-    }
-    String nextText;
-    if (difficult >= 2) {
-      nextText = 'Deux séances difficiles récemment : consolide ${_weakestLabel().toLowerCase()} avant d’ajouter de la vitesse.';
-    } else if (project.workFocus != 'Automatique') {
-      nextText = 'Travail prioritaire : ${project.workFocus.toLowerCase()}, avec une intensité ${project.workIntensity.toLowerCase()}.';
-    } else if (tempoGap > 0) {
-      nextText = 'Prochaine priorité : ${_weakestLabel().toLowerCase()}, puis rapproche progressivement le tempo de la cible (${project.targetTempo} BPM).';
-    } else {
-      nextText = 'Prochaine priorité : ${_weakestLabel().toLowerCase()} (${(_weakestStage() * 100).round()}%).';
-    }
-    if (last?.coachFeeling == 'difficile' && difficult < 2) {
-      nextText = 'Dernière séance difficile : ${nextText[0].toLowerCase()}${nextText.substring(1)}';
-    }
-
-    // Recommandation immédiatement actionnable pour la prochaine séance.
-    final recommendedMinutes = last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20);
-    final recommendedFocus = project.workFocus != 'Automatique'
-        ? project.workFocus
-        : _weakestLabel();
-    final recommendedTempo = project.currentTempo > 0
-        ? (last?.coachFeeling == 'difficile' ? math.max(1, project.currentTempo - 5) : project.currentTempo)
-        : null;
-    final concretePlan = recommendedTempo != null
-        ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM'
-        : '$recommendedMinutes min · $recommendedFocus';
-    final concreteWhy = last?.coachFeeling == 'difficile'
-        ? 'Charge réduite pour consolider sans forcer.'
-        : last?.coachFeeling == 'facile'
-            ? 'Le dernier travail était facile : tu peux légèrement augmenter la charge.'
-            : 'Une séance courte et ciblée pour faire avancer le point le plus utile.';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.psychology_outlined, size: 19, color: scheme.primary),
-            const SizedBox(width: 7),
-            const Expanded(child: Text('Tableau de bord du coach', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-            if (last != null) Text(_feeling(last.coachFeeling), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-          ]),
-          const SizedBox(height: 9),
-          _CoachInsightTile(icon: Icons.trending_up, title: 'Ce qui progresse', text: progressText, color: scheme.primary),
-          const SizedBox(height: 7),
-          _CoachInsightTile(icon: Icons.pause_circle_outline, title: 'Ce qui stagne', text: stableText, color: scheme.tertiary),
-          const SizedBox(height: 7),
-          _CoachInsightTile(icon: Icons.flag_outlined, title: 'À travailler maintenant', text: nextText, color: scheme.secondary),
-          const SizedBox(height: 7),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer.withOpacity(.45),
-              borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: scheme.primary.withOpacity(.18)),
-            ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.play_circle_outline, size: 20, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .4)),
-                const SizedBox(height: 3),
-                Text(concretePlan, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text(concreteWhy, style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant, height: 1.25)),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                    onPressed: () async {
-                      final chosen = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
-                        initialDate: DateTime.now(),
-                        helpText: 'Choisir le jour de la prochaine séance',
-                      );
-                      if (chosen == null) return;
-                      final item = PlanItem(
-                        id: newId(),
-                        date: DateTime(chosen.year, chosen.month, chosen.day, 12),
-                        duration: recommendedMinutes,
-                        title: project.name,
-                        details: '$recommendedFocus${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $concreteWhy',
-                        projectId: project.id,
-                        category: 'Répertoire',
-                        method: project.method,
-                        motsCles: ['Coach', 'Prochaine séance', recommendedFocus],
-                      );
-                      await onScheduleCoachSession(item);
-                    },
-                    icon: const Icon(Icons.add_task, size: 17),
-                    label: const Text('Ajouter au planning'),
-                  )
-              ])),
-            ]),
-          ),
-          if (sessions.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 5, children: [
-              Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-            ]),
-          ],
-        ]),
-      ),
-    );
-  }
-}
-
-class _CoachInsightTile extends StatelessWidget {
-  const _CoachInsightTile({required this.icon, required this.title, required this.text, required this.color});
-  final IconData icon;
-  final String title;
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(.22)),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: scheme.onSurface)),
-          const SizedBox(height: 2),
-          Text(text, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.25)),
-        ])),
-      ]),
-    );
-  }
-}
-
-class _ProjectEvolutionSection extends StatefulWidget {
-  const _ProjectEvolutionSection({required this.project, required this.sessions});
-  final Project project;
-  final List<Session> sessions;
-
-  @override
-  State<_ProjectEvolutionSection> createState() => _ProjectEvolutionSectionState();
-}
-
-class _ProjectEvolutionSectionState extends State<_ProjectEvolutionSection> {
-  int? selectedIndex;
-
-  String _feelingLabel(String? value) {
-    switch (value) {
-      case 'facile': return '😊 Facile';
-      case 'difficile': return '😓 Difficile';
-      case 'correct': return '😐 Correct';
-      default: return '—';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ordered = [...widget.sessions]..sort((a, b) => a.date.compareTo(b.date));
-    final hasStageData = ordered.any((s) => s.newReading != null || s.newHandsTogether != null || s.newMemory != null || s.newInterpretation != null || s.hasProgressSnapshot);
-    final hasTempo = ordered.any((s) => (s.newTempo ?? s.previousTempo ?? 0) > 0) || widget.project.currentTempo > 0;
-    final feelings = ordered.where((s) => s.coachFeeling != null).toList();
-    final selected = selectedIndex != null && selectedIndex! < ordered.length ? ordered[selectedIndex!] : null;
-    final scheme = Theme.of(context).colorScheme;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.show_chart, size: 18, color: scheme.primary),
-            const SizedBox(width: 7),
-            const Expanded(child: Text('Évolution du morceau', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-            Text('${ordered.length} séances', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          ]),
-          const SizedBox(height: 4),
-          const Text('Clique sur un point pour afficher le détail de la séance.', style: TextStyle(fontSize: 10, color: Colors.grey)),
-          const SizedBox(height: 9),
-          if (hasStageData) ...[
-            const Text('4 étapes', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            SizedBox(
-              height: 150,
-              child: _StageEvolutionChart(
-                sessions: ordered,
-                project: widget.project,
-                selectedIndex: selectedIndex,
-                onSelected: (i) => setState(() => selectedIndex = i),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Wrap(spacing: 10, runSpacing: 4, children: [
-              _LegendDot(label: 'Lecture', color: scheme.primary),
-              _LegendDot(label: 'Mains ensemble', color: scheme.secondary),
-              _LegendDot(label: 'Mémorisation', color: scheme.tertiary),
-              _LegendDot(label: 'Interprétation', color: scheme.error),
-            ]),
-          ],
-          if (hasTempo) ...[
-            const SizedBox(height: 12),
-            Row(children: [
-              const Text('Tempo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              if (widget.project.targetTempo > 0) Text('cible ${widget.project.targetTempo} BPM', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            ]),
-            const SizedBox(height: 4),
-            SizedBox(
-              height: 105,
-              child: _TempoEvolutionChart(
-                sessions: ordered,
-                project: widget.project,
-                targetTempo: widget.project.targetTempo,
-                selectedIndex: selectedIndex,
-                onSelected: (i) => setState(() => selectedIndex = i),
-              ),
-            ),
-          ],
-          if (selected != null) ...[
-            const SizedBox(height: 9),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer.withOpacity(.45),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.event_note_outlined, size: 16, color: scheme.primary),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(
-                    '${selected.date.day.toString().padLeft(2, '0')}/${selected.date.month.toString().padLeft(2, '0')}/${selected.date.year}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
-                  )),
-                  Text('${selected.duration} min', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11)),
-                ]),
-                const SizedBox(height: 5),
-                Wrap(spacing: 12, runSpacing: 4, children: [
-                  Text('Ressenti : ${_feelingLabel(selected.coachFeeling)}', style: const TextStyle(fontSize: 10)),
-                  Text('Note : ${selected.rating}/5', style: const TextStyle(fontSize: 10)),
-                  if ((selected.newTempo ?? 0) > 0) Text('${selected.newTempo} BPM', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-                ]),
-                if (selected.coachFocus != null || selected.coachRecommendation != null) ...[
-                  const SizedBox(height: 4),
-                  if (selected.coachFocus != null) Text('Focus : ${selected.coachFocus}', style: const TextStyle(fontSize: 10)),
-                  if (selected.coachRecommendation != null) Text('Coach : ${selected.coachRecommendation}', style: const TextStyle(fontSize: 10)),
-                ],
-              ]),
-            ),
-          ],
-          if (feelings.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            const Text('Ressenti séance après séance', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 34,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: feelings.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
-                  final s = feelings[i];
-                  final originalIndex = ordered.indexOf(s);
-                  final emoji = s.coachFeeling == 'facile' ? '😊' : s.coachFeeling == 'difficile' ? '😓' : '😐';
-                  final isSelected = originalIndex == selectedIndex;
-                  return GestureDetector(
-                    onTap: () => setState(() => selectedIndex = originalIndex),
-                    child: Tooltip(
-                      message: '${s.date.day}/${s.date.month}/${s.date.year} • ${s.duration} min • ${_feelingLabel(s.coachFeeling)}',
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: isSelected ? scheme.primaryContainer : null,
-                          border: Border.all(color: isSelected ? scheme.primary : Theme.of(context).dividerColor, width: isSelected ? 2 : 1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(emoji, style: const TextStyle(fontSize: 19)),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ]),
-      ),
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.label, required this.color});
-  final String label;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
-    Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
-    const SizedBox(width: 4),
-    Text(label, style: const TextStyle(fontSize: 9, color: Colors.grey)),
-  ]);
-}
-
-class _StageEvolutionChart extends StatelessWidget {
-  const _StageEvolutionChart({required this.sessions, required this.project, required this.selectedIndex, required this.onSelected});
-  final List<Session> sessions;
-  final Project project;
-  final int? selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        if (sessions.isEmpty) return;
-        final left = 30.0;
-        final right = 8.0;
-        final usable = math.max(1.0, constraints.maxWidth - left - right);
-        final x = (details.localPosition.dx - left).clamp(0.0, usable);
-        final index = sessions.length <= 1 ? 0 : (x / usable * (sessions.length - 1)).round().clamp(0, sessions.length - 1);
-        onSelected(index);
-      },
-      child: CustomPaint(
-        painter: _StageEvolutionPainter(sessions, project, Theme.of(context).colorScheme, selectedIndex),
-        child: const SizedBox.expand(),
-      ),
-    );
-  });
-}
-
-class _TempoEvolutionChart extends StatelessWidget {
-  const _TempoEvolutionChart({required this.sessions, required this.project, required this.targetTempo, required this.selectedIndex, required this.onSelected});
-  final List<Session> sessions;
-  final Project project;
-  final int targetTempo;
-  final int? selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        if (sessions.isEmpty) return;
-        const left = 34.0;
-        const right = 8.0;
-        final usable = math.max(1.0, constraints.maxWidth - left - right);
-        final x = (details.localPosition.dx - left).clamp(0.0, usable);
-        final index = sessions.length <= 1 ? 0 : (x / usable * (sessions.length - 1)).round().clamp(0, sessions.length - 1);
-        onSelected(index);
-      },
-      child: CustomPaint(
-        painter: _TempoEvolutionPainter(sessions, project, targetTempo, Theme.of(context).colorScheme, selectedIndex),
-        child: const SizedBox.expand(),
-      ),
-    );
-  });
-}
-
-class _StageEvolutionPainter extends CustomPainter {
-  _StageEvolutionPainter(this.sessions, this.project, this.scheme, this.selectedIndex);
-  final List<Session> sessions;
-  final Project project;
-  final ColorScheme scheme;
-  final int? selectedIndex;
-
-  double? after(Session s, int i, String stage) {
-    final direct = stage == 'reading' ? s.newReading : stage == 'hands' ? s.newHandsTogether : stage == 'memory' ? s.newMemory : s.newInterpretation;
-    if (direct != null) return direct;
-    if (i + 1 < sessions.length) {
-      final n = sessions[i + 1];
-      return stage == 'reading' ? n.previousReading : stage == 'hands' ? n.previousHandsTogether : stage == 'memory' ? n.previousMemory : n.previousInterpretation;
-    }
-    return stage == 'reading' ? project.reading : stage == 'hands' ? project.handsTogether : stage == 'memory' ? project.memory : project.interpretation;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const l = 30.0, r = 8.0, t = 8.0, b = 20.0;
-    final w = size.width - l - r;
-    final h = size.height - t - b;
-    final grid = Paint()..color = scheme.outlineVariant..strokeWidth = 1;
-    final txt = TextPainter(textDirection: TextDirection.ltr);
-    for (final v in [0.0, .5, 1.0]) {
-      final y = t + h * (1 - v);
-      canvas.drawLine(Offset(l, y), Offset(l + w, y), grid);
-      txt.text = TextSpan(text: '${(v * 100).round()}%', style: TextStyle(fontSize: 8, color: scheme.onSurfaceVariant));
-      txt.layout();
-      txt.paint(canvas, Offset(0, y - 5));
-    }
-    final ss = <List<double?>>[
-      List.generate(sessions.length, (i) => after(sessions[i], i, 'reading')),
-      List.generate(sessions.length, (i) => after(sessions[i], i, 'hands')),
-      List.generate(sessions.length, (i) => after(sessions[i], i, 'memory')),
-      List.generate(sessions.length, (i) => after(sessions[i], i, 'interpretation')),
-    ];
-    final pp = <Paint>[
-      Paint()..color = scheme.primary..strokeWidth = 2.4,
-      Paint()..color = scheme.secondary..strokeWidth = 2.4,
-      Paint()..color = scheme.tertiary..strokeWidth = 2.4,
-      Paint()..color = scheme.error..strokeWidth = 2.4,
-    ];
-    for (var k = 0; k < ss.length; k++) {
-      Offset? prev;
-      for (var i = 0; i < ss[k].length; i++) {
-        final v = ss[k][i];
-        if (v == null) { prev = null; continue; }
-        final x = l + (sessions.length <= 1 ? w / 2 : w * i / (sessions.length - 1));
-        final y = t + h * (1 - v.clamp(0, 1));
-        final q = Offset(x, y);
-        if (prev != null) canvas.drawLine(prev, q, pp[k]);
-        canvas.drawCircle(q, i == selectedIndex ? 5 : 3, Paint()..color = pp[k].color);
-        prev = q;
-      }
-    }
-    if (selectedIndex != null && selectedIndex! < sessions.length) {
-      final x = l + (sessions.length <= 1 ? w / 2 : w * selectedIndex! / (sessions.length - 1));
-      canvas.drawLine(Offset(x, t), Offset(x, t + h), Paint()..color = scheme.primary.withOpacity(.35)..strokeWidth = 1.5);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _StageEvolutionPainter old) => old.selectedIndex != selectedIndex || old.sessions != sessions || old.project != project;
-}
-
-class _TempoEvolutionPainter extends CustomPainter {
-  _TempoEvolutionPainter(this.sessions, this.project, this.targetTempo, this.scheme, this.selectedIndex);
-  final List<Session> sessions;
-  final Project project;
-  final int targetTempo;
-  final ColorScheme scheme;
-  final int? selectedIndex;
-
-  int? afterTempo(int i) {
-    final direct = sessions[i].newTempo;
-    if (direct != null && direct > 0) return direct;
-    if (i + 1 < sessions.length) {
-      final p = sessions[i + 1].previousTempo;
-      if (p != null && p > 0) return p;
-    }
-    return project.currentTempo > 0 ? project.currentTempo : null;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const l = 34.0, r = 8.0, t = 8.0, b = 18.0;
-    final values = List.generate(sessions.length, afterTempo).whereType<int>().where((v) => v > 0).toList();
-    if (values.isEmpty) return;
-    final minV = math.max(0, ((values.reduce(math.min) * .9) ~/ 5) * 5);
-    final raw = targetTempo > 0 ? math.max(targetTempo, values.reduce(math.max)) : values.reduce(math.max);
-    final maxV = math.max(minV + 20, ((raw * 1.08).ceil() ~/ 5) * 5);
-    final w = size.width - l - r, h = size.height - t - b;
-    final grid = Paint()..color = scheme.outlineVariant..strokeWidth = 1;
-    final txt = TextPainter(textDirection: TextDirection.ltr);
-    for (var j = 0; j <= 2; j++) {
-      final y = t + h * (1 - j / 2);
-      canvas.drawLine(Offset(l, y), Offset(l + w, y), grid);
-      final v = minV + (maxV - minV) * j / 2;
-      txt.text = TextSpan(text: '${v.round()}', style: TextStyle(fontSize: 8, color: scheme.onSurfaceVariant));
-      txt.layout();
-      txt.paint(canvas, Offset(0, y - 5));
-    }
-    if (targetTempo > 0) {
-      final y = t + h * (1 - ((targetTempo - minV) / (maxV - minV)).clamp(0, 1));
-      canvas.drawLine(Offset(l, y), Offset(l + w, y), Paint()..color = scheme.error.withOpacity(.55)..strokeWidth = 1.5);
-    }
-    final line = Paint()..color = scheme.primary..strokeWidth = 2.5;
-    Offset? prev;
-    for (var i = 0; i < sessions.length; i++) {
-      final v = afterTempo(i);
-      if (v == null) { prev = null; continue; }
-      final x = l + (sessions.length <= 1 ? w / 2 : w * i / (sessions.length - 1));
-      final y = t + h * (1 - ((v - minV) / (maxV - minV)).clamp(0, 1));
-      final q = Offset(x, y);
-      if (prev != null) canvas.drawLine(prev, q, line);
-      canvas.drawCircle(q, i == selectedIndex ? 5 : 3, Paint()..color = line.color);
-      prev = q;
-    }
-    if (selectedIndex != null && selectedIndex! < sessions.length) {
-      final x = l + (sessions.length <= 1 ? w / 2 : w * selectedIndex! / (sessions.length - 1));
-      canvas.drawLine(Offset(x, t), Offset(x, t + h), Paint()..color = scheme.primary.withOpacity(.35)..strokeWidth = 1.5);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _TempoEvolutionPainter old) => old.selectedIndex != selectedIndex || old.sessions != sessions || old.project != project || old.targetTempo != targetTempo;
-}
-
 class ProjectDialog extends StatefulWidget {
-  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], required this.onScheduleCoachSession});
+  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const []});
   final Project? existing;
   final int totalMinutesPracticed;
   final List<Session> projectSessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
   @override
   State<ProjectDialog> createState() => _ProjectDialogState();
 }
@@ -5820,96 +5013,13 @@ class _ProjectDialogState extends State<ProjectDialog> {
     super.dispose();
   }
 
-  Future<void> _showProjectSessionDetails(BuildContext c, Session s) async {
-    String pct(double? v) => v == null ? '—' : '${(v * 100).round()}%';
-    String feeling(String? v) {
-      switch (v) {
-        case 'facile': return '😊 Facile';
-        case 'correct': return '😐 Correct';
-        case 'difficile': return '😓 Difficile';
-        default: return '';
-      }
-    }
-    final f = feeling(s.coachFeeling);
-    await showDialog<void>(
-      context: c,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(children: [
-          Text(widget.existing?.emoji ?? '🎹', style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 8),
-          Expanded(child: Text('Détail de la séance')),
-        ]),
-        content: SingleChildScrollView(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(widget.existing?.name ?? 'Morceau', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            const SizedBox(height: 4),
-            Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year} · ${s.duration} min'),
-            const SizedBox(height: 12),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              Chip(label: Text(s.type)),
-              if (s.method != null && s.method!.isNotEmpty) Chip(label: Text(s.method!)),
-              if (f.isNotEmpty) Chip(label: Text(f)),
-              if (s.rating > 0) Chip(label: Text('★' * s.rating)),
-            ]),
-            if (s.coachFocus != null && s.coachFocus!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('Focus travaillé', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.coachFocus!),
-            ],
-            if (s.coachRecommendation != null && s.coachRecommendation!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('🎯 Recommandation du coach', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.coachRecommendation!, style: const TextStyle(height: 1.35)),
-            ],
-            if (s.hasProgressSnapshot) ...[
-              const SizedBox(height: 14),
-              const Text('État avant la séance', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Text('Lecture / mains séparées : ${pct(s.previousReading)}'),
-              Text('Mains ensemble : ${pct(s.previousHandsTogether)}'),
-              Text('Mémorisation : ${pct(s.previousMemory)}'),
-              Text('Interprétation : ${pct(s.previousInterpretation)}'),
-            ],
-            if (widget.existing != null) ...[
-              const SizedBox(height: 14),
-              const Text('État actuel du morceau', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              Text('Lecture / mains séparées : ${pct(widget.existing!.reading)}'),
-              Text('Mains ensemble : ${pct(widget.existing!.handsTogether)}'),
-              Text('Mémorisation : ${pct(widget.existing!.memory)}'),
-              Text('Interprétation : ${pct(widget.existing!.interpretation)}'),
-              if (widget.existing!.currentTempo > 0) Text('Tempo : ${widget.existing!.currentTempo} BPM${widget.existing!.targetTempo > 0 ? ' / cible ${widget.existing!.targetTempo} BPM' : ''}'),
-            ],
-            if (s.notes.trim().isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const Text('Notes', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(s.notes, style: const TextStyle(height: 1.35)),
-            ],
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Fermer')),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
-    final media = MediaQuery.of(c);
-    final maxDialogHeight = media.size.height * .82;
-    final maxDialogWidth = math.min(media.size.width - 32, 760.0);
     return AlertDialog(
       title: Text(editing ? 'Modifier le morceau' : 'Nouveau morceau'),
-      content: SizedBox(
-        width: maxDialogWidth,
-        height: math.min(maxDialogHeight, media.size.height - 140),
-        child: SingleChildScrollView(
-          child: Column(
+      content: SingleChildScrollView(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -6159,121 +5269,32 @@ class _ProjectDialogState extends State<ProjectDialog> {
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 4),
-              if (widget.projectSessions.isNotEmpty) ...[
-                _ProjectCoachDashboard(project: widget.existing!, sessions: widget.projectSessions, onScheduleCoachSession: widget.onScheduleCoachSession),
-                const SizedBox(height: 8),
-                _ProjectEvolutionSection(project: widget.existing!, sessions: widget.projectSessions),
-                const SizedBox(height: 8),
-              ],
               Text(
                 'Sessions réalisées (${widget.projectSessions.length})',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              if (widget.projectSessions.isNotEmpty) ...[
-                Builder(
-                  builder: (summaryContext) {
-                    final recent = widget.projectSessions.take(3).toList();
-                    final recentMinutes = recent.fold<int>(0, (sum, s) => sum + s.duration);
-                    final avgRating = recent.fold<int>(0, (sum, s) => sum + s.rating) / recent.length;
-                    final feelings = recent.map((s) {
-                      switch (s.coachFeeling) {
-                        case 'facile': return '😊';
-                        case 'correct': return '😐';
-                        case 'difficile': return '😓';
-                        default: return '·';
-                      }
-                    }).join(' ');
-                    final hasFeeling = recent.any((s) => s.coachFeeling != null);
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.insights_outlined, size: 18, color: Theme.of(summaryContext).colorScheme.primary),
-                                const SizedBox(width: 7),
-                                const Expanded(child: Text('Les 3 dernières séances', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                                Text('${recent.length} séance${recent.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 14,
-                              runSpacing: 6,
-                              children: [
-                                Text('⏱ $recentMinutes min', style: const TextStyle(fontSize: 12)),
-                                Text('★ ${avgRating.toStringAsFixed(1)} / 5', style: const TextStyle(fontSize: 12)),
-                                if (hasFeeling) Text('Ressenti : $feelings', style: const TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                            if (recent.length >= 2) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                recent.first.coachFeeling == 'difficile'
-                                    ? '💡 Dernière séance difficile : privilégier la consolidation avant d’accélérer.'
-                                    : recent.first.coachFeeling == 'facile'
-                                        ? '🚀 Dernière séance facile : une légère montée en difficulté peut être envisagée.'
-                                        : recent.first.coachFeeling == 'correct'
-                                            ? '🎯 Dernière séance correcte : poursuivre le travail ciblé.'
-                                            : '📈 Historique récent disponible pour suivre l’évolution.',
-                                style: TextStyle(fontSize: 11, color: Theme.of(summaryContext).colorScheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
               if (widget.projectSessions.isEmpty)
                 const Text('Aucune session enregistrée pour ce morceau pour l\'instant.', style: TextStyle(color: Colors.grey, fontSize: 13))
               else
                 ...widget.projectSessions.map((s) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () => _showProjectSessionDetails(c, s),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                            child: Row(
-                              children: [
-                                SizedBox(
-                                  width: 70,
-                                  child: Text('${s.date.day}/${s.date.month}/${s.date.year}', style: const TextStyle(fontSize: 12)),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('${s.duration} min · ${s.type}${s.method != null ? ' · ${s.method}' : ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                      if (s.coachFeeling != null)
-                                        Text(
-                                          s.coachFeeling == 'facile' ? '😊 Facile' : s.coachFeeling == 'correct' ? '😐 Correct' : s.coachFeeling == 'difficile' ? '😓 Difficile' : '',
-                                          style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                if (s.rating > 0) Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 11)),
-                                const SizedBox(width: 4),
-                                Icon(Icons.chevron_right, size: 19, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                              ],
-                            ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 70,
+                            child: Text('${s.date.day}/${s.date.month}/${s.date.year}', style: const TextStyle(fontSize: 12)),
                           ),
-                        ),
+                          Expanded(
+                            child: Text('${s.duration} min · ${s.type}${s.method != null ? ' · ${s.method}' : ''}', style: const TextStyle(fontSize: 12)),
+                          ),
+                          Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 11)),
+                        ],
                       ),
                     )),
             ],
           ],
         ),
-      ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),

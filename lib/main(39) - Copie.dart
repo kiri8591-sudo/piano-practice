@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '42.0';
+const String appVersion = '38.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -2601,19 +2601,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
   }
 
-  Future<void> _scheduleCoachSession(PlanItem item) async {
-    setState(() {
-      plan.add(item);
-      plan.sort((a, b) => a.date.compareTo(b.date));
-    });
-    _persist();
-    if (navKey.currentContext != null) {
-      ScaffoldMessenger.of(navKey.currentContext!).showSnackBar(
-        SnackBar(content: Text('Séance ajoutée au planning : ${item.date.day}/${item.date.month} · ${item.duration} min')),
-      );
-    }
-  }
-
   Future<void> addOrEditProject([Project? existing]) async {
     final totalMinutes = existing == null
         ? 0
@@ -2623,7 +2610,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         : (sessions.where((s) => s.projectId == existing.id).toList()..sort((a, b) => b.date.compareTo(a.date)));
     final r = await showDialog<Project>(
       context: navKey.currentContext!,
-      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions, onScheduleCoachSession: _scheduleCoachSession),
+      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions),
     );
     if (r == null) return;
     setState(() {
@@ -3990,24 +3977,6 @@ class CoachHome extends StatelessWidget {
     return ranked.first;
   }
 
-  int _recommendedMinutes(Project p) {
-    final feeling = _lastFeeling(p.id);
-    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'Difficile') return 15;
-    if (feeling == 'Facile') return 25;
-    return 20;
-  }
-
-  String _recommendedFocus(Project p) => _focusFor(p);
-
-  int? _recommendedTempo(Project p) {
-    if (p.currentTempo <= 0) return null;
-    final feeling = _lastFeeling(p.id);
-    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'Difficile') {
-      return math.max(1, p.currentTempo - 5);
-    }
-    return p.currentTempo;
-  }
-
   String _coachMessage(DateTime now, PlanItem? next) {
     if (next != null) {
       final p = projectById(next.projectId);
@@ -4094,35 +4063,6 @@ class CoachHome extends StatelessWidget {
             Chip(avatar: const Icon(Icons.timer_outlined, size: 16), label: Text('${next.duration} min')),
             if (nextProject != null) Chip(avatar: Text(workFocusEmoji(nextProject!.workFocus == 'Automatique' ? nextProject!.effectiveWorkFocus : nextProject!.workFocus)), label: Text(nextProject!.workFocus == 'Automatique' ? nextProject!.effectiveWorkFocus : nextProject!.workFocus)),
           ]),
-          if (nextProject != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.18)),
-                color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.28),
-              ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(Icons.route_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
-                const SizedBox(width: 9),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('PLAN COACH · PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary, letterSpacing: .5)),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${_recommendedMinutes(nextProject!)} min · ${_recommendedFocus(nextProject!)}${_recommendedTempo(nextProject!) != null ? ' · ${_recommendedTempo(nextProject!)} BPM' : ''}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'La recommandation de la fiche morceau est appliquée à ta mission du jour.',
-                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.25),
-                  ),
-                ])),
-              ]),
-            ),
-          ],
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => onStart(next), icon: const Icon(Icons.play_arrow_rounded), label: const Text('COMMENCER MAINTENANT'))),
         ] else if (todayItems.isEmpty) ...[
@@ -5178,226 +5118,6 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
 }
 
 
-
-class _ProjectCoachDashboard extends StatelessWidget {
-  const _ProjectCoachDashboard({required this.project, required this.sessions, required this.onScheduleCoachSession});
-  final Project project;
-  final List<Session> sessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
-
-  String _feeling(String? value) {
-    switch (value) {
-      case 'facile': return '😊 Facile';
-      case 'correct': return '😐 Correct';
-      case 'difficile': return '😓 Difficile';
-      default: return '—';
-    }
-  }
-
-  double _weakestStage() {
-    final values = [project.reading, project.handsTogether, project.memory, project.interpretation];
-    return values.reduce(math.min);
-  }
-
-  String _weakestLabel() {
-    final values = <String, double>{
-      'Lecture': project.reading,
-      'Mains ensemble': project.handsTogether,
-      'Mémorisation': project.memory,
-      'Interprétation': project.interpretation,
-    };
-    return values.entries.reduce((a, b) => a.value <= b.value ? a : b).key;
-  }
-
-  double? _after(Session s, int stage) {
-    final direct = [s.newReading, s.newHandsTogether, s.newMemory, s.newInterpretation][stage];
-    if (direct != null) return direct;
-    final index = sessions.indexOf(s);
-    if (index >= 0 && index + 1 < sessions.length) {
-      final next = sessions[index + 1];
-      return [next.previousReading, next.previousHandsTogether, next.previousMemory, next.previousInterpretation][stage];
-    }
-    return [project.reading, project.handsTogether, project.memory, project.interpretation][stage];
-  }
-
-  double? _before(Session s, int stage) {
-    return [s.previousReading, s.previousHandsTogether, s.previousMemory, s.previousInterpretation][stage];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final ordered = [...sessions]..sort((a, b) => a.date.compareTo(b.date));
-    final recent = ordered.length >= 2 ? ordered.sublist(ordered.length - 2) : ordered;
-    final last = ordered.isNotEmpty ? ordered.last : null;
-    final stageNames = ['Lecture', 'Mains ensemble', 'Mémorisation', 'Interprétation'];
-    final deltas = <MapEntry<String, double>>[];
-    if (last != null) {
-      for (var i = 0; i < 4; i++) {
-        final before = _before(last, i);
-        final after = _after(last, i);
-        if (before != null && after != null) deltas.add(MapEntry(stageNames[i], after - before));
-      }
-    }
-    final improved = deltas.where((e) => e.value >= 0.05).toList();
-    final stagnant = deltas.where((e) => e.value.abs() < 0.05).toList();
-    final difficult = recent.where((s) => s.coachFeeling == 'difficile').length;
-    final tempoGap = project.targetTempo > 0 && project.currentTempo > 0 ? project.targetTempo - project.currentTempo : 0;
-    String progressText;
-    if (improved.isNotEmpty) {
-      progressText = improved.map((e) => '${e.key} +${(e.value * 100).round()}%').join(' · ');
-    } else if (sessions.isEmpty) {
-      progressText = 'Pas encore assez de séances pour mesurer la progression.';
-    } else {
-      progressText = 'Les étapes évoluent peu sur la dernière séance.';
-    }
-    String stableText;
-    if (stagnant.isNotEmpty) {
-      stableText = stagnant.map((e) => e.key).join(' · ');
-    } else {
-      stableText = 'Aucune étape clairement stagnante sur la dernière séance.';
-    }
-    String nextText;
-    if (difficult >= 2) {
-      nextText = 'Deux séances difficiles récemment : consolide ${_weakestLabel().toLowerCase()} avant d’ajouter de la vitesse.';
-    } else if (project.workFocus != 'Automatique') {
-      nextText = 'Travail prioritaire : ${project.workFocus.toLowerCase()}, avec une intensité ${project.workIntensity.toLowerCase()}.';
-    } else if (tempoGap > 0) {
-      nextText = 'Prochaine priorité : ${_weakestLabel().toLowerCase()}, puis rapproche progressivement le tempo de la cible (${project.targetTempo} BPM).';
-    } else {
-      nextText = 'Prochaine priorité : ${_weakestLabel().toLowerCase()} (${(_weakestStage() * 100).round()}%).';
-    }
-    if (last?.coachFeeling == 'difficile' && difficult < 2) {
-      nextText = 'Dernière séance difficile : ${nextText[0].toLowerCase()}${nextText.substring(1)}';
-    }
-
-    // Recommandation immédiatement actionnable pour la prochaine séance.
-    final recommendedMinutes = last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20);
-    final recommendedFocus = project.workFocus != 'Automatique'
-        ? project.workFocus
-        : _weakestLabel();
-    final recommendedTempo = project.currentTempo > 0
-        ? (last?.coachFeeling == 'difficile' ? math.max(1, project.currentTempo - 5) : project.currentTempo)
-        : null;
-    final concretePlan = recommendedTempo != null
-        ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM'
-        : '$recommendedMinutes min · $recommendedFocus';
-    final concreteWhy = last?.coachFeeling == 'difficile'
-        ? 'Charge réduite pour consolider sans forcer.'
-        : last?.coachFeeling == 'facile'
-            ? 'Le dernier travail était facile : tu peux légèrement augmenter la charge.'
-            : 'Une séance courte et ciblée pour faire avancer le point le plus utile.';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.psychology_outlined, size: 19, color: scheme.primary),
-            const SizedBox(width: 7),
-            const Expanded(child: Text('Tableau de bord du coach', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-            if (last != null) Text(_feeling(last.coachFeeling), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-          ]),
-          const SizedBox(height: 9),
-          _CoachInsightTile(icon: Icons.trending_up, title: 'Ce qui progresse', text: progressText, color: scheme.primary),
-          const SizedBox(height: 7),
-          _CoachInsightTile(icon: Icons.pause_circle_outline, title: 'Ce qui stagne', text: stableText, color: scheme.tertiary),
-          const SizedBox(height: 7),
-          _CoachInsightTile(icon: Icons.flag_outlined, title: 'À travailler maintenant', text: nextText, color: scheme.secondary),
-          const SizedBox(height: 7),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer.withOpacity(.45),
-              borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: scheme.primary.withOpacity(.18)),
-            ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.play_circle_outline, size: 20, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .4)),
-                const SizedBox(height: 3),
-                Text(concretePlan, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text(concreteWhy, style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant, height: 1.25)),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                    onPressed: () async {
-                      final chosen = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
-                        initialDate: DateTime.now(),
-                        helpText: 'Choisir le jour de la prochaine séance',
-                      );
-                      if (chosen == null) return;
-                      final item = PlanItem(
-                        id: newId(),
-                        date: DateTime(chosen.year, chosen.month, chosen.day, 12),
-                        duration: recommendedMinutes,
-                        title: project.name,
-                        details: '$recommendedFocus${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $concreteWhy',
-                        projectId: project.id,
-                        category: 'Répertoire',
-                        method: project.method,
-                        motsCles: ['Coach', 'Prochaine séance', recommendedFocus],
-                      );
-                      await onScheduleCoachSession(item);
-                    },
-                    icon: const Icon(Icons.add_task, size: 17),
-                    label: const Text('Ajouter au planning'),
-                  )
-              ])),
-            ]),
-          ),
-          if (sessions.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 5, children: [
-              Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-            ]),
-          ],
-        ]),
-      ),
-    );
-  }
-}
-
-class _CoachInsightTile extends StatelessWidget {
-  const _CoachInsightTile({required this.icon, required this.title, required this.text, required this.color});
-  final IconData icon;
-  final String title;
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(.22)),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: scheme.onSurface)),
-          const SizedBox(height: 2),
-          Text(text, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.25)),
-        ])),
-      ]),
-    );
-  }
-}
-
 class _ProjectEvolutionSection extends StatefulWidget {
   const _ProjectEvolutionSection({required this.project, required this.sessions});
   final Project project;
@@ -5756,11 +5476,10 @@ class _TempoEvolutionPainter extends CustomPainter {
 }
 
 class ProjectDialog extends StatefulWidget {
-  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], required this.onScheduleCoachSession});
+  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const []});
   final Project? existing;
   final int totalMinutesPracticed;
   final List<Session> projectSessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
   @override
   State<ProjectDialog> createState() => _ProjectDialogState();
 }
@@ -6160,8 +5879,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
               const Divider(),
               const SizedBox(height: 4),
               if (widget.projectSessions.isNotEmpty) ...[
-                _ProjectCoachDashboard(project: widget.existing!, sessions: widget.projectSessions, onScheduleCoachSession: widget.onScheduleCoachSession),
-                const SizedBox(height: 8),
                 _ProjectEvolutionSection(project: widget.existing!, sessions: widget.projectSessions),
                 const SizedBox(height: 8),
               ],

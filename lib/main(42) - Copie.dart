@@ -2601,19 +2601,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
   }
 
-  Future<void> _scheduleCoachSession(PlanItem item) async {
-    setState(() {
-      plan.add(item);
-      plan.sort((a, b) => a.date.compareTo(b.date));
-    });
-    _persist();
-    if (navKey.currentContext != null) {
-      ScaffoldMessenger.of(navKey.currentContext!).showSnackBar(
-        SnackBar(content: Text('Séance ajoutée au planning : ${item.date.day}/${item.date.month} · ${item.duration} min')),
-      );
-    }
-  }
-
   Future<void> addOrEditProject([Project? existing]) async {
     final totalMinutes = existing == null
         ? 0
@@ -2623,7 +2610,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         : (sessions.where((s) => s.projectId == existing.id).toList()..sort((a, b) => b.date.compareTo(a.date)));
     final r = await showDialog<Project>(
       context: navKey.currentContext!,
-      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions, onScheduleCoachSession: _scheduleCoachSession),
+      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions),
     );
     if (r == null) return;
     setState(() {
@@ -5180,10 +5167,9 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
 
 
 class _ProjectCoachDashboard extends StatelessWidget {
-  const _ProjectCoachDashboard({required this.project, required this.sessions, required this.onScheduleCoachSession});
+  const _ProjectCoachDashboard({required this.project, required this.sessions});
   final Project project;
   final List<Session> sessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
 
   String _feeling(String? value) {
     switch (value) {
@@ -5323,33 +5309,6 @@ class _ProjectCoachDashboard extends StatelessWidget {
                 Text(concretePlan, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 2),
                 Text(concreteWhy, style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant, height: 1.25)),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                    onPressed: () async {
-                      final chosen = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
-                        initialDate: DateTime.now(),
-                        helpText: 'Choisir le jour de la prochaine séance',
-                      );
-                      if (chosen == null) return;
-                      final item = PlanItem(
-                        id: newId(),
-                        date: DateTime(chosen.year, chosen.month, chosen.day, 12),
-                        duration: recommendedMinutes,
-                        title: project.name,
-                        details: '$recommendedFocus${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $concreteWhy',
-                        projectId: project.id,
-                        category: 'Répertoire',
-                        method: project.method,
-                        motsCles: ['Coach', 'Prochaine séance', recommendedFocus],
-                      );
-                      await onScheduleCoachSession(item);
-                    },
-                    icon: const Icon(Icons.add_task, size: 17),
-                    label: const Text('Ajouter au planning'),
-                  )
               ])),
             ]),
           ),
@@ -5756,11 +5715,10 @@ class _TempoEvolutionPainter extends CustomPainter {
 }
 
 class ProjectDialog extends StatefulWidget {
-  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], required this.onScheduleCoachSession});
+  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const []});
   final Project? existing;
   final int totalMinutesPracticed;
   final List<Session> projectSessions;
-  final Future<void> Function(PlanItem) onScheduleCoachSession;
   @override
   State<ProjectDialog> createState() => _ProjectDialogState();
 }
@@ -6160,7 +6118,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
               const Divider(),
               const SizedBox(height: 4),
               if (widget.projectSessions.isNotEmpty) ...[
-                _ProjectCoachDashboard(project: widget.existing!, sessions: widget.projectSessions, onScheduleCoachSession: widget.onScheduleCoachSession),
+                _ProjectCoachDashboard(project: widget.existing!, sessions: widget.projectSessions),
                 const SizedBox(height: 8),
                 _ProjectEvolutionSection(project: widget.existing!, sessions: widget.projectSessions),
                 const SizedBox(height: 8),
