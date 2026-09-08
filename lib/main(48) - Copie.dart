@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '50.0';
+const String appVersion = '48.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -287,8 +287,6 @@ class Session {
     this.coachFeeling,
     this.coachFocus,
     this.coachRecommendation,
-    this.plannedDuration,
-    this.plannedTempo,
   });
   final String id;
   DateTime date;
@@ -326,10 +324,6 @@ class Session {
   String? coachFocus;
   String? coachRecommendation;
 
-  // Planification coach d'origine : permet de comparer le prévu au réalisé.
-  int? plannedDuration;
-  int? plannedTempo;
-
   bool get hasProgressSnapshot =>
       previousReading != null &&
       previousHandsTogether != null &&
@@ -358,8 +352,6 @@ class Session {
         'coachFeeling': coachFeeling,
         'coachFocus': coachFocus,
         'coachRecommendation': coachRecommendation,
-        'plannedDuration': plannedDuration,
-        'plannedTempo': plannedTempo,
       };
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
@@ -2320,46 +2312,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     if (existing == null && r.projectId != null) {
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
+      await _showPlanVsRealized(r);
     }
-    await _showPlanVsRealized(r);
     _checkCelebrations();
-  }
-
-  Future<void> _showPlanVsRealized(Session s) async {
-    if (s.plannedDuration == null && s.plannedTempo == null) return;
-    final p = projectById(s.projectId);
-    final planned = s.plannedDuration;
-    final actual = s.duration;
-    final durationText = planned == null
-        ? null
-        : '${actual} min ${actual == planned ? '· conforme au plan' : actual > planned ? '· +${actual - planned} min' : '· ${actual - planned} min'}';
-    final tempoText = s.plannedTempo != null && p != null && p.currentTempo > 0
-        ? '${s.plannedTempo} BPM → ${p.currentTempo} BPM'
-        : null;
-    if (durationText == null && tempoText == null) return;
-    if (!mounted) return;
-    await showDialog<void>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: const Text('📊 Prévu / réalisé'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (planned != null) ...[
-            const Text('⏱️ Durée', style: TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 3),
-            Text('Prévu : $planned min\nRéalisé : $actual min'),
-          ],
-          if (tempoText != null) ...[
-            const SizedBox(height: 10),
-            const Text('🎹 Tempo', style: TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 3),
-            Text(tempoText),
-          ],
-          const SizedBox(height: 10),
-          Text(s.coachFocus == null ? 'Le coach ajustera la prochaine séance selon le ressenti et les progrès.' : '🎯 Focus : ${s.coachFocus}', style: const TextStyle(height: 1.35)),
-        ]),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
-      ),
-    );
   }
 
   /// Recalcule l'avancement d'un projet a partir du temps total pratique, uniquement pour
@@ -2431,7 +2386,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           initialCoachFocus: planItem.motsCles.where((t) => t != 'Coach' && t != 'Prochaine séance').firstOrNull,
           initialCoachRecommendation: planItem.motsCles.contains('Coach') ? planItem.details : null,
           initialCoachTempo: planItem.projectId == null ? null : projectById(planItem.projectId)?.currentTempo,
-          initialPlannedDuration: planItem.duration,
         ),
       );
       if (r == null) return;
@@ -2473,7 +2427,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       _persist();
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
-      await _showPlanVsRealized(r);
     }
     _checkCelebrations();
   }
@@ -2811,8 +2764,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       method: x.method,
       coachFocus: x.motsCles.where((t) => t != 'Coach' && t != 'Prochaine séance').firstOrNull,
       coachRecommendation: x.motsCles.contains('Coach') ? x.details : null,
-      plannedDuration: x.duration,
-      plannedTempo: x.projectId == null ? null : projectById(x.projectId)?.currentTempo,
     );
     setState(() {
       x.completed = true;
@@ -4223,39 +4174,33 @@ class CoachHome extends StatelessWidget {
       Row(children: [Expanded(child: Text('Ton programme', style: Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))), if (todayItems.isNotEmpty) Text('${todayItems.length} activité${todayItems.length > 1 ? 's' : ''}', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12))]),
       const SizedBox(height: 8),
       CardBox(child: todayItems.isEmpty ? const Text('Aucune activité prévue.') : Column(children: [
-        ...todayItems.take(5).map((item) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(children: [
-            Tooltip(
-              message: item.completed ? 'Décocher' : 'Marquer comme fait',
-              child: IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: () => onTogglePlan(item),
-                icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
-                color: item.completed ? Colors.green : categoryColor(item.category),
-              ),
-            ),
-            const SizedBox(width: 2),
-            Expanded(child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTogglePlan(item),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(item.title, style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
-                  if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                ]),
-              ),
-            )),
-            Text('${item.duration} min', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-            IconButton(
+        ...todayItems.take(5).map((item) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: IconButton(
+              tooltip: item.completed ? 'Marquer comme non faite' : 'Marquer comme faite',
               visualDensity: VisualDensity.compact,
-              onPressed: () => onStart(item),
-              icon: const Icon(Icons.play_circle_outline),
-              tooltip: 'Démarrer cette séance',
+              onPressed: () => onTogglePlan(item),
+              icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
+              color: item.completed ? Colors.green.shade600 : categoryColor(item.category),
             ),
-          ]),
-        )),
+          ),
+          const SizedBox(width: 4),
+          Expanded(child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onTogglePlan(item),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item.title, style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
+                if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+              ]),
+            ),
+          )),
+          Text('${item.duration} min', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          if (!item.completed) IconButton(visualDensity: VisualDensity.compact, tooltip: 'Commencer', onPressed: () => onStart(item), icon: const Icon(Icons.play_circle_outline)),
+        ]))),
       ])),
 
       if (activeProjects.isNotEmpty) ...[
@@ -4500,24 +4445,6 @@ class _SessionsState extends State<Sessions> {
         content: SingleChildScrollView(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year} · ${s.duration} min', style: const TextStyle(fontWeight: FontWeight.w700)),
-            if (s.plannedDuration != null || s.plannedTempo != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.28),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.16)),
-                ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('📊 Prévu / réalisé', style: TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 5),
-                  if (s.plannedDuration != null) Text('⏱️ Durée : ${s.plannedDuration} min prévue → ${s.duration} min réalisée'),
-                  if (s.plannedTempo != null) Text('🎹 Tempo prévu : ${s.plannedTempo} BPM${p != null && p.currentTempo > 0 ? ' → ${p.currentTempo} BPM' : ''}'),
-                ]),
-              ),
-            ],
             const SizedBox(height: 12),
             Wrap(spacing: 6, runSpacing: 6, children: [
               Chip(label: Text(s.type)),
@@ -4713,7 +4640,6 @@ class SessionDialog extends StatefulWidget {
     this.initialCoachFocus,
     this.initialCoachRecommendation,
     this.initialCoachTempo,
-    this.initialPlannedDuration,
   });
   final List<Project> projects;
   final Session? existing;
@@ -4725,7 +4651,6 @@ class SessionDialog extends StatefulWidget {
   final String? initialCoachFocus;
   final String? initialCoachRecommendation;
   final int? initialCoachTempo;
-  final int? initialPlannedDuration;
   @override
   State<SessionDialog> createState() => _SessionDialogState();
 }
@@ -4764,7 +4689,6 @@ class _SessionDialogState extends State<SessionDialog> {
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
-    final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
     return AlertDialog(
       title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
       content: SingleChildScrollView(
@@ -4820,8 +4744,8 @@ class _SessionDialogState extends State<SessionDialog> {
                     Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
                     const SizedBox(width: 7),
                     const Expanded(child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
-                    if (plannedMinutes != null)
-                      Text('$plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                    if (widget.initialDuration != null)
+                      Text('${widget.initialDuration} min', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                   ]),
                   if (widget.initialCoachFocus != null) ...[
                     const SizedBox(height: 6),
@@ -4834,10 +4758,6 @@ class _SessionDialogState extends State<SessionDialog> {
                   if (widget.initialCoachRecommendation != null && widget.initialCoachRecommendation!.trim().isNotEmpty) ...[
                     const SizedBox(height: 5),
                     Text(widget.initialCoachRecommendation!, style: TextStyle(fontSize: 11.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                  ],
-                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes) ...[
-                    const SizedBox(height: 5),
-                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                   ],
                 ]),
               ),
@@ -4878,8 +4798,6 @@ class _SessionDialogState extends State<SessionDialog> {
               coachFeeling: widget.existing?.coachFeeling,
               coachFocus: widget.existing?.coachFocus ?? widget.initialCoachFocus,
               coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
-              plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
-              plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
             ),
           ),
           child: const Text('Enregistrer'),

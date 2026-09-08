@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '50.0';
+const String appVersion = '49.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -4500,24 +4500,6 @@ class _SessionsState extends State<Sessions> {
         content: SingleChildScrollView(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year} · ${s.duration} min', style: const TextStyle(fontWeight: FontWeight.w700)),
-            if (s.plannedDuration != null || s.plannedTempo != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.28),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.16)),
-                ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('📊 Prévu / réalisé', style: TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 5),
-                  if (s.plannedDuration != null) Text('⏱️ Durée : ${s.plannedDuration} min prévue → ${s.duration} min réalisée'),
-                  if (s.plannedTempo != null) Text('🎹 Tempo prévu : ${s.plannedTempo} BPM${p != null && p.currentTempo > 0 ? ' → ${p.currentTempo} BPM' : ''}'),
-                ]),
-              ),
-            ],
             const SizedBox(height: 12),
             Wrap(spacing: 6, runSpacing: 6, children: [
               Chip(label: Text(s.type)),
@@ -4764,7 +4746,6 @@ class _SessionDialogState extends State<SessionDialog> {
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
-    final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
     return AlertDialog(
       title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
       content: SingleChildScrollView(
@@ -4820,8 +4801,8 @@ class _SessionDialogState extends State<SessionDialog> {
                     Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
                     const SizedBox(width: 7),
                     const Expanded(child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
-                    if (plannedMinutes != null)
-                      Text('$plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                    if (widget.initialDuration != null)
+                      Text('${widget.initialDuration} min', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                   ]),
                   if (widget.initialCoachFocus != null) ...[
                     const SizedBox(height: 6),
@@ -4834,10 +4815,6 @@ class _SessionDialogState extends State<SessionDialog> {
                   if (widget.initialCoachRecommendation != null && widget.initialCoachRecommendation!.trim().isNotEmpty) ...[
                     const SizedBox(height: 5),
                     Text(widget.initialCoachRecommendation!, style: TextStyle(fontSize: 11.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                  ],
-                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes) ...[
-                    const SizedBox(height: 5),
-                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                   ],
                 ]),
               ),

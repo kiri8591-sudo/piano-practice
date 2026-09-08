@@ -4764,7 +4764,6 @@ class _SessionDialogState extends State<SessionDialog> {
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
-    final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
     return AlertDialog(
       title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
       content: SingleChildScrollView(
@@ -4820,6 +4819,7 @@ class _SessionDialogState extends State<SessionDialog> {
                     Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
                     const SizedBox(width: 7),
                     const Expanded(child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
+                    final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
                     if (plannedMinutes != null)
                       Text('$plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                   ]),
