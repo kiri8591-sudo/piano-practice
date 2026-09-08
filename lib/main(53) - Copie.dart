@@ -633,9 +633,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   int badgeBaselineChallenges = 0;
   int badgeBaselineStreak = 0;
   Map<String, int> badgeBaselineProjectMinutes = {};
-  // Date du dernier export JSON reussi, utilisee pour rappeler la sauvegarde
-  // manuelle si ca fait trop longtemps qu'elle n'a pas ete faite.
-  DateTime? lastExportAt;
 
   int get weeklyTarget => dailyCapacity.fold(0, (a, b) => a + b);
 
@@ -1220,45 +1217,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       challenges =
           (jsonDecode(prefs.getString('challenges') ?? '[]') as List).map((e) => Challenge.fromJson(e)).toList();
     }
-    final rawLastExport = prefs.getString('lastExportAt');
-    lastExportAt = rawLastExport == null ? null : DateTime.tryParse(rawLastExport);
     _syncMethodsFromUsage();
     _ensureWeeklyChallenges();
     if (mounted) setState(() => loading = false);
-    _maybeRemindExport();
-  }
-
-  /// Rappelle la sauvegarde manuelle si aucun export n'a jamais ete fait, ou si
-  /// le dernier date de plus de 7 jours. Purement un rappel : ne bloque rien,
-  /// et l'utilisateur peut ignorer sans consequence immediate.
-  void _maybeRemindExport() {
-    final daysSince = lastExportAt == null ? null : DateTime.now().difference(lastExportAt!).inDays;
-    if (lastExportAt != null && daysSince! < 7) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = navKey.currentContext;
-      if (context == null) return;
-      showDialog<void>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Pense à ta sauvegarde'),
-          content: Text(
-            lastExportAt == null
-                ? 'Tu n\'as encore jamais exporté tes données. Ça ne prend que quelques secondes.'
-                : 'Ton dernier export date de $daysSince jours. Ça vaut le coup d\'en refaire un.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Plus tard')),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(c);
-                exportData();
-              },
-              child: const Text('Exporter maintenant'),
-            ),
-          ],
-        ),
-      );
-    });
   }
 
   void _seedDemoData() {
@@ -1372,8 +1333,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       ..setAttribute('download', 'piano_practice_backup_$dateStr.json')
       ..click();
     html.Url.revokeObjectUrl(url);
-    setState(() => lastExportAt = DateTime.now());
-    SharedPreferences.getInstance().then((prefs) => prefs.setString('lastExportAt', lastExportAt!.toIso8601String()));
   }
 
   /// Restaure les donnees a partir d'un fichier .json exporte precedemment. Remplace TOUT

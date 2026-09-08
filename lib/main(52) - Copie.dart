@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '53.0';
+const String appVersion = '51.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -384,8 +384,6 @@ class Session {
         coachFeeling: j['coachFeeling'] as String?,
         coachFocus: j['coachFocus'] as String?,
         coachRecommendation: j['coachRecommendation'] as String?,
-        plannedDuration: (j['plannedDuration'] as num?)?.toInt(),
-        plannedTempo: (j['plannedTempo'] as num?)?.toInt(),
       );
 }
 
@@ -633,9 +631,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   int badgeBaselineChallenges = 0;
   int badgeBaselineStreak = 0;
   Map<String, int> badgeBaselineProjectMinutes = {};
-  // Date du dernier export JSON reussi, utilisee pour rappeler la sauvegarde
-  // manuelle si ca fait trop longtemps qu'elle n'a pas ete faite.
-  DateTime? lastExportAt;
 
   int get weeklyTarget => dailyCapacity.fold(0, (a, b) => a + b);
 
@@ -1220,45 +1215,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       challenges =
           (jsonDecode(prefs.getString('challenges') ?? '[]') as List).map((e) => Challenge.fromJson(e)).toList();
     }
-    final rawLastExport = prefs.getString('lastExportAt');
-    lastExportAt = rawLastExport == null ? null : DateTime.tryParse(rawLastExport);
     _syncMethodsFromUsage();
     _ensureWeeklyChallenges();
     if (mounted) setState(() => loading = false);
-    _maybeRemindExport();
-  }
-
-  /// Rappelle la sauvegarde manuelle si aucun export n'a jamais ete fait, ou si
-  /// le dernier date de plus de 7 jours. Purement un rappel : ne bloque rien,
-  /// et l'utilisateur peut ignorer sans consequence immediate.
-  void _maybeRemindExport() {
-    final daysSince = lastExportAt == null ? null : DateTime.now().difference(lastExportAt!).inDays;
-    if (lastExportAt != null && daysSince! < 7) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = navKey.currentContext;
-      if (context == null) return;
-      showDialog<void>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Pense à ta sauvegarde'),
-          content: Text(
-            lastExportAt == null
-                ? 'Tu n\'as encore jamais exporté tes données. Ça ne prend que quelques secondes.'
-                : 'Ton dernier export date de $daysSince jours. Ça vaut le coup d\'en refaire un.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Plus tard')),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(c);
-                exportData();
-              },
-              child: const Text('Exporter maintenant'),
-            ),
-          ],
-        ),
-      );
-    });
   }
 
   void _seedDemoData() {
@@ -1372,8 +1331,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       ..setAttribute('download', 'piano_practice_backup_$dateStr.json')
       ..click();
     html.Url.revokeObjectUrl(url);
-    setState(() => lastExportAt = DateTime.now());
-    SharedPreferences.getInstance().then((prefs) => prefs.setString('lastExportAt', lastExportAt!.toIso8601String()));
   }
 
   /// Restaure les donnees a partir d'un fichier .json exporte precedemment. Remplace TOUT
@@ -4063,8 +4020,8 @@ class CoachHome extends StatelessWidget {
     else stage = 'interprétation';
 
     if (difficultCount >= 2) return 'Deux des dernières séances ont été difficiles : on consolide ce morceau avec une charge plus légère.';
-    if (feeling == 'difficile') return 'Dernière séance difficile : le coach préfère consolider avant de demander plus de vitesse ou de difficulté.';
-    if (feeling == 'facile') return 'Dernière séance facile : c’est le bon moment pour faire progresser légèrement l’objectif.';
+    if (feeling == 'Difficile') return 'Dernière séance difficile : le coach préfère consolider avant de demander plus de vitesse ou de difficulté.';
+    if (feeling == 'Facile') return 'Dernière séance facile : c’est le bon moment pour faire progresser légèrement l’objectif.';
     if (p.effectiveStatus == 'Répertoire d’entretien') {
       if (days != null && days >= 14) return 'Répertoire d’entretien à revoir : $days jours depuis la dernière séance.';
       return 'Une courte révision entretient ce morceau sans alourdir ton programme.';
@@ -5547,49 +5504,21 @@ class _ProjectCoachDashboard extends StatelessWidget {
     }
 
     // Recommandation immédiatement actionnable pour la prochaine séance.
-    final adherence = _plannedDurationAdherence();
-    var recommendedMinutes = last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20);
-    if (adherence != null) {
-      if (adherence < .80) {
-        recommendedMinutes -= 5;
-      } else if (adherence > 1.20 && last?.coachFeeling != 'difficile') {
-        recommendedMinutes += 5;
-      }
-    }
-    recommendedMinutes = recommendedMinutes.clamp(10, 30);
+    final recommendedMinutes = last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20);
     final recommendedFocus = project.workFocus != 'Automatique'
         ? project.workFocus
         : _weakestLabel();
-    var recommendedTempo = project.currentTempo > 0
-        ? project.currentTempo
+    final recommendedTempo = project.currentTempo > 0
+        ? (last?.coachFeeling == 'difficile' ? math.max(1, project.currentTempo - 5) : project.currentTempo)
         : null;
-    final tempoSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
-    final tempoSamples = tempoSessions
-        .where((s) => s.plannedTempo != null && s.newTempo != null)
-        .take(3)
-        .toList();
-    if (recommendedTempo != null) {
-      if (last?.coachFeeling == 'difficile' || tempoSamples.where((s) => s.newTempo! < s.plannedTempo!).length >= 2) {
-        recommendedTempo = math.max(1, recommendedTempo! - 5);
-      } else if (last?.coachFeeling == 'facile' && tempoSamples.where((s) => s.newTempo! >= s.plannedTempo! + 3).length >= 2) {
-        recommendedTempo = recommendedTempo! + 3;
-      }
-    }
     final concretePlan = recommendedTempo != null
         ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM'
         : '$recommendedMinutes min · $recommendedFocus';
-    String concreteWhy;
-    if (adherence != null && adherence < .80) {
-      concreteWhy = 'Les dernières séances étaient plus courtes que prévu : charge légèrement réduite.';
-    } else if (adherence != null && adherence > 1.20 && last?.coachFeeling != 'difficile') {
-      concreteWhy = 'Tu dépasses régulièrement le temps prévu sans difficulté signalée : charge légèrement augmentée.';
-    } else if (last?.coachFeeling == 'difficile') {
-      concreteWhy = 'Charge réduite pour consolider sans forcer.';
-    } else if (last?.coachFeeling == 'facile') {
-      concreteWhy = 'Le dernier travail était facile : tu peux légèrement augmenter la charge.';
-    } else {
-      concreteWhy = 'Une séance courte et ciblée pour faire avancer le point le plus utile.';
-    }
+    final concreteWhy = last?.coachFeeling == 'difficile'
+        ? 'Charge réduite pour consolider sans forcer.'
+        : last?.coachFeeling == 'facile'
+            ? 'Le dernier travail était facile : tu peux légèrement augmenter la charge.'
+            : 'Une séance courte et ciblée pour faire avancer le point le plus utile.';
 
     return Card(
       margin: EdgeInsets.zero,
