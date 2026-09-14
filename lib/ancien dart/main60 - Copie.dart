@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '53.0';
+const String appVersion = '60.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -289,6 +289,10 @@ class Session {
     this.coachRecommendation,
     this.plannedDuration,
     this.plannedTempo,
+    this.runThroughCompleted,
+    this.runThroughStopNote,
+    this.runThroughStartTempo,
+    this.runThroughEndTempo,
   });
   final String id;
   DateTime date;
@@ -330,6 +334,12 @@ class Session {
   int? plannedDuration;
   int? plannedTempo;
 
+  // Résultat spécifique du Run-through.
+  bool? runThroughCompleted;
+  String? runThroughStopNote;
+  int? runThroughStartTempo;
+  int? runThroughEndTempo;
+
   bool get hasProgressSnapshot =>
       previousReading != null &&
       previousHandsTogether != null &&
@@ -360,6 +370,10 @@ class Session {
         'coachRecommendation': coachRecommendation,
         'plannedDuration': plannedDuration,
         'plannedTempo': plannedTempo,
+        'runThroughCompleted': runThroughCompleted,
+        'runThroughStopNote': runThroughStopNote,
+        'runThroughStartTempo': runThroughStartTempo,
+        'runThroughEndTempo': runThroughEndTempo,
       };
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
@@ -384,9 +398,27 @@ class Session {
         coachFeeling: j['coachFeeling'] as String?,
         coachFocus: j['coachFocus'] as String?,
         coachRecommendation: j['coachRecommendation'] as String?,
-        plannedDuration: (j['plannedDuration'] as num?)?.toInt(),
+        plannedDuration: (j['plannedDuration'] as num?)?.toInt() ?? (j['duration'] as num?)?.toInt() ?? 0,
         plannedTempo: (j['plannedTempo'] as num?)?.toInt(),
+        runThroughCompleted: j['runThroughCompleted'] as bool?,
+        runThroughStopNote: j['runThroughStopNote'] as String?,
+        runThroughStartTempo: (j['runThroughStartTempo'] as num?)?.toInt(),
+        runThroughEndTempo: (j['runThroughEndTempo'] as num?)?.toInt(),
       );
+}
+
+String runThroughResultLabel(Session s, Project? p) {
+  if (s.type != 'Run-through' || s.runThroughCompleted == null) return '';
+  if (!s.runThroughCompleted!) return '⏹️ Interrompu';
+  final target = p?.targetTempo ?? 0;
+  final end = s.runThroughEndTempo ?? 0;
+  if (target > 0 && end > 0) {
+    final ratio = end / target;
+    if (ratio >= 1.0) return '✅ Terminé · tempo cible atteint';
+    if (ratio >= 0.9) return '✅ Terminé · proche du tempo cible';
+    return '✅ Terminé · tempo encore à construire';
+  }
+  return '✅ Terminé';
 }
 
 class PlanItem {
@@ -402,7 +434,8 @@ class PlanItem {
     this.completed = false,
     List<String>? motsCles,
     this.sourceSessionId,
-  }) : motsCles = motsCles ?? [];
+    int? plannedDuration,
+  }) : motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
   final String id;
   DateTime date;
   int duration;
@@ -414,6 +447,7 @@ class PlanItem {
   bool completed;
   List<String> motsCles; // mots-cles/tags libres pour filtrer le planning
   String? sourceSessionId; // id de la session creee quand cette entree a ete marquee terminee
+  final int plannedDuration; // durée prévue conservée après réalisation
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -427,6 +461,7 @@ class PlanItem {
         'completed': completed,
         'motsCles': motsCles,
         'sourceSessionId': sourceSessionId,
+        'plannedDuration': plannedDuration,
       };
 
   factory PlanItem.fromJson(Map<String, dynamic> j) => PlanItem(
@@ -441,6 +476,7 @@ class PlanItem {
         completed: j['completed'] as bool? ?? false,
         motsCles: (j['motsCles'] as List?)?.map((e) => e as String).toList() ?? [],
         sourceSessionId: j['sourceSessionId'] as String?,
+        plannedDuration: (j['plannedDuration'] as num?)?.toInt() ?? (j['duration'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -614,6 +650,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   final navKey = GlobalKey<NavigatorState>();
   int tab = 0;
   bool loading = true;
+  DateTime? lastBackupAt;
+  bool _backupReminderShown = false;
+  static const int _backupReminderDays = 7;
   List<int> dailyCapacity = [30, 30, 45, 30, 30, 45, 30]; // Lundi..Dimanche, en minutes
   String weeklyInstructions = ''; // criteres de planning saisis par l'utilisateur, conserves
   List<Project> projects = [];
@@ -633,9 +672,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   int badgeBaselineChallenges = 0;
   int badgeBaselineStreak = 0;
   Map<String, int> badgeBaselineProjectMinutes = {};
-  // Date du dernier export JSON reussi, utilisee pour rappeler la sauvegarde
-  // manuelle si ca fait trop longtemps qu'elle n'a pas ete faite.
-  DateTime? lastExportAt;
 
   int get weeklyTarget => dailyCapacity.fold(0, (a, b) => a + b);
 
@@ -820,9 +856,22 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
     final avgRating = weekSessions.isEmpty ? null : weekSessions.fold(0, (a, s) => a + s.rating) / weekSessions.length;
 
+    final weekPlan = plan.where((x) => !x.date.isBefore(start) && x.date.isBefore(end)).toList();
+    final plannedMinutes = weekPlan.fold(0, (a, x) => a + (x.plannedDuration > 0 ? x.plannedDuration : x.duration));
+    final plannedSessions = weekPlan.where((x) => (x.plannedDuration > 0 || x.duration > 0)).length;
+    final completedPlannedSessions = weekPlan.where((x) => x.completed && x.sourceSessionId != null).length;
+    final realizedPlannedMinutes = weekPlan.fold(0, (a, x) {
+      final source = x.sourceSessionId == null ? null : sessions.where((s) => s.id == x.sourceSessionId).firstOrNull;
+      return a + (source?.duration ?? 0);
+    });
+
     return WeeklyBilan(
       weekStart: start,
       totalMinutes: totalMinutes,
+      plannedMinutes: plannedMinutes,
+      realizedPlannedMinutes: realizedPlannedMinutes,
+      plannedSessions: plannedSessions,
+      completedPlannedSessions: completedPlannedSessions,
       pieces: pieces,
       bestDay: bestDay,
       bestDayMinutes: bestDayMinutes,
@@ -1196,6 +1245,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       if (!methodDefinitions.any((m) => m.name.toLowerCase() == name.toLowerCase())) methodDefinitions.add(MethodDefinition(name: name));
     }
     darkMode = prefs.getBool('darkMode') ?? false;
+    final rawLastBackup = prefs.getString('lastBackupAt');
+    lastBackupAt = rawLastBackup == null ? null : DateTime.tryParse(rawLastBackup);
     bestStreakEver = prefs.getInt('bestStreakEver') ?? 0;
     seenBadgeIds = (jsonDecode(prefs.getString('seenBadgeIds') ?? '[]') as List).map((e) => e as String).toList();
     badgeBaselineMinutes = prefs.getInt('badgeBaselineMinutes') ?? 0;
@@ -1220,45 +1271,51 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       challenges =
           (jsonDecode(prefs.getString('challenges') ?? '[]') as List).map((e) => Challenge.fromJson(e)).toList();
     }
-    final rawLastExport = prefs.getString('lastExportAt');
-    lastExportAt = rawLastExport == null ? null : DateTime.tryParse(rawLastExport);
     _syncMethodsFromUsage();
     _ensureWeeklyChallenges();
-    if (mounted) setState(() => loading = false);
-    _maybeRemindExport();
+    if (mounted) {
+      setState(() => loading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRemindBackup());
+    }
   }
 
-  /// Rappelle la sauvegarde manuelle si aucun export n'a jamais ete fait, ou si
-  /// le dernier date de plus de 7 jours. Purement un rappel : ne bloque rien,
-  /// et l'utilisateur peut ignorer sans consequence immediate.
-  void _maybeRemindExport() {
-    final daysSince = lastExportAt == null ? null : DateTime.now().difference(lastExportAt!).inDays;
-    if (lastExportAt != null && daysSince! < 7) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = navKey.currentContext;
-      if (context == null) return;
-      showDialog<void>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Pense à ta sauvegarde'),
-          content: Text(
-            lastExportAt == null
-                ? 'Tu n\'as encore jamais exporté tes données. Ça ne prend que quelques secondes.'
-                : 'Ton dernier export date de $daysSince jours. Ça vaut le coup d\'en refaire un.',
+  Future<void> _maybeRemindBackup() async {
+    if (!mounted || _backupReminderShown || loading) return;
+    final now = DateTime.now();
+    final last = lastBackupAt;
+    final shouldRemind = last == null || now.difference(last).inDays >= _backupReminderDays;
+    if (!shouldRemind) return;
+    _backupReminderShown = true;
+
+    final daysText = last == null
+        ? 'Aucune sauvegarde n’est encore enregistrée.'
+        : 'Ta dernière sauvegarde date d’il y a ${now.difference(last).inDays} jour${now.difference(last).inDays > 1 ? 's' : ''}.';
+
+    await showDialog<void>(
+      context: navKey.currentContext!,
+      builder: (c) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.backup_outlined),
+          SizedBox(width: 10),
+          Expanded(child: Text('Sauvegarde recommandée')),
+        ]),
+        content: Text('$daysText\n\nPour éviter de perdre ton planning, tes morceaux et tes sessions, pense à exporter régulièrement tes données.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Plus tard'),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Plus tard')),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(c);
-                exportData();
-              },
-              child: const Text('Exporter maintenant'),
-            ),
-          ],
-        ),
-      );
-    });
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(c);
+              exportData();
+            },
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Sauvegarder maintenant'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _seedDemoData() {
@@ -1303,6 +1360,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setString('learningMethods', jsonEncode(learningMethods));
     await prefs.setString('methodDefinitions', jsonEncode(methodDefinitions.map((e) => e.toJson()).toList()));
     await prefs.setBool('darkMode', darkMode);
+    if (lastBackupAt != null) await prefs.setString('lastBackupAt', lastBackupAt!.toIso8601String());
     await prefs.setInt('bestStreakEver', bestStreakEver);
     await prefs.setString('seenBadgeIds', jsonEncode(seenBadgeIds));
     await prefs.setInt('badgeBaselineMinutes', badgeBaselineMinutes);
@@ -1343,6 +1401,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
   /// Telecharge un fichier .json contenant toutes les donnees de l'application (sauvegarde).
   void exportData() {
+    final backupNow = DateTime.now();
+    if (mounted) setState(() => lastBackupAt = backupNow);
+    _persist();
     final data = {
       'dailyCapacity': dailyCapacity,
       'weeklyInstructions': weeklyInstructions,
@@ -1362,7 +1423,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'plan': plan.map((e) => e.toJson()).toList(),
       'routine': routine.map((e) => e.toJson()).toList(),
       'challenges': challenges.map((e) => e.toJson()).toList(),
-      'exportedAt': DateTime.now().toIso8601String(),
+      'exportedAt': backupNow.toIso8601String(),
     };
     final bytes = utf8.encode(jsonEncode(data));
     final blob = html.Blob([bytes], 'application/json');
@@ -1372,8 +1433,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       ..setAttribute('download', 'piano_practice_backup_$dateStr.json')
       ..click();
     html.Url.revokeObjectUrl(url);
-    setState(() => lastExportAt = DateTime.now());
-    SharedPreferences.getInstance().then((prefs) => prefs.setString('lastExportAt', lastExportAt!.toIso8601String()));
   }
 
   /// Restaure les donnees a partir d'un fichier .json exporte precedemment. Remplace TOUT
@@ -1459,6 +1518,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         plan = ((data['plan'] as List?) ?? []).map((e) => PlanItem.fromJson(e)).toList();
         routine = ((data['routine'] as List?) ?? []).map((e) => RoutineItem.fromJson(e)).toList();
         challenges = ((data['challenges'] as List?) ?? []).map((e) => Challenge.fromJson(e)).toList();
+        final importedBackup = data['exportedAt']?.toString();
+        lastBackupAt = importedBackup == null ? null : DateTime.tryParse(importedBackup);
       });
       await _persist();
       await showDialog<void>(
@@ -1590,7 +1651,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     for (final x in plan) {
       if (x.date.isBefore(start) || !x.date.isBefore(end)) continue;
       final cat = mergeForComparison[x.category] ?? x.category ?? 'Non catégorisé';
-      map[cat] = (map[cat] ?? 0) + x.duration;
+      map[cat] = (map[cat] ?? 0) + x.plannedDuration;
     }
     return map;
   }
@@ -2419,6 +2480,62 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     p.progress = (totalMinutes / (p.targetHours! * 60)).clamp(0, 1);
   }
 
+  Future<void> startRunThrough(Project project) async {
+    final elapsedMinutes = await Navigator.of(navKey.currentContext!).push<int>(
+      MaterialPageRoute(
+        builder: (_) => const PracticeTimerScreen(
+          title: 'Run-through',
+          subtitle: 'Joue le morceau du début à la fin sans t’arrêter pour corriger. Le but est de mesurer ce que tu arrives réellement à jouer en continu.',
+        ),
+      ),
+    );
+    if (elapsedMinutes == null) return;
+
+    final result = await showDialog<_RunThroughResult>(
+      context: navKey.currentContext!,
+      builder: (_) => _RunThroughResultDialog(initialTempo: project.currentTempo > 0 ? project.currentTempo : null),
+    );
+    if (result == null) return;
+
+    final stopNote = result.stopNote.trim();
+    final noteText = stopNote.isEmpty
+        ? (result.completed ? 'Exécution complète du morceau du début à la fin.' : 'Exécution interrompue.')
+        : 'Exécution ${result.completed ? 'complète' : 'interrompue'} · $stopNote';
+
+    final r = await showDialog<Session>(
+      context: navKey.currentContext!,
+      builder: (_) => SessionDialog(
+        projects: projects,
+        initialDuration: elapsedMinutes,
+        initialProjectId: project.id,
+        initialType: 'Run-through',
+        initialNotes: noteText,
+        initialMethod: project.method,
+        initialCoachFocus: 'Exécution complète',
+        initialCoachRecommendation: result.completed
+            ? 'Run-through terminé : mesure surtout la continuité et la stabilité générale.'
+            : 'Run-through interrompu : transforme le point d’arrêt en cible de travail pour la prochaine séance.',
+        initialCoachTempo: project.currentTempo > 0 ? project.currentTempo : null,
+        initialRunThroughCompleted: result.completed,
+        initialRunThroughStopNote: stopNote.isEmpty ? null : stopNote,
+        initialRunThroughStartTempo: result.startTempo,
+        initialRunThroughEndTempo: result.endTempo,
+      ),
+    );
+    if (r == null) return;
+
+    setState(() {
+      _capturePreviousProgress(r);
+      sessions.insert(0, r);
+      _updateAutoProgress(r.projectId);
+    });
+    await _persist();
+    await _offerDetailedProgress(r);
+    await _showCoachFeedback(r);
+    await _showPlanVsRealized(r);
+    _checkCelebrations();
+  }
+
   /// Ouvre un chrono/minuteur pour la seance en cours. Si aucune entree n'est precisee,
   int? _tempoFromPlanDetails(String details) {
     final match = RegExp(r'(?:tempo\s*(?:de\s*référence|reference)?\s*[:→-]?\s*)?(\d+)\s*BPM', caseSensitive: false).firstMatch(details);
@@ -2487,7 +2604,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _capturePreviousProgress(r);
         sessions.insert(0, r);
         planItem.completed = true;
-        planItem.duration = r.duration;
         planItem.sourceSessionId = r.id;
         _updateAutoProgress(r.projectId);
       });
@@ -2740,7 +2856,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         : (sessions.where((s) => s.projectId == existing.id).toList()..sort((a, b) => b.date.compareTo(a.date)));
     final r = await showDialog<Project>(
       context: navKey.currentContext!,
-      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions, scheduledCoachSessions: plan.where((x) => x.projectId == existing?.id && !x.completed && x.motsCles.contains('Prochaine séance')).toList(), onScheduleCoachSession: _scheduleCoachSession),
+      builder: (_) => ProjectDialog(existing: existing, totalMinutesPracticed: totalMinutes, projectSessions: projectSessions, scheduledCoachSessions: plan.where((x) => x.projectId == existing?.id && !x.completed && x.motsCles.contains('Prochaine séance')).toList(), onScheduleCoachSession: _scheduleCoachSession, onRunThrough: startRunThrough),
     );
     if (r == null) return;
     setState(() {
@@ -2864,7 +2980,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     );
     setState(() {
       x.completed = true;
-      x.duration = minutes;
       _capturePreviousProgress(newSession);
       sessions.insert(0, newSession);
       x.sourceSessionId = newSession.id;
@@ -3033,7 +3148,9 @@ class CardBox extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class PracticeTimerScreen extends StatefulWidget {
-  const PracticeTimerScreen({super.key});
+  const PracticeTimerScreen({super.key, this.title = 'Chrono de pratique', this.subtitle});
+  final String title;
+  final String? subtitle;
   @override
   State<PracticeTimerScreen> createState() => _PracticeTimerScreenState();
 }
@@ -3091,13 +3208,29 @@ class _PracticeTimerScreenState extends State<PracticeTimerScreen> {
     final finished = isCountdown && elapsedSeconds >= targetMinutes * 60;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Chrono de pratique')),
+      appBar: AppBar(title: Text(widget.title)),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.subtitle != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: Theme.of(c).colorScheme.secondaryContainer.withOpacity(.55),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.music_note_outlined, size: 20, color: Theme.of(c).colorScheme.secondary),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(widget.subtitle!, style: const TextStyle(fontSize: 12.5, height: 1.35))),
+                  ]),
+                ),
+                const SizedBox(height: 18),
+              ],
               if (!running && elapsedSeconds == 0)
                 SegmentedButton<bool>(
                   segments: const [
@@ -3274,15 +3407,23 @@ class WeeklyBilan {
   WeeklyBilan({
     required this.weekStart,
     required this.totalMinutes,
+    required this.plannedMinutes,
+    required this.realizedPlannedMinutes,
+    required this.plannedSessions,
+    required this.completedPlannedSessions,
     required this.pieces,
     required this.bestDay,
     required this.bestDayMinutes,
     required this.daysPracticed,
     required this.avgRating,
   });
-  final DateTime weekStart; // lundi de la semaine couverte par ce bilan
+  final DateTime weekStart;
   final int totalMinutes;
-  final List<MapEntry<Project, int>> pieces; // triees par temps decroissant
+  final int plannedMinutes;
+  final int realizedPlannedMinutes;
+  final int plannedSessions;
+  final int completedPlannedSessions;
+  final List<MapEntry<Project, int>> pieces;
   final DateTime? bestDay;
   final int bestDayMinutes;
   final int daysPracticed;
@@ -4043,6 +4184,19 @@ class CoachHome extends StatelessWidget {
   String _adaptiveAdvice(Project p) {
     final last = _lastFeeling(p.id);
     final difficult = _recentDifficultSessions(p.id);
+    final lastRun = [...sessions.where((s) => s.projectId == p.id && s.type == 'Run-through')]
+      ..sort((a, b) => b.date.compareTo(a.date));
+    if (lastRun.isNotEmpty) {
+      final rt = lastRun.first;
+      if (rt.runThroughCompleted == false) {
+        return 'Dernier run-through interrompu : le prochain travail doit sécuriser le passage d’arrêt avant de relancer une exécution complète.';
+      }
+      final target = p.targetTempo;
+      final end = rt.runThroughEndTempo ?? 0;
+      if (target > 0 && end > 0 && end < target * .9) {
+        return 'Run-through terminé mais encore nettement sous le tempo cible : consolide la continuité avant de pousser la vitesse.';
+      }
+    }
     if (difficult >= 2) return 'Le coach allège la prochaine reprise : petit passage, tempo confortable, puis progression.';
     if (last == 'difficile') return 'Dernière séance difficile : on consolide avant d’augmenter la difficulté.';
     if (last == 'facile') return 'Dernière séance facile : tu peux légèrement augmenter la difficulté ou le tempo.';
@@ -4063,6 +4217,13 @@ class CoachHome extends StatelessWidget {
     else stage = 'interprétation';
 
     if (difficultCount >= 2) return 'Deux des dernières séances ont été difficiles : on consolide ce morceau avec une charge plus légère.';
+    final latestRun = [...sessions.where((s) => s.projectId == p.id && s.type == 'Run-through')]..sort((a, b) => b.date.compareTo(a.date));
+    if (latestRun.isNotEmpty && latestRun.first.runThroughCompleted == false) {
+      final stop = latestRun.first.runThroughStopNote?.trim();
+      return stop == null || stop.isEmpty
+          ? 'Dernier run-through interrompu : on travaille la continuité avant de refaire une exécution complète.'
+          : 'Dernier run-through interrompu au point indiqué : $stop. C’est la cible prioritaire avant le prochain run-through.';
+    }
     if (feeling == 'difficile') return 'Dernière séance difficile : le coach préfère consolider avant de demander plus de vitesse ou de difficulté.';
     if (feeling == 'facile') return 'Dernière séance facile : c’est le bon moment pour faire progresser légèrement l’objectif.';
     if (p.effectiveStatus == 'Répertoire d’entretien') {
@@ -4094,8 +4255,8 @@ class CoachHome extends StatelessWidget {
     if (item.category == 'Répertoire d’entretien') score += 20;
     if (_focusFor(p) == 'Passages difficiles' || _focusFor(p) == 'Mains ensemble' || _focusFor(p) == 'Rythme') score += 6;
     final feeling = _lastFeeling(p.id);
-    if (feeling == 'Difficile') score += 18;
-    if (feeling == 'Facile') score += 5;
+    if (feeling == 'difficile') score += 18;
+    if (feeling == 'facile') score += 5;
     if (_recentDifficultSessions(p.id) >= 2) score += 18;
     return score;
   }
@@ -4129,18 +4290,18 @@ class CoachHome extends StatelessWidget {
     final adherence = _plannedDurationAdherence(p);
     if (adherence == null) return '';
     if (adherence < .80) return 'Les dernières séances ont été plus courtes que prévu : le coach allège légèrement la prochaine séance.';
-    if (adherence > 1.20 && _lastFeeling(p.id) != 'Difficile') return 'Tu dépasses régulièrement le temps prévu sans signal de difficulté : le coach peut augmenter légèrement la charge.';
+    if (adherence > 1.20 && _lastFeeling(p.id) != 'difficile') return 'Tu dépasses régulièrement le temps prévu sans signal de difficulté : le coach peut augmenter légèrement la charge.';
     return '';
   }
 
   int _recommendedMinutes(Project p) {
     final feeling = _lastFeeling(p.id);
-    var minutes = feeling == 'Difficile' || _recentDifficultSessions(p.id) >= 2 ? 15 : (feeling == 'Facile' ? 25 : 20);
+    var minutes = feeling == 'difficile' || _recentDifficultSessions(p.id) >= 2 ? 15 : (feeling == 'facile' ? 25 : 20);
     final adherence = _plannedDurationAdherence(p);
     if (adherence != null) {
       if (adherence < .80) {
         minutes -= 5;
-      } else if (adherence > 1.20 && feeling != 'Difficile') {
+      } else if (adherence > 1.20 && feeling != 'difficile') {
         minutes += 5;
       }
     }
@@ -4153,14 +4314,14 @@ class CoachHome extends StatelessWidget {
     if (p.currentTempo <= 0) return null;
     final feeling = _lastFeeling(p.id);
     var tempo = p.currentTempo;
-    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'Difficile') {
+    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'difficile') {
       tempo = math.max(1, tempo - 5);
     } else {
       final recent = _recentPlannedSessions(p.id).where((s) => s.plannedTempo != null && s.newTempo != null).toList();
       if (recent.isNotEmpty) {
         final averageDelta = recent.fold<double>(0, (a, s) => a + (s.newTempo! - s.plannedTempo!)) / recent.length;
-        if (averageDelta >= 3 && feeling == 'Facile') tempo += 3;
-        if (averageDelta <= -5 && feeling != 'Facile') tempo = math.max(1, tempo - 3);
+        if (averageDelta >= 3 && feeling == 'facile') tempo += 3;
+        if (averageDelta <= -5 && feeling != 'facile') tempo = math.max(1, tempo - 3);
       }
     }
     return tempo;
@@ -4195,8 +4356,11 @@ class CoachHome extends StatelessWidget {
     final todayItems = plan.where((x) => _day(x.date) == today).toList()
       ..sort((a, b) => a.completed == b.completed ? a.id.compareTo(b.id) : (a.completed ? 1 : -1));
     final pending = todayItems.where((x) => !x.completed).toList();
-    final todayTarget = todayItems.fold(0, (a, x) => a + x.duration);
-    final todayDone = todayItems.where((x) => x.completed).fold(0, (a, x) => a + x.duration);
+    final todayTarget = todayItems.fold(0, (a, x) => a + x.plannedDuration);
+    int realizedFor(PlanItem x) => x.sourceSessionId == null
+        ? 0
+        : sessions.where((s) => s.id == x.sourceSessionId).firstOrNull?.duration ?? 0;
+    final todayDone = todayItems.where((x) => x.completed).fold(0, (a, x) => a + realizedFor(x));
     final todayRatio = todayTarget == 0 ? 0.0 : (todayDone / todayTarget).clamp(0.0, 1.0).toDouble();
     final weeklyRatio = weeklyTarget == 0 ? 0.0 : (minutes / weeklyTarget).clamp(0.0, 1.0).toDouble();
     final next = _bestPending(pending, now);
@@ -4607,6 +4771,49 @@ class _SessionsState extends State<Sessions> {
                 ]),
               ),
             ],
+            if (s.type == 'Run-through' && s.runThroughCompleted != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(c).colorScheme.secondaryContainer.withOpacity(.35),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(s.runThroughCompleted! ? Icons.check_circle_outline : Icons.stop_circle_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    s.runThroughCompleted!
+                        ? 'Run-through terminé : exécution complète.'
+                        : 'Run-through interrompu${s.runThroughStopNote == null || s.runThroughStopNote!.trim().isEmpty ? '' : ' · ${s.runThroughStopNote}'}',
+                    style: const TextStyle(fontSize: 12, height: 1.3, fontWeight: FontWeight.w600),
+                  )),
+                ]),
+              ),
+            ],
+            if (s.type == 'Run-through' && (s.runThroughStartTempo != null || s.runThroughEndTempo != null)) ...[
+              const SizedBox(height: 8),
+              Text(
+                '🎹 Tempo : ${s.runThroughStartTempo ?? '—'} BPM → ${s.runThroughEndTempo ?? '—'} BPM',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
+            if (s.type == 'Run-through' && runThroughResultLabel(s, p).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.45),
+                ),
+                child: Text(
+                  runThroughResultLabel(s, p),
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Wrap(spacing: 6, runSpacing: 6, children: [
               Chip(label: Text(s.type)),
@@ -4789,6 +4996,106 @@ class _SessionsState extends State<Sessions> {
   }
 }
 
+class _RunThroughResult {
+  const _RunThroughResult({required this.completed, required this.stopNote, this.startTempo, this.endTempo});
+  final bool completed;
+  final String stopNote;
+  final int? startTempo;
+  final int? endTempo;
+}
+
+class _RunThroughResultDialog extends StatefulWidget {
+  const _RunThroughResultDialog({this.initialTempo});
+  final int? initialTempo;
+  @override
+  State<_RunThroughResultDialog> createState() => _RunThroughResultDialogState();
+}
+
+class _RunThroughResultDialogState extends State<_RunThroughResultDialog> {
+  bool completed = true;
+  late final TextEditingController noteCtrl;
+  late final TextEditingController startTempoCtrl;
+  late final TextEditingController endTempoCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    noteCtrl = TextEditingController();
+    final t = widget.initialTempo;
+    startTempoCtrl = TextEditingController(text: t == null || t <= 0 ? '' : t.toString());
+    endTempoCtrl = TextEditingController(text: t == null || t <= 0 ? '' : t.toString());
+  }
+
+  @override
+  void dispose() {
+    noteCtrl.dispose();
+    startTempoCtrl.dispose();
+    endTempoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('🎹 Bilan du Run-through'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Comment s’est déroulée l’exécution ?', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('✅ Terminé')),
+                ButtonSegment(value: false, label: Text('⏹️ Interrompu')),
+              ],
+              selected: {completed},
+              onSelectionChanged: (v) => setState(() => completed = v.first),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: startTempoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Tempo départ', suffixText: 'BPM'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: endTempoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Tempo réalisé', suffixText: 'BPM'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: completed ? 'Observation (facultatif)' : 'Point d’arrêt (facultatif)',
+                hintText: completed ? 'Ex. quelques hésitations dans les transitions' : 'Ex. mesure 73 ou passage difficile',
+              ),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              _RunThroughResult(
+                completed: completed,
+                stopNote: noteCtrl.text,
+                startTempo: int.tryParse(startTempoCtrl.text.trim()),
+                endTempo: int.tryParse(endTempoCtrl.text.trim()),
+              ),
+            ),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      );
+}
+
 class SessionDialog extends StatefulWidget {
   const SessionDialog({
     super.key,
@@ -4803,6 +5110,10 @@ class SessionDialog extends StatefulWidget {
     this.initialCoachRecommendation,
     this.initialCoachTempo,
     this.initialPlannedDuration,
+    this.initialRunThroughCompleted,
+    this.initialRunThroughStopNote,
+    this.initialRunThroughStartTempo,
+    this.initialRunThroughEndTempo,
   });
   final List<Project> projects;
   final Session? existing;
@@ -4815,6 +5126,10 @@ class SessionDialog extends StatefulWidget {
   final String? initialCoachRecommendation;
   final int? initialCoachTempo;
   final int? initialPlannedDuration;
+  final bool? initialRunThroughCompleted;
+  final String? initialRunThroughStopNote;
+  final int? initialRunThroughStartTempo;
+  final int? initialRunThroughEndTempo;
   @override
   State<SessionDialog> createState() => _SessionDialogState();
 }
@@ -4875,7 +5190,7 @@ class _SessionDialogState extends State<SessionDialog> {
             DropdownButtonFormField<String>(
               value: type,
               decoration: const InputDecoration(labelText: 'Type de travail'),
-              items: objectiveCategories
+              items: ['Run-through', ...objectiveCategories]
                   .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                   .toList(),
               onChanged: (v) => setState(() => type = v ?? type),
@@ -4969,6 +5284,10 @@ class _SessionDialogState extends State<SessionDialog> {
               coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
               plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
               plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
+              runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
+              runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
+              runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
+              runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
             ),
           ),
           child: const Text('Enregistrer'),
@@ -5533,7 +5852,16 @@ class _ProjectCoachDashboard extends StatelessWidget {
       stableText = 'Aucune étape clairement stagnante sur la dernière séance.';
     }
     String nextText;
-    if (difficult >= 2) {
+    if (last?.type == 'Run-through' && last?.runThroughCompleted == false) {
+      final stop = last?.runThroughStopNote?.trim();
+      nextText = stop != null && stop.isNotEmpty
+          ? 'Run-through interrompu ($stop) : travaille ce point avant de refaire une exécution complète.'
+          : 'Run-through interrompu : consolide le point difficile avant de refaire une exécution complète.';
+    } else if (last?.type == 'Run-through' && last?.runThroughCompleted == true) {
+      nextText = last?.runThroughEndTempo != null && project.targetTempo > 0 && last!.runThroughEndTempo! < project.targetTempo
+          ? 'Run-through terminé : la continuité est acquise ; consolide encore la régularité autour de ${last.runThroughEndTempo} BPM avant de viser ${project.targetTempo} BPM.'
+          : 'Run-through terminé : consolide la continuité et vise une exécution de plus en plus régulière.';
+    } else if (difficult >= 2) {
       nextText = 'Deux séances difficiles récemment : consolide ${_weakestLabel().toLowerCase()} avant d’ajouter de la vitesse.';
     } else if (project.workFocus != 'Automatique') {
       nextText = 'Travail prioritaire : ${project.workFocus.toLowerCase()}, avec une intensité ${project.workIntensity.toLowerCase()}.';
@@ -5548,7 +5876,9 @@ class _ProjectCoachDashboard extends StatelessWidget {
 
     // Recommandation immédiatement actionnable pour la prochaine séance.
     final adherence = _plannedDurationAdherence();
-    var recommendedMinutes = last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20);
+    var recommendedMinutes = last?.type == 'Run-through' && last?.runThroughCompleted == false
+        ? 15
+        : (last?.coachFeeling == 'difficile' ? 15 : (last?.coachFeeling == 'facile' ? 25 : 20));
     if (adherence != null) {
       if (adherence < .80) {
         recommendedMinutes -= 5;
@@ -5565,13 +5895,13 @@ class _ProjectCoachDashboard extends StatelessWidget {
         : null;
     final tempoSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
     final tempoSamples = tempoSessions
-        .where((s) => s.plannedTempo != null && s.newTempo != null)
+        .where((s) => s.plannedTempo != null && (s.newTempo != null || s.runThroughEndTempo != null))
         .take(3)
         .toList();
     if (recommendedTempo != null) {
-      if (last?.coachFeeling == 'difficile' || tempoSamples.where((s) => s.newTempo! < s.plannedTempo!).length >= 2) {
+      if (last?.coachFeeling == 'difficile' || tempoSamples.where((s) => (s.newTempo ?? s.runThroughEndTempo)! < s.plannedTempo!).length >= 2) {
         recommendedTempo = math.max(1, recommendedTempo! - 5);
-      } else if (last?.coachFeeling == 'facile' && tempoSamples.where((s) => s.newTempo! >= s.plannedTempo! + 3).length >= 2) {
+      } else if (last?.coachFeeling == 'facile' && tempoSamples.where((s) => (s.newTempo ?? s.runThroughEndTempo)! >= s.plannedTempo! + 3).length >= 2) {
         recommendedTempo = recommendedTempo! + 3;
       }
     }
@@ -5677,6 +6007,8 @@ class _ProjectCoachDashboard extends StatelessWidget {
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 5, children: [
               Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
+              if (sessions.any((s) => s.type == 'Run-through'))
+                Chip(avatar: const Icon(Icons.play_circle_outline, size: 14), label: Text('${sessions.where((s) => s.type == 'Run-through').length} run-through', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
             ]),
@@ -6076,12 +6408,13 @@ class _TempoEvolutionPainter extends CustomPainter {
 }
 
 class ProjectDialog extends StatefulWidget {
-  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], this.scheduledCoachSessions = const [], required this.onScheduleCoachSession});
+  const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], this.scheduledCoachSessions = const [], required this.onScheduleCoachSession, required this.onRunThrough});
   final Project? existing;
   final int totalMinutesPracticed;
   final List<Session> projectSessions;
   final List<PlanItem> scheduledCoachSessions;
   final Future<void> Function(PlanItem) onScheduleCoachSession;
+  final Future<void> Function(Project) onRunThrough;
   @override
   State<ProjectDialog> createState() => _ProjectDialogState();
 }
@@ -6477,6 +6810,31 @@ class _ProjectDialogState extends State<ProjectDialog> {
               onChanged: (v) => setState(() => priority = v),
             ),
             if (widget.existing != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Theme.of(c).colorScheme.secondaryContainer.withOpacity(.42),
+                  border: Border.all(color: Theme.of(c).colorScheme.secondary.withOpacity(.18)),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.play_circle_outline, color: Theme.of(c).colorScheme.secondary, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('RUN-THROUGH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 3),
+                    const Text('Jouer le morceau en continu du début à la fin pour vérifier ce qui tient réellement.', style: TextStyle(fontSize: 12, height: 1.3)),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () => widget.onRunThrough(widget.existing!),
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text('Lancer un run-through'),
+                    ),
+                  ])),
+                ]),
+              ),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 4),
@@ -6894,7 +7252,7 @@ class _WeekState extends State<Week> {
                                                     Chip(
                                                       visualDensity: VisualDensity.compact,
                                                       avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
-                                                      label: Text('${x.duration} min', style: TextStyle(
+                                                      label: Text('${x.plannedDuration} min', style: TextStyle(
                                                         fontSize: 11,
                                                         color: x.completed ? Colors.grey : null,
                                                         decoration: x.completed ? TextDecoration.lineThrough : null,
@@ -7214,6 +7572,28 @@ class _BilanScreenState extends State<BilanScreen> {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+        CardBox(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionHeader(c, Icons.compare_arrows_outlined, 'Prévu / réalisé',
+              subtitle: 'Comparaison entre le planning et les séances réellement effectuées.'),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: _statTile(c, icon: Icons.event_note_outlined, label: 'Planifié', value: '${bilan.plannedMinutes} min', sub: '${bilan.plannedSessions} séance${bilan.plannedSessions > 1 ? 's' : ''}')),
+              const SizedBox(width: 10),
+              Expanded(child: _statTile(c, icon: Icons.play_circle_outline, label: 'Réalisé', value: '${bilan.realizedPlannedMinutes} min', sub: '${bilan.completedPlannedSessions} séance${bilan.completedPlannedSessions > 1 ? 's' : ''}')),
+            ]),
+            if (bilan.plannedMinutes > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Adhérence au planning : ${(bilan.realizedPlannedMinutes / bilan.plannedMinutes * 100).round()} %',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              progress((bilan.realizedPlannedMinutes / bilan.plannedMinutes).clamp(0, 1).toDouble()),
+            ],
+          ]),
         ),
         const SizedBox(height: 16),
         if (bilan.pieces.isNotEmpty)

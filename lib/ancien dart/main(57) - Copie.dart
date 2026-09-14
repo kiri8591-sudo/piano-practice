@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '71.0';
+const String appVersion = '56.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -291,8 +291,6 @@ class Session {
     this.plannedTempo,
     this.runThroughCompleted,
     this.runThroughStopNote,
-    this.runThroughStartTempo,
-    this.runThroughEndTempo,
   });
   final String id;
   DateTime date;
@@ -337,8 +335,6 @@ class Session {
   // Résultat spécifique du Run-through.
   bool? runThroughCompleted;
   String? runThroughStopNote;
-  int? runThroughStartTempo;
-  int? runThroughEndTempo;
 
   bool get hasProgressSnapshot =>
       previousReading != null &&
@@ -372,8 +368,6 @@ class Session {
         'plannedTempo': plannedTempo,
         'runThroughCompleted': runThroughCompleted,
         'runThroughStopNote': runThroughStopNote,
-        'runThroughStartTempo': runThroughStartTempo,
-        'runThroughEndTempo': runThroughEndTempo,
       };
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
@@ -402,23 +396,7 @@ class Session {
         plannedTempo: (j['plannedTempo'] as num?)?.toInt(),
         runThroughCompleted: j['runThroughCompleted'] as bool?,
         runThroughStopNote: j['runThroughStopNote'] as String?,
-        runThroughStartTempo: (j['runThroughStartTempo'] as num?)?.toInt(),
-        runThroughEndTempo: (j['runThroughEndTempo'] as num?)?.toInt(),
       );
-}
-
-String runThroughResultLabel(Session s, Project? p) {
-  if (s.type != 'Run-through' || s.runThroughCompleted == null) return '';
-  if (!s.runThroughCompleted!) return '⏹️ Interrompu';
-  final target = p?.targetTempo ?? 0;
-  final end = s.runThroughEndTempo ?? 0;
-  if (target > 0 && end > 0) {
-    final ratio = end / target;
-    if (ratio >= 1.0) return '✅ Terminé · tempo cible atteint';
-    if (ratio >= 0.9) return '✅ Terminé · proche du tempo cible';
-    return '✅ Terminé · tempo encore à construire';
-  }
-  return '✅ Terminé';
 }
 
 class PlanItem {
@@ -968,16 +946,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       await _persist();
     }
     await proposeWeeklyPlan(skipInstructionsDialog: true);
-  }
-
-  /// Nombre de séances récentes ressenties comme difficiles pour un morceau.
-  /// Utilisé par le moteur de planification pour alléger/reprioriser sa charge.
-  int _recentDifficultSessions(String projectId) {
-    final recent = sessions
-        .where((s) => s.projectId == projectId && s.coachFeeling != null)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    return recent.take(3).where((s) => s.coachFeeling == 'difficile').length;
   }
 
   List<Challenge> get thisWeekChallenges {
@@ -2265,149 +2233,100 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         };
         final itemByDayAndProject = <String, PlanItem>{};
         final lastProjectByDay = <DateTime, String>{};
-        final lastScheduledDayByProject = <String, DateTime>{};
-        final scheduledCountByProject = <String, int>{};
-        final scheduledMinutesByFocus = <String, int>{};
         const minUsefulMinutes = 10;
         const maxDailyMinutes = 40;
 
-        DateTime? latestSessionFor(String projectId) {
-          DateTime? latest;
-          for (final s in sessions.where((s) => s.projectId == projectId)) {
-            if (latest == null || s.date.isAfter(latest!)) latest = s.date;
-          }
-          return latest;
-        }
-
-        List<Session> runThroughHistory(String projectId) {
-          final list = sessions
-              .where((s) => s.projectId == projectId && s.type == 'Run-through' && s.runThroughCompleted == true)
-              .toList()
-            ..sort((a, b) => b.date.compareTo(a.date));
-          return list;
-        }
-
-        bool runThroughDue(Project p, DateTime day) {
-          if (p.targetTempo <= 0) return false;
-          if (p.progress < .65 && p.effectiveStatus != 'Acquis' && p.effectiveStatus != 'Répertoire d’entretien') {
-            return false;
-          }
-          final history = runThroughHistory(p.id);
-          if (history.isEmpty) {
-            return p.progress >= .75 || p.effectiveStatus == 'Acquis' || p.effectiveStatus == 'Répertoire d’entretien';
-          }
-          final lastRun = history.first.date;
-          final daysSince = day.difference(DateTime(lastRun.year, lastRun.month, lastRun.day)).inDays;
-          if (daysSince < 7) return false;
-          final endTempo = history.first.runThroughEndTempo ?? 0;
-          final tempoRatio = endTempo > 0 ? endTempo / p.targetTempo : 0.0;
-          return tempoRatio >= .80 || p.effectiveStatus == 'Répertoire d’entretien' || p.progress >= .85;
-        }
-
-        String planningFocus(Project p) {
-          final focus = p.effectiveWorkFocus;
-          return focus.isEmpty ? 'Consolidation' : focus;
-        }
-
-        double projectNeed(String projectId, DateTime day) {
+        double projectNeed(String projectId) {
           final p = projectById(projectId);
           if (p == null) return 0;
-
-          final last = latestSessionFor(projectId);
-          final daysSince = last == null
-              ? 999
-              : day.difference(DateTime(last.year, last.month, last.day)).inDays;
-          final recency = daysSince >= 14
-              ? 1.55
-              : (daysSince >= 7 ? 1.28 : (daysSince >= 3 ? 1.08 : .92));
-
-          final stage = 1.0 + (1.0 - p.weakestStageValue) * .30;
-          final priority = p.priority ? 1.35 : 1.0;
-          final difficult = _recentDifficultSessions(p.id) >= 2 ? 1.16 : 1.0;
-
-          // On espace les contacts : un morceau vu hier reste éligible, mais
-          // il doit être nettement plus prioritaire pour être reprogrammé.
-          final lastScheduled = lastScheduledDayByProject[p.id];
-          final spacingPenalty = lastScheduled == null
-              ? 1.0
-              : (day.difference(lastScheduled).inDays <= 1 ? .58 : 1.0);
-
-          // Un Run-through terminé devient une vraie étape du parcours :
-          // lorsqu'il est arrivé à échéance, on donne un bonus pour le placer
-          // plutôt que de refaire automatiquement le même type de travail.
-          final runBonus = runThroughDue(p, day) ? 1.34 : 1.0;
-
-          return (1.0 + (1.0 - p.progress) * .85) *
-              recency *
-              stage *
-              priority *
-              difficult *
-              spacingPenalty *
-              runBonus;
+          // Même logique générale que la recommandation, mais volontairement
+          // moins agressive : elle sert à choisir le prochain morceau du jour.
+          final last = sessions
+              .where((s) => s.projectId == projectId)
+              .map((s) => s.date)
+              .fold<DateTime?>(null, (latest, d) => latest == null || d.isAfter(latest) ? d : latest);
+          final daysSince = last == null ? 999 : DateTime.now().difference(last).inDays;
+          final recency = daysSince >= 14 ? 1.25 : (daysSince >= 7 ? 1.12 : 1.0);
+          final stage = 1.0 + (1.0 - p.weakestStageValue) * .20;
+          final priority = p.priority ? 1.30 : 1.0;
+          return (1.0 + (1.0 - p.progress) * .80) * recency * stage * priority;
         }
 
-        // On remplit chaque journée par des séances naturelles : au maximum
-        // un bloc par morceau et par jour. Le moteur préfère laisser quelques
-        // minutes libres plutôt que fabriquer des reliquats de 5–10 min.
+        // On remplit chaque journée par petits blocs, en donnant d'abord à chaque
+        // morceau présent une vraie durée de travail, puis en ajoutant du temps
+        // aux morceaux qui en ont encore besoin. La rotation empêche le même
+        // morceau de reprendre immédiatement la main.
         for (final day in days) {
           var guard = 0;
-          while ((remainingByDay[day] ?? 0) >= minUsefulMinutes &&
-              remainingByProject.isNotEmpty &&
-              guard++ < 50) {
+          while ((remainingByDay[day] ?? 0) >= minUsefulMinutes && remainingByProject.isNotEmpty && guard++ < 50) {
             final dayRemaining = remainingByDay[day]!;
-            final candidates = remainingByProject.keys
-                .where((id) => remainingByProject[id]! > 0)
-                .toList();
+            final candidates = remainingByProject.keys.where((id) => remainingByProject[id]! > 0).toList();
             if (candidates.isEmpty) break;
 
-            // Un même morceau n'est planifié qu'une seule fois par jour.
-            // Cela évite les enchaînements 10 + 10 + 10 min sur la même pièce.
-            final untouched = candidates
-                .where((id) =>
-                    !itemByDayAndProject.containsKey('${day.toIso8601String()}|$id'))
-                .toList();
+            // 1) Tant que plusieurs morceaux doivent encore être travaillés,
+            //    favoriser ceux qui n'ont pas encore eu leur bloc aujourd'hui.
+            final untouched = candidates.where((id) => !itemByDayAndProject.containsKey('${day.toIso8601String()}|$id')).toList();
+            final pool = untouched.isNotEmpty && candidates.length > 1 ? untouched : candidates;
 
-            // Si tous les morceaux ont déjà eu leur bloc aujourd'hui, on préfère
-            // garder le temps restant libre plutôt que de fractionner davantage.
-            if (untouched.isEmpty) break;
-
-            // Choix par score : besoin + poids hebdomadaire restant + rotation.
-            String bestId = untouched.first;
+            // 2) Choix par score : besoin + poids hebdomadaire restant + bonus
+            //    de rotation. Un morceau déjà travaillé aujourd'hui est pénalisé.
+            String bestId = pool.first;
             var bestScore = -1.0;
-            final totalRemaining = candidates
-                .map((x) => remainingByProject[x]!.toDouble())
-                .fold(0.0, (a, b) => a + b);
-
-            for (final id in untouched) {
+            for (final id in pool) {
               final remaining = remainingByProject[id]!.toDouble();
-              final weeklyShare =
-                  totalRemaining > 0 ? remaining / totalRemaining : 0.0;
+              final weeklyShare = remaining / candidates.map((x) => remainingByProject[x]!.toDouble()).fold(0.0, (a, b) => a + b);
+              final already = itemByDayAndProject['${day.toIso8601String()}|$id']?.duration ?? 0;
               final alternation = lastProjectByDay[day] == id ? 0.55 : 1.0;
-              final need = projectNeed(id, day);
-
-              // Le moteur équilibre aussi les types de travail sur la semaine :
-              // si un focus a déjà pris beaucoup de place, son score baisse un peu.
-              final p = projectById(id);
-              final focus = p == null ? 'Consolidation' : planningFocus(p);
-              final focusMinutes = scheduledMinutesByFocus[focus] ?? 0;
-              final focusPenalty = focusMinutes >= 60 ? .76 : (focusMinutes >= 45 ? .88 : 1.0);
-
-              // Evite de monopoliser la semaine avec un seul morceau.
-              final scheduledCount = scheduledCountByProject[id] ?? 0;
-              final contactPenalty = scheduledCount >= 4
-                  ? .52
-                  : (scheduledCount >= 3 ? .78 : (scheduledCount >= 2 ? .92 : 1.0));
-
-              final score =
-                  (weeklyShare * .58 + need * .42) *
-                  alternation *
-                  focusPenalty *
-                  contactPenalty;
+              final need = projectNeed(id);
+              final score = (weeklyShare * .75 + need * .25) * alternation * (already == 0 ? 1.15 : 1.0);
               if (score > bestScore) {
                 bestScore = score;
                 bestId = id;
               }
             }
+
+            final key = '${day.toIso8601String()}|$bestId';
+            final alreadyToday = itemByDayAndProject[key]?.duration ?? 0;
+            final otherProjects = candidates.where((id) => id != bestId).toList();
+            final focusMax = workFocusMaxMinutes(projectById(bestId)?.effectiveWorkFocus ?? 'Automatique');
+            final focusMin = workFocusMinMinutes(projectById(bestId)?.effectiveWorkFocus ?? 'Automatique');
+            final cap = otherProjects.isNotEmpty ? (focusMax < maxDailyMinutes ? focusMax : maxDailyMinutes) : (dayRemaining < focusMax ? dayRemaining : focusMax);
+            var room = cap - alreadyToday;
+            if (room <= 0) {
+              // Ce morceau a atteint son plafond pour aujourd'hui. On ne touche
+              // surtout pas à son budget hebdomadaire : il sera repris un autre jour.
+              final alternative = candidates.where((id) {
+                final k = '${day.toIso8601String()}|$id';
+                return (itemByDayAndProject[k]?.duration ?? 0) < maxDailyMinutes;
+              }).toList();
+              if (alternative.isEmpty) break;
+              bestId = alternative.first;
+              continue;
+            }
+
+            // Quand plusieurs morceaux sont disponibles, on privilégie un bloc
+            // d'au moins 15 min. Le dernier bloc de la journée peut être plus court
+            // uniquement s'il reste moins de 15 min disponibles.
+            var chunk = [remainingByProject[bestId]!, dayRemaining, room].reduce((a, b) => a < b ? a : b);
+            if (chunk >= focusMin) {
+              if (chunk > focusMax) chunk = focusMax;
+              // Ne pas laisser un reliquat ridicule pour le même morceau :
+              // lorsqu'il reste 30 min ou moins, on les prend en une seule fois.
+              final projectRemainingAfter = remainingByProject[bestId]! - chunk;
+              if (projectRemainingAfter > 0 && projectRemainingAfter < minUsefulMinutes && chunk < room) {
+                final adjusted = chunk + projectRemainingAfter;
+                if (adjusted <= room && adjusted <= maxDailyMinutes) chunk = adjusted;
+              }
+            }
+            if (chunk > 0 && chunk < focusMin && dayRemaining < focusMin) {
+              // Dernier petit reliquat de la journée : on l'autorise plutôt que de perdre le temps.
+            } else if (chunk > 0 && chunk < focusMin) {
+              // Si le morceau demande un travail court (accords, rythme...), on peut
+              // tout de même planifier son minimum utile de 10 min si la place le permet.
+              if (focusMin <= room && focusMin <= remainingByProject[bestId]!) chunk = focusMin;
+              else break;
+            }
+            if (chunk <= 0) break;
 
             final project = projectById(bestId);
             if (project == null) {
@@ -2415,85 +2334,28 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               continue;
             }
 
-            final dueForRunThrough = runThroughDue(project, day);
-            final focus = dueForRunThrough ? 'Interprétation' : project.effectiveWorkFocus;
-            final focusMax = workFocusMaxMinutes(focus);
-            final focusMin = workFocusMinMinutes(focus);
-
-            // Durée cible naturelle pour une vraie séance. Les travaux courts
-            // restent courts (20 min max), tandis que déchiffrage/mains ensemble
-            // peuvent prendre 30 min. On ne cherche plus à remplir artificiellement
-            // la journée minute par minute.
-            int naturalTarget;
-            switch (focus) {
-              case 'Accords':
-              case 'Rythme':
-              case 'Passages difficiles':
-              case 'Entretien':
-                naturalTarget = 20;
-                break;
-              case 'Tempo':
-              case 'Mémorisation':
-              case 'Consolidation':
-                naturalTarget = 25;
-                break;
-              default:
-                naturalTarget = 30;
-                break;
-            }
-
-            var chunk = math.min(
-              remainingByProject[bestId]!,
-              math.min(dayRemaining, math.min(focusMax, naturalTarget)),
-            );
-
-            // Si le reliquat du morceau est petit, on le termine en un seul bloc.
-            if (remainingByProject[bestId]! <= naturalTarget) {
-              chunk = math.min(
-                remainingByProject[bestId]!,
-                math.min(dayRemaining, focusMax),
+            final existing = itemByDayAndProject[key];
+            if (existing != null) {
+              existing.duration += chunk;
+            } else {
+              final item = PlanItem(
+                id: newId(),
+                date: day,
+                duration: chunk,
+                title: project.name,
+                details: _methodPlanningDetails(project),
+                projectId: project.id,
+                category: project.weakestCategory,
+                method: project.method,
               );
+              itemByDayAndProject[key] = item;
+              plan.add(item);
             }
 
-            // Si la journée n'offre que son dernier petit reliquat, on ne crée pas
-            // un bloc artificiel : on arrête la génération et la minute restante
-            // demeure disponible pour une pratique libre.
-            if (chunk < focusMin) break;
-
-            final key = '${day.toIso8601String()}|$bestId';
-            final baseDetails = _methodPlanningDetails(project);
-            final detailsPrefix = baseDetails.isEmpty ? '' : '$baseDetails · ';
-            final planningDetails = dueForRunThrough
-                ? '${detailsPrefix}Run-through · exécution complète${project.targetTempo > 0 ? ' · cible ${project.targetTempo} BPM' : ''}'
-                : baseDetails;
-
-            final item = PlanItem(
-              id: newId(),
-              date: day,
-              duration: chunk,
-              title: project.name,
-              details: planningDetails,
-              projectId: project.id,
-              category: dueForRunThrough ? 'Run-through' : project.weakestCategory,
-              method: project.method,
-            );
-            itemByDayAndProject[key] = item;
-            plan.add(item);
-
-            remainingByProject[bestId] =
-                remainingByProject[bestId]! - chunk;
-            remainingByDay[day] =
-                remainingByDay[day]! - chunk;
+            remainingByProject[bestId] = remainingByProject[bestId]! - chunk;
+            remainingByDay[day] = remainingByDay[day]! - chunk;
             lastProjectByDay[day] = bestId;
-            lastScheduledDayByProject[bestId] = day;
-            scheduledCountByProject[bestId] =
-                (scheduledCountByProject[bestId] ?? 0) + 1;
-            scheduledMinutesByFocus[focus] =
-                (scheduledMinutesByFocus[focus] ?? 0) + chunk;
-
-            if (remainingByProject[bestId]! <= 0) {
-              remainingByProject.remove(bestId);
-            }
+            if (remainingByProject[bestId]! <= 0) remainingByProject.remove(bestId);
           }
         }
       }
@@ -2596,7 +2458,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     p.progress = (totalMinutes / (p.targetHours! * 60)).clamp(0, 1);
   }
 
-  Future<void> startRunThrough(Project project, {PlanItem? plannedItem}) async {
+  Future<void> startRunThrough(Project project) async {
     final elapsedMinutes = await Navigator.of(navKey.currentContext!).push<int>(
       MaterialPageRoute(
         builder: (_) => const PracticeTimerScreen(
@@ -2609,7 +2471,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
     final result = await showDialog<_RunThroughResult>(
       context: navKey.currentContext!,
-      builder: (_) => _RunThroughResultDialog(initialTempo: project.currentTempo > 0 ? project.currentTempo : null),
+      builder: (_) => const _RunThroughResultDialog(),
     );
     if (result == null) return;
 
@@ -2634,9 +2496,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         initialCoachTempo: project.currentTempo > 0 ? project.currentTempo : null,
         initialRunThroughCompleted: result.completed,
         initialRunThroughStopNote: stopNote.isEmpty ? null : stopNote,
-        initialRunThroughStartTempo: result.startTempo,
-        initialRunThroughEndTempo: result.endTempo,
-        initialPlannedDuration: plannedItem?.duration,
       ),
     );
     if (r == null) return;
@@ -2644,10 +2503,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     setState(() {
       _capturePreviousProgress(r);
       sessions.insert(0, r);
-      if (plannedItem != null) {
-        plannedItem.completed = true;
-        plannedItem.sourceSessionId = r.id;
-      }
       _updateAutoProgress(r.projectId);
     });
     await _persist();
@@ -2695,16 +2550,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         if (result == null) return; // fenetre fermee sans choix
         if (result is PlanItem) chosen = result;
         // si result == 'free', chosen reste null intentionnellement
-      }
-    }
-
-    if (chosen != null &&
-        chosen.category == 'Run-through' &&
-        chosen.projectId != null) {
-      final project = projectById(chosen.projectId);
-      if (project != null) {
-        await startRunThrough(project, plannedItem: chosen);
-        return;
       }
     }
 
@@ -3169,7 +3014,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         projectById: projectById,
         onOpenProject: (p) => addOrEditProject(p),
       ),
-      Projects(items: projects, sessions: sessions, onAdd: () => addOrEditProject(), onEdit: addOrEditProject, onDelete: deleteProject),
+      Projects(items: projects, onAdd: () => addOrEditProject(), onEdit: addOrEditProject, onDelete: deleteProject),
       Week(
         items: plan,
         minutes: minutes,
@@ -3186,7 +3031,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onOpenRoutine: openRoutineScreen,
         onStartTimer: startPracticeTimer,
         projectById: projectById,
-        sessions: sessions,
       ),
       MethodsScreen(
         methods: methodDefinitions,
@@ -4316,19 +4160,6 @@ class CoachHome extends StatelessWidget {
   String _adaptiveAdvice(Project p) {
     final last = _lastFeeling(p.id);
     final difficult = _recentDifficultSessions(p.id);
-    final lastRun = [...sessions.where((s) => s.projectId == p.id && s.type == 'Run-through')]
-      ..sort((a, b) => b.date.compareTo(a.date));
-    if (lastRun.isNotEmpty) {
-      final rt = lastRun.first;
-      if (rt.runThroughCompleted == false) {
-        return 'Dernier run-through interrompu : le prochain travail doit sécuriser le passage d’arrêt avant de relancer une exécution complète.';
-      }
-      final target = p.targetTempo;
-      final end = rt.runThroughEndTempo ?? 0;
-      if (target > 0 && end > 0 && end < target * .9) {
-        return 'Run-through terminé mais encore nettement sous le tempo cible : consolide la continuité avant de pousser la vitesse.';
-      }
-    }
     if (difficult >= 2) return 'Le coach allège la prochaine reprise : petit passage, tempo confortable, puis progression.';
     if (last == 'difficile') return 'Dernière séance difficile : on consolide avant d’augmenter la difficulté.';
     if (last == 'facile') return 'Dernière séance facile : tu peux légèrement augmenter la difficulté ou le tempo.';
@@ -4349,13 +4180,6 @@ class CoachHome extends StatelessWidget {
     else stage = 'interprétation';
 
     if (difficultCount >= 2) return 'Deux des dernières séances ont été difficiles : on consolide ce morceau avec une charge plus légère.';
-    final latestRun = [...sessions.where((s) => s.projectId == p.id && s.type == 'Run-through')]..sort((a, b) => b.date.compareTo(a.date));
-    if (latestRun.isNotEmpty && latestRun.first.runThroughCompleted == false) {
-      final stop = latestRun.first.runThroughStopNote?.trim();
-      return stop == null || stop.isEmpty
-          ? 'Dernier run-through interrompu : on travaille la continuité avant de refaire une exécution complète.'
-          : 'Dernier run-through interrompu au point indiqué : $stop. C’est la cible prioritaire avant le prochain run-through.';
-    }
     if (feeling == 'difficile') return 'Dernière séance difficile : le coach préfère consolider avant de demander plus de vitesse ou de difficulté.';
     if (feeling == 'facile') return 'Dernière séance facile : c’est le bon moment pour faire progresser légèrement l’objectif.';
     if (p.effectiveStatus == 'Répertoire d’entretien') {
@@ -4924,28 +4748,6 @@ class _SessionsState extends State<Sessions> {
                 ]),
               ),
             ],
-            if (s.type == 'Run-through' && (s.runThroughStartTempo != null || s.runThroughEndTempo != null)) ...[
-              const SizedBox(height: 8),
-              Text(
-                '🎹 Tempo : ${s.runThroughStartTempo ?? '—'} BPM → ${s.runThroughEndTempo ?? '—'} BPM',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            ],
-            if (s.type == 'Run-through' && runThroughResultLabel(s, p).isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.45),
-                ),
-                child: Text(
-                  runThroughResultLabel(s, p),
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
             const SizedBox(height: 12),
             Wrap(spacing: 6, runSpacing: 6, children: [
               Chip(label: Text(s.type)),
@@ -5031,7 +4833,7 @@ class _SessionsState extends State<Sessions> {
           TextField(decoration: const InputDecoration(labelText: 'Rechercher morceau, catégorie, méthode...', prefixIcon: Icon(Icons.search), isDense: true), onChanged: (v) => setState(() => search = v)),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), const DropdownMenuItem<String?>(value: 'Run-through', child: Text('Run-through')), ...objectiveCategories.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
+            DropdownButton<String?>(value: typeFilter, hint: const Text('Type'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Tous les types')), ...objectiveCategories.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => typeFilter=v)),
             DropdownButton<String?>(value: methodFilter, hint: const Text('Méthode'), items: [const DropdownMenuItem<String?>(value: null, child: Text('Toutes les méthodes')), ...methods.map((v) => DropdownMenuItem<String?>(value:v, child:Text(v)))], onChanged: (v) => setState(() => methodFilter=v)),
             DropdownButton<int>(value: periodDays, items: const [DropdownMenuItem(value:0,child:Text('Toute la période')),DropdownMenuItem(value:7,child:Text('7 derniers jours')),DropdownMenuItem(value:30,child:Text('30 derniers jours'))], onChanged:(v)=>setState(()=>periodDays=v??0)),
             DropdownButton<String>(value: sort, items: const [DropdownMenuItem(value:'recent',child:Text('Plus récentes')),DropdownMenuItem(value:'long',child:Text('Durée longue')),DropdownMenuItem(value:'short',child:Text('Durée courte')),DropdownMenuItem(value:'piece',child:Text('Par morceau'))], onChanged:(v)=>setState(()=>sort=v??'recent')),
@@ -5129,16 +4931,13 @@ class _SessionsState extends State<Sessions> {
 }
 
 class _RunThroughResult {
-  const _RunThroughResult({required this.completed, required this.stopNote, this.startTempo, this.endTempo});
+  const _RunThroughResult({required this.completed, required this.stopNote});
   final bool completed;
   final String stopNote;
-  final int? startTempo;
-  final int? endTempo;
 }
 
 class _RunThroughResultDialog extends StatefulWidget {
-  const _RunThroughResultDialog({this.initialTempo});
-  final int? initialTempo;
+  const _RunThroughResultDialog();
   @override
   State<_RunThroughResultDialog> createState() => _RunThroughResultDialogState();
 }
@@ -5146,23 +4945,16 @@ class _RunThroughResultDialog extends StatefulWidget {
 class _RunThroughResultDialogState extends State<_RunThroughResultDialog> {
   bool completed = true;
   late final TextEditingController noteCtrl;
-  late final TextEditingController startTempoCtrl;
-  late final TextEditingController endTempoCtrl;
 
   @override
   void initState() {
     super.initState();
     noteCtrl = TextEditingController();
-    final t = widget.initialTempo;
-    startTempoCtrl = TextEditingController(text: t == null || t <= 0 ? '' : t.toString());
-    endTempoCtrl = TextEditingController(text: t == null || t <= 0 ? '' : t.toString());
   }
 
   @override
   void dispose() {
     noteCtrl.dispose();
-    startTempoCtrl.dispose();
-    endTempoCtrl.dispose();
     super.dispose();
   }
 
@@ -5182,24 +4974,6 @@ class _RunThroughResultDialogState extends State<_RunThroughResultDialog> {
               onSelectionChanged: (v) => setState(() => completed = v.first),
             ),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: startTempoCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Tempo départ', suffixText: 'BPM'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: endTempoCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Tempo réalisé', suffixText: 'BPM'),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 12),
             TextField(
               controller: noteCtrl,
               maxLines: 2,
@@ -5213,15 +4987,7 @@ class _RunThroughResultDialogState extends State<_RunThroughResultDialog> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              _RunThroughResult(
-                completed: completed,
-                stopNote: noteCtrl.text,
-                startTempo: int.tryParse(startTempoCtrl.text.trim()),
-                endTempo: int.tryParse(endTempoCtrl.text.trim()),
-              ),
-            ),
+            onPressed: () => Navigator.pop(context, _RunThroughResult(completed: completed, stopNote: noteCtrl.text)),
             child: const Text('Enregistrer'),
           ),
         ],
@@ -5244,8 +5010,6 @@ class SessionDialog extends StatefulWidget {
     this.initialPlannedDuration,
     this.initialRunThroughCompleted,
     this.initialRunThroughStopNote,
-    this.initialRunThroughStartTempo,
-    this.initialRunThroughEndTempo,
   });
   final List<Project> projects;
   final Session? existing;
@@ -5260,8 +5024,6 @@ class SessionDialog extends StatefulWidget {
   final int? initialPlannedDuration;
   final bool? initialRunThroughCompleted;
   final String? initialRunThroughStopNote;
-  final int? initialRunThroughStartTempo;
-  final int? initialRunThroughEndTempo;
   @override
   State<SessionDialog> createState() => _SessionDialogState();
 }
@@ -5418,8 +5180,6 @@ class _SessionDialogState extends State<SessionDialog> {
               plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
               runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
               runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
-              runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
-              runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
             ),
           ),
           child: const Text('Enregistrer'),
@@ -5440,9 +5200,8 @@ Widget _miniProgress(String label, double value) => Chip(
     );
 
 class Projects extends StatefulWidget {
-  const Projects({super.key, required this.items, required this.sessions, required this.onAdd, required this.onEdit, required this.onDelete});
+  const Projects({super.key, required this.items, required this.onAdd, required this.onEdit, required this.onDelete});
   final List<Project> items;
-  final List<Session> sessions;
   final VoidCallback onAdd;
   final void Function(Project) onEdit;
   final void Function(Project) onDelete;
@@ -5496,16 +5255,6 @@ class _ProjectsState extends State<Projects> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
                     final p = sorted[i];
-                    final pieceRunThroughs = widget.sessions.where((s) => s.projectId == p.id && s.type == 'Run-through').toList();
-                    final completedPieceRuns = pieceRunThroughs.where((s) => s.runThroughCompleted == true).toList();
-                    final measuredPieceTempos = completedPieceRuns
-                        .map((s) => s.runThroughEndTempo ?? 0)
-                        .where((tempo) => tempo > 0)
-                        .toList();
-                    final bestPieceRunTempo = measuredPieceTempos.isEmpty ? null : measuredPieceTempos.reduce(math.max);
-                    final pieceRunMastery = bestPieceRunTempo != null && p.targetTempo > 0
-                        ? ((bestPieceRunTempo / p.targetTempo).clamp(0.0, 1.0) * 100).round()
-                        : null;
                     return swipeToDelete(
                       key: ValueKey(p.id),
                       what: 'ce morceau',
@@ -5575,37 +5324,6 @@ class _ProjectsState extends State<Projects> {
                                     style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                                 ]),
                               ),
-                              if (pieceRunMastery != null) ...[
-                                const SizedBox(height: 10),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    color: Theme.of(c).colorScheme.primaryContainer.withOpacity(.42),
-                                    border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.18)),
-                                  ),
-                                  child: Row(children: [
-                                    Icon(Icons.insights_outlined, size: 18, color: Theme.of(c).colorScheme.primary),
-                                    const SizedBox(width: 8),
-                                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Text('🎯 Maîtrise Run-through', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.onSurface)),
-                                      const SizedBox(height: 3),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(5),
-                                        child: LinearProgressIndicator(value: pieceRunMastery / 100, minHeight: 6),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '$pieceRunMastery % · meilleur ${bestPieceRunTempo} BPM / cible ${p.targetTempo} BPM · ${completedPieceRuns.length} terminé${completedPieceRuns.length > 1 ? 's' : ''}',
-                                        style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                                      ),
-                                    ])),
-                                    const SizedBox(width: 10),
-                                    Text('$pieceRunMastery %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
-                                  ]),
-                                ),
-                              ],
                               if (p.currentTempo > 0 || p.targetTempo > 0 || p.measures.isNotEmpty) ...[
                                 const SizedBox(height: 12),
                                 Container(
@@ -6011,16 +5729,6 @@ class _ProjectCoachDashboard extends StatelessWidget {
     final stagnant = deltas.where((e) => e.value.abs() < 0.05).toList();
     final difficult = recent.where((s) => s.coachFeeling == 'difficile').length;
     final tempoGap = project.targetTempo > 0 && project.currentTempo > 0 ? project.targetTempo - project.currentTempo : 0;
-    final completedRuns = sessions.where((s) => s.type == 'Run-through' && s.runThroughCompleted == true).toList();
-    final bestRunTempo = completedRuns.fold<int>(0, (best, s) {
-      final tempo = s.runThroughEndTempo ?? 0;
-      return tempo > best ? tempo : best;
-    });
-    final runMastery = completedRuns.isEmpty
-        ? null
-        : project.targetTempo > 0 && bestRunTempo > 0
-            ? ((bestRunTempo / project.targetTempo).clamp(0.0, 1.0) * 100).round()
-            : 100;
     String progressText;
     if (improved.isNotEmpty) {
       progressText = improved.map((e) => '${e.key} +${(e.value * 100).round()}%').join(' · ');
@@ -6042,9 +5750,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
           ? 'Run-through interrompu ($stop) : travaille ce point avant de refaire une exécution complète.'
           : 'Run-through interrompu : consolide le point difficile avant de refaire une exécution complète.';
     } else if (last?.type == 'Run-through' && last?.runThroughCompleted == true) {
-      nextText = last?.runThroughEndTempo != null && project.targetTempo > 0 && last!.runThroughEndTempo! < project.targetTempo
-          ? 'Run-through terminé : la continuité est acquise ; consolide encore la régularité autour de ${last.runThroughEndTempo} BPM avant de viser ${project.targetTempo} BPM.'
-          : 'Run-through terminé : consolide la continuité et vise une exécution de plus en plus régulière.';
+      nextText = 'Run-through terminé : consolide la continuité et vise une exécution de plus en plus régulière.';
     } else if (difficult >= 2) {
       nextText = 'Deux séances difficiles récemment : consolide ${_weakestLabel().toLowerCase()} avant d’ajouter de la vitesse.';
     } else if (project.workFocus != 'Automatique') {
@@ -6079,61 +5785,19 @@ class _ProjectCoachDashboard extends StatelessWidget {
         : null;
     final tempoSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
     final tempoSamples = tempoSessions
-        .where((s) => s.plannedTempo != null && (s.newTempo != null || s.runThroughEndTempo != null))
+        .where((s) => s.plannedTempo != null && s.newTempo != null)
         .take(3)
         .toList();
     if (recommendedTempo != null) {
-      if (last?.coachFeeling == 'difficile' || tempoSamples.where((s) => (s.newTempo ?? s.runThroughEndTempo)! < s.plannedTempo!).length >= 2) {
+      if (last?.coachFeeling == 'difficile' || tempoSamples.where((s) => s.newTempo! < s.plannedTempo!).length >= 2) {
         recommendedTempo = math.max(1, recommendedTempo! - 5);
-      } else if (last?.coachFeeling == 'facile' && tempoSamples.where((s) => (s.newTempo ?? s.runThroughEndTempo)! >= s.plannedTempo! + 3).length >= 2) {
+      } else if (last?.coachFeeling == 'facile' && tempoSamples.where((s) => s.newTempo! >= s.plannedTempo! + 3).length >= 2) {
         recommendedTempo = recommendedTempo! + 3;
       }
     }
     final concretePlan = recommendedTempo != null
         ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM'
         : '$recommendedMinutes min · $recommendedFocus';
-
-    // Synthèse dédiée des run-throughs : cet indicateur mesure la capacité à jouer
-    // le morceau en continu, distinctement des séances de travail ciblé.
-    final runThroughs = [...sessions.where((s) => s.type == 'Run-through')]
-      ..sort((a, b) => b.date.compareTo(a.date));
-    final completedRunThroughs = runThroughs.where((s) => s.runThroughCompleted == true).toList();
-    final latestRunThrough = runThroughs.isNotEmpty ? runThroughs.first : null;
-    final measuredCompletedRuns = completedRunThroughs
-        .where((s) => (s.runThroughEndTempo ?? 0) > 0)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    final measuredTempos = measuredCompletedRuns
-        .map((s) => s.runThroughEndTempo!)
-        .toList();
-    final bestMeasuredRunTempo = measuredTempos.isEmpty ? null : measuredTempos.reduce(math.max);
-    final targetTempo = project.targetTempo > 0 ? project.targetTempo : null;
-    final runTempoRatio = bestMeasuredRunTempo != null && targetTempo != null ? bestMeasuredRunTempo / targetTempo : null;
-    final latestMeasuredRun = measuredCompletedRuns.isNotEmpty ? measuredCompletedRuns.first : null;
-    final previousMeasuredRun = measuredCompletedRuns.length > 1 ? measuredCompletedRuns[1] : null;
-    final latestRunEndTempo = latestMeasuredRun?.runThroughEndTempo;
-    final previousRunEndTempo = previousMeasuredRun?.runThroughEndTempo;
-    final runTempoDelta = latestRunEndTempo != null && previousRunEndTempo != null
-        ? latestRunEndTempo - previousRunEndTempo
-        : null;
-    final runTempoTargetPercent = latestRunEndTempo != null && targetTempo != null
-        ? ((latestRunEndTempo / targetTempo).clamp(0.0, 1.0) * 100).round()
-        : null;
-    String runThroughCoachAdvice;
-    if (latestMeasuredRun == null) {
-      runThroughCoachAdvice = 'Enregistre un tempo de fin lors du prochain Run-through pour suivre la progression.';
-    } else if (latestRunEndTempo != null && targetTempo != null && latestRunEndTempo >= targetTempo) {
-      runThroughCoachAdvice = 'Tempo cible atteint : privilégie maintenant la régularité et la qualité d’exécution.';
-    } else if (runTempoDelta != null && runTempoDelta >= 5) {
-      runThroughCoachAdvice = 'La progression est nette (+$runTempoDelta BPM) : consolide ce tempo avant d’accélérer davantage.';
-    } else if (runTempoDelta != null && runTempoDelta <= -5) {
-      runThroughCoachAdvice = 'Le tempo a baissé ($runTempoDelta BPM) : reprends quelques passages ciblés avant le prochain Run-through.';
-    } else if (latestRunEndTempo != null && targetTempo != null && latestRunEndTempo < targetTempo * .90) {
-      runThroughCoachAdvice = 'Encore sous 90 % de la cible : travaille d’abord la continuité et les passages fragiles.';
-    } else {
-      runThroughCoachAdvice = 'Progression stable : garde ce tempo et cherche surtout une exécution régulière.';
-    }
-
     String concreteWhy;
     if (adherence != null && adherence < .80) {
       concreteWhy = 'Les dernières séances étaient plus courtes que prévu : charge légèrement réduite.';
@@ -6147,19 +5811,6 @@ class _ProjectCoachDashboard extends StatelessWidget {
       concreteWhy = 'Une séance courte et ciblée pour faire avancer le point le plus utile.';
     }
 
-    // Synthèse explicite : quoi travailler, combien de temps, à quel tempo et pourquoi.
-    final coachAction = last?.type == 'Run-through' && last?.runThroughCompleted == false
-        ? ((last?.runThroughStopNote?.trim().isNotEmpty ?? false)
-            ? 'Reprendre le point d’arrêt : ${last!.runThroughStopNote!.trim()}'
-            : 'Reprendre le point fragile avant une nouvelle exécution complète')
-        : 'Travailler ${recommendedFocus.toLowerCase()}';
-    final coachTempo = recommendedTempo != null
-        ? '${recommendedTempo} BPM'
-        : 'tempo libre / à définir';
-    final coachWhy = last?.type == 'Run-through' && last?.runThroughCompleted == true && last?.runThroughEndTempo != null
-        ? 'Dernier Run-through terminé à ${last!.runThroughEndTempo} BPM : consolider la continuité avant d’accélérer.'
-        : concreteWhy;
-
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -6168,7 +5819,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
           Row(children: [
             Icon(Icons.psychology_outlined, size: 19, color: scheme.primary),
             const SizedBox(width: 7),
-            const Expanded(child: Text('Analyse & conseil du morceau', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
+            const Expanded(child: Text('Tableau de bord du coach', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
             if (last != null) Text(_feeling(last.coachFeeling), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
           ]),
           const SizedBox(height: 9),
@@ -6177,105 +5828,6 @@ class _ProjectCoachDashboard extends StatelessWidget {
           _CoachInsightTile(icon: Icons.pause_circle_outline, title: 'Ce qui stagne', text: stableText, color: scheme.tertiary),
           const SizedBox(height: 7),
           _CoachInsightTile(icon: Icons.flag_outlined, title: 'À travailler maintenant', text: nextText, color: scheme.secondary),
-          if (runThroughs.isNotEmpty) ...[
-            const SizedBox(height: 7),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer.withOpacity(.38),
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: scheme.secondary.withOpacity(.18)),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.play_circle_outline, size: 18, color: scheme.secondary),
-                  const SizedBox(width: 7),
-                  const Expanded(child: Text('RUN-THROUGH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .4)),),
-                  Text('${completedRunThroughs.length}/${runThroughs.where((s) => s.runThroughCompleted != null).length} renseignés', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: scheme.secondary)),
-                ]),
-                const SizedBox(height: 5),
-                Wrap(spacing: 8, runSpacing: 5, children: [
-                  if (latestRunThrough != null)
-                    Chip(avatar: const Icon(Icons.history, size: 13), label: Text(
-                      latestRunThrough.runThroughCompleted == true ? 'Dernier : ✅ terminé' : (latestRunThrough.runThroughCompleted == false ? 'Dernier : ⏹️ interrompu' : 'Dernier : 🕘 ancien'),
-                      style: const TextStyle(fontSize: 10),
-                    ), visualDensity: VisualDensity.compact),
-                  if (bestMeasuredRunTempo != null)
-                    Chip(avatar: const Icon(Icons.speed_outlined, size: 13), label: Text(
-                      'Meilleur : $bestMeasuredRunTempo BPM${targetTempo != null ? ' / $targetTempo' : ''}',
-                      style: const TextStyle(fontSize: 10),
-                    ), visualDensity: VisualDensity.compact),
-                  if (runTempoRatio != null)
-                    Chip(avatar: const Icon(Icons.track_changes, size: 13), label: Text(
-                      '${(runTempoRatio * 100).round()} % de la cible (meilleur)',
-                      style: const TextStyle(fontSize: 10),
-                    ), visualDensity: VisualDensity.compact),
-                ]),
-                if (latestMeasuredRun != null) ...[
-                  const SizedBox(height: 7),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: scheme.surface.withOpacity(.48),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(Icons.show_chart, size: 18, color: scheme.primary),
-                      const SizedBox(width: 7),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(
-                          'ÉVOLUTION DU TEMPO',
-                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          latestRunEndTempo != null && previousRunEndTempo != null
-                              ? '${previousRunEndTempo} → ${latestRunEndTempo} BPM${runTempoDelta! >= 0 ? ' · +$runTempoDelta' : ' · $runTempoDelta'} BPM depuis le run précédent'
-                              : '${latestRunEndTempo} BPM · premier Run-through mesuré',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
-                        ),
-                        if (runTempoTargetPercent != null) ...[
-                          const SizedBox(height: 5),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(5),
-                            child: LinearProgressIndicator(value: runTempoTargetPercent / 100, minHeight: 5),
-                          ),
-                          const SizedBox(height: 3),
-                          Text('$runTempoTargetPercent % de la cible sur le dernier run', style: TextStyle(fontSize: 9.5, color: scheme.onSurfaceVariant)),
-                        ],
-                        const SizedBox(height: 5),
-                        Text('💡 $runThroughCoachAdvice', style: TextStyle(fontSize: 9.8, color: scheme.onSurfaceVariant, height: 1.25)),
-                      ])),
-                    ]),
-                  ),
-                ],
-                if (measuredCompletedRuns.length > 1) ...[
-                  const SizedBox(height: 7),
-                  Text('Historique récent', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.onSurface)),
-                  const SizedBox(height: 4),
-                  ...measuredCompletedRuns.take(4).map((s) {
-                    final idx = measuredCompletedRuns.indexOf(s);
-                    final previous = idx + 1 < measuredCompletedRuns.length ? measuredCompletedRuns[idx + 1].runThroughEndTempo : null;
-                    final delta = previous != null && s.runThroughEndTempo != null ? s.runThroughEndTempo! - previous : null;
-                    final dateLabel = '${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}';
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(children: [
-                        SizedBox(width: 42, child: Text(dateLabel, style: TextStyle(fontSize: 9.5, color: scheme.onSurfaceVariant))),
-                        Expanded(child: Text('${s.runThroughStartTempo ?? '—'} → ${s.runThroughEndTempo} BPM', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
-                        if (delta != null)
-                          Text('${delta >= 0 ? '+' : ''}$delta', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: delta >= 0 ? scheme.primary : scheme.error))
-                        else
-                          const SizedBox(width: 22),
-                      ]),
-                    );
-                  }),
-                ],
-              ]),
-            ),
-          ],
           const SizedBox(height: 7),
           Container(
             width: double.infinity,
@@ -6292,47 +5844,8 @@ class _ProjectCoachDashboard extends StatelessWidget {
                 Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .4)),
                 const SizedBox(height: 3),
                 Text(concretePlan, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 7),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withOpacity(.5),
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(color: scheme.outlineVariant.withOpacity(.7)),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(Icons.flag_outlined, size: 16, color: scheme.secondary),
-                      const SizedBox(width: 7),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('QUOI', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.secondary, letterSpacing: .35)),
-                        const SizedBox(height: 1),
-                        Text(coachAction, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.2)),
-                      ])),
-                    ]),
-                    const SizedBox(height: 6),
-                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(Icons.timer_outlined, size: 16, color: scheme.primary),
-                      const SizedBox(width: 7),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('COMBIEN / TEMPO', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35)),
-                        const SizedBox(height: 1),
-                        Text('$recommendedMinutes min · $coachTempo', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.2)),
-                      ])),
-                    ]),
-                    const SizedBox(height: 6),
-                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(Icons.lightbulb_outline, size: 16, color: scheme.tertiary),
-                      const SizedBox(width: 7),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('POURQUOI', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.tertiary, letterSpacing: .35)),
-                        const SizedBox(height: 1),
-                        Text(coachWhy, style: TextStyle(fontSize: 10.2, color: scheme.onSurfaceVariant, height: 1.22)),
-                      ])),
-                    ]),
-                  ]),
-                ),
+                const SizedBox(height: 2),
+                Text(concreteWhy, style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant, height: 1.25)),
                 if (_durationAdjustmentHint().isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text('🧠 ${_durationAdjustmentHint()}', style: TextStyle(fontSize: 10.2, color: scheme.onSurfaceVariant, height: 1.25)),
@@ -6354,7 +5867,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
                         date: DateTime(chosen.year, chosen.month, chosen.day, 12),
                         duration: recommendedMinutes,
                         title: project.name,
-                        details: '$coachAction · $recommendedMinutes min${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $coachWhy',
+                        details: '$recommendedFocus${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $concreteWhy',
                         projectId: project.id,
                         category: 'Répertoire',
                         method: project.method,
@@ -6385,32 +5898,10 @@ class _ProjectCoachDashboard extends StatelessWidget {
             Wrap(spacing: 8, runSpacing: 5, children: [
               Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               if (sessions.any((s) => s.type == 'Run-through'))
-                Chip(avatar: const Icon(Icons.play_circle_outline, size: 14), label: Text('${sessions.where((s) => s.type == 'Run-through' && s.runThroughCompleted == true).length}/${sessions.where((s) => s.type == 'Run-through').length} run-through terminé${sessions.where((s) => s.type == 'Run-through').length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
+                Chip(avatar: const Icon(Icons.play_circle_outline, size: 14), label: Text('${sessions.where((s) => s.type == 'Run-through').length} run-through', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
               if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
             ]),
-            if (runMastery != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer.withOpacity(.45),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: scheme.outlineVariant),
-                ),
-                child: Row(children: [
-                  Icon(Icons.insights_outlined, size: 18, color: scheme.primary),
-                  const SizedBox(width: 7),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('MAÎTRISE EN RUN-THROUGH', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text('$runMastery% de la cible tempo · meilleur run-through ${bestRunTempo} BPM', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
-                  ])),
-                  Text('$runMastery%', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: scheme.primary)),
-                ]),
-              ),
-            ],
           ],
         ]),
       ),
@@ -7417,7 +6908,6 @@ class Week extends StatefulWidget {
     required this.onOpenRoutine,
     required this.onStartTimer,
     required this.projectById,
-    required this.sessions,
   });
   final List<PlanItem> items;
   final int minutes;
@@ -7434,7 +6924,6 @@ class Week extends StatefulWidget {
   final VoidCallback onOpenRoutine;
   final void Function(PlanItem) onStartTimer;
   final Project? Function(String?) projectById;
-  final List<Session> sessions;
 
   @override
   State<Week> createState() => _WeekState();
@@ -7445,56 +6934,6 @@ class _WeekState extends State<Week> {
   String filtreMotCle = '';
 
   static String weekday(int n) => ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][n - 1];
-
-  Session? _sourceSession(PlanItem item) {
-    final id = item.sourceSessionId;
-    if (id == null) return null;
-    return widget.sessions.where((s) => s.id == id).firstOrNull;
-  }
-
-  Widget _plannedVsRealized(BuildContext c, PlanItem item) {
-    final planned = item.plannedDuration > 0 ? item.plannedDuration : item.duration;
-    final source = _sourceSession(item);
-    if (!item.completed || source == null || planned <= 0) {
-      return const SizedBox.shrink();
-    }
-    final realized = source.duration;
-    final ratio = planned > 0 ? realized / planned : 0.0;
-    final delta = realized - planned;
-    final label = ratio >= 0.98 && ratio <= 1.02
-        ? 'Objectif respecté'
-        : delta < 0
-            ? '${(-delta)} min en moins'
-            : '+$delta min';
-    final color = ratio >= 0.9 && ratio <= 1.2
-        ? Colors.green.shade700
-        : (ratio < 0.9 ? Colors.orange.shade700 : Colors.deepPurple.shade700);
-    return Padding(
-      padding: const EdgeInsets.only(top: 7),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-        decoration: BoxDecoration(
-          color: color.withOpacity(.07),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: color.withOpacity(.18)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.compare_arrows_outlined, size: 15, color: color),
-            const SizedBox(width: 5),
-            Expanded(child: Text(
-              '$planned min prévues → $realized min réalisées',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color),
-            )),
-            Text('${(ratio * 100).round()} %', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color)),
-          ]),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10, color: color)),
-        ]),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext c) {
@@ -7540,11 +6979,6 @@ class _WeekState extends State<Week> {
                       icon: Icons.timer_outlined,
                       label: 'Pratiqué cette semaine',
                       value: '${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}',
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Ce compteur mesure le temps réellement joué, indépendamment du planning.',
-                      style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 12),
                     progress((widget.minutes / widget.weeklyTarget).clamp(0, 1).toDouble()),
@@ -7726,7 +7160,6 @@ class _WeekState extends State<Week> {
                                                     ),
                                                 ]),
                                               ],
-                                              _plannedVsRealized(c, x),
                                             if (!x.completed) ...[
                                               const SizedBox(height: 6),
                                               Align(
@@ -8042,29 +7475,13 @@ class _BilanScreenState extends State<BilanScreen> {
               Expanded(child: _statTile(c, icon: Icons.play_circle_outline, label: 'Réalisé', value: '${bilan.realizedPlannedMinutes} min', sub: '${bilan.completedPlannedSessions} séance${bilan.completedPlannedSessions > 1 ? 's' : ''}')),
             ]),
             if (bilan.plannedMinutes > 0) ...[
-              const SizedBox(height: 12),
-              Builder(builder: (_) {
-                final ratio = bilan.realizedPlannedMinutes / bilan.plannedMinutes;
-                final delta = bilan.realizedPlannedMinutes - bilan.plannedMinutes;
-                final pct = (ratio * 100).round();
-                final color = ratio >= .9 && ratio <= 1.2
-                    ? Colors.green.shade700
-                    : (ratio < .9 ? Colors.orange.shade700 : Colors.deepPurple.shade700);
-                final deltaText = delta == 0 ? 'Écart : 0 min' : delta < 0 ? 'Écart : ${delta} min' : 'Écart : +$delta min';
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Expanded(child: Text('Adhérence au planning : $pct %', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color))),
-                    Text(deltaText, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                  ]),
-                  const SizedBox(height: 6),
-                  progress(ratio.clamp(0, 1).toDouble()),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Le réalisé correspond aux séances du planning effectivement terminées. Les séances libres ne sont pas comptées dans ce taux.',
-                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                  ),
-                ]);
-              }),
+              const SizedBox(height: 10),
+              Text(
+                'Adhérence au planning : ${(bilan.realizedPlannedMinutes / bilan.plannedMinutes * 100).round()} %',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              progress((bilan.realizedPlannedMinutes / bilan.plannedMinutes).clamp(0, 1).toDouble()),
             ],
           ]),
         ),

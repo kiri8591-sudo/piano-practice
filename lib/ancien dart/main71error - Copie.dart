@@ -970,16 +970,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await proposeWeeklyPlan(skipInstructionsDialog: true);
   }
 
-  /// Nombre de séances récentes ressenties comme difficiles pour un morceau.
-  /// Utilisé par le moteur de planification pour alléger/reprioriser sa charge.
-  int _recentDifficultSessions(String projectId) {
-    final recent = sessions
-        .where((s) => s.projectId == projectId && s.coachFeeling != null)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    return recent.take(3).where((s) => s.coachFeeling == 'difficile').length;
-  }
-
   List<Challenge> get thisWeekChallenges {
     final start = startOfWeek(DateTime.now());
     return challenges.where((c) => c.weekStart == start).toList();

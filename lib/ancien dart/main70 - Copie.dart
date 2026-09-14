@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '71.0';
+const String appVersion = '70.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -968,16 +968,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       await _persist();
     }
     await proposeWeeklyPlan(skipInstructionsDialog: true);
-  }
-
-  /// Nombre de séances récentes ressenties comme difficiles pour un morceau.
-  /// Utilisé par le moteur de planification pour alléger/reprioriser sa charge.
-  int _recentDifficultSessions(String projectId) {
-    final recent = sessions
-        .where((s) => s.projectId == projectId && s.coachFeeling != null)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    return recent.take(3).where((s) => s.coachFeeling == 'difficile').length;
   }
 
   List<Challenge> get thisWeekChallenges {
@@ -2265,85 +2255,23 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         };
         final itemByDayAndProject = <String, PlanItem>{};
         final lastProjectByDay = <DateTime, String>{};
-        final lastScheduledDayByProject = <String, DateTime>{};
-        final scheduledCountByProject = <String, int>{};
-        final scheduledMinutesByFocus = <String, int>{};
         const minUsefulMinutes = 10;
         const maxDailyMinutes = 40;
 
-        DateTime? latestSessionFor(String projectId) {
-          DateTime? latest;
-          for (final s in sessions.where((s) => s.projectId == projectId)) {
-            if (latest == null || s.date.isAfter(latest!)) latest = s.date;
-          }
-          return latest;
-        }
-
-        List<Session> runThroughHistory(String projectId) {
-          final list = sessions
-              .where((s) => s.projectId == projectId && s.type == 'Run-through' && s.runThroughCompleted == true)
-              .toList()
-            ..sort((a, b) => b.date.compareTo(a.date));
-          return list;
-        }
-
-        bool runThroughDue(Project p, DateTime day) {
-          if (p.targetTempo <= 0) return false;
-          if (p.progress < .65 && p.effectiveStatus != 'Acquis' && p.effectiveStatus != 'Répertoire d’entretien') {
-            return false;
-          }
-          final history = runThroughHistory(p.id);
-          if (history.isEmpty) {
-            return p.progress >= .75 || p.effectiveStatus == 'Acquis' || p.effectiveStatus == 'Répertoire d’entretien';
-          }
-          final lastRun = history.first.date;
-          final daysSince = day.difference(DateTime(lastRun.year, lastRun.month, lastRun.day)).inDays;
-          if (daysSince < 7) return false;
-          final endTempo = history.first.runThroughEndTempo ?? 0;
-          final tempoRatio = endTempo > 0 ? endTempo / p.targetTempo : 0.0;
-          return tempoRatio >= .80 || p.effectiveStatus == 'Répertoire d’entretien' || p.progress >= .85;
-        }
-
-        String planningFocus(Project p) {
-          final focus = p.effectiveWorkFocus;
-          return focus.isEmpty ? 'Consolidation' : focus;
-        }
-
-        double projectNeed(String projectId, DateTime day) {
+        double projectNeed(String projectId) {
           final p = projectById(projectId);
           if (p == null) return 0;
-
-          final last = latestSessionFor(projectId);
-          final daysSince = last == null
-              ? 999
-              : day.difference(DateTime(last.year, last.month, last.day)).inDays;
-          final recency = daysSince >= 14
-              ? 1.55
-              : (daysSince >= 7 ? 1.28 : (daysSince >= 3 ? 1.08 : .92));
-
-          final stage = 1.0 + (1.0 - p.weakestStageValue) * .30;
-          final priority = p.priority ? 1.35 : 1.0;
-          final difficult = _recentDifficultSessions(p.id) >= 2 ? 1.16 : 1.0;
-
-          // On espace les contacts : un morceau vu hier reste éligible, mais
-          // il doit être nettement plus prioritaire pour être reprogrammé.
-          final lastScheduled = lastScheduledDayByProject[p.id];
-          final spacingPenalty = lastScheduled == null
-              ? 1.0
-              : (day.difference(lastScheduled).inDays <= 1 ? .58 : 1.0);
-
-          // Un Run-through terminé devient une vraie étape du parcours :
-          // lorsqu'il est arrivé à échéance, on donne un bonus pour le placer
-          // plutôt que de refaire automatiquement le même type de travail.
-          final runBonus = runThroughDue(p, day) ? 1.34 : 1.0;
-
-          return (1.0 + (1.0 - p.progress) * .85) *
-              recency *
-              stage *
-              priority *
-              difficult *
-              spacingPenalty *
-              runBonus;
+          // Même logique générale que la recommandation, mais volontairement
+          // moins agressive : elle sert à choisir le prochain morceau du jour.
+          final last = sessions
+              .where((s) => s.projectId == projectId)
+              .map((s) => s.date)
+              .fold<DateTime?>(null, (latest, d) => latest == null || d.isAfter(latest) ? d : latest);
+          final daysSince = last == null ? 999 : DateTime.now().difference(last).inDays;
+          final recency = daysSince >= 14 ? 1.25 : (daysSince >= 7 ? 1.12 : 1.0);
+          final stage = 1.0 + (1.0 - p.weakestStageValue) * .20;
+          final priority = p.priority ? 1.30 : 1.0;
+          return (1.0 + (1.0 - p.progress) * .80) * recency * stage * priority;
         }
 
         // On remplit chaque journée par des séances naturelles : au maximum
@@ -2383,26 +2311,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               final weeklyShare =
                   totalRemaining > 0 ? remaining / totalRemaining : 0.0;
               final alternation = lastProjectByDay[day] == id ? 0.55 : 1.0;
-              final need = projectNeed(id, day);
-
-              // Le moteur équilibre aussi les types de travail sur la semaine :
-              // si un focus a déjà pris beaucoup de place, son score baisse un peu.
-              final p = projectById(id);
-              final focus = p == null ? 'Consolidation' : planningFocus(p);
-              final focusMinutes = scheduledMinutesByFocus[focus] ?? 0;
-              final focusPenalty = focusMinutes >= 60 ? .76 : (focusMinutes >= 45 ? .88 : 1.0);
-
-              // Evite de monopoliser la semaine avec un seul morceau.
-              final scheduledCount = scheduledCountByProject[id] ?? 0;
-              final contactPenalty = scheduledCount >= 4
-                  ? .52
-                  : (scheduledCount >= 3 ? .78 : (scheduledCount >= 2 ? .92 : 1.0));
-
+              final need = projectNeed(id);
               final score =
-                  (weeklyShare * .58 + need * .42) *
-                  alternation *
-                  focusPenalty *
-                  contactPenalty;
+                  (weeklyShare * .75 + need * .25) * alternation;
               if (score > bestScore) {
                 bestScore = score;
                 bestId = id;
@@ -2415,8 +2326,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               continue;
             }
 
-            final dueForRunThrough = runThroughDue(project, day);
-            final focus = dueForRunThrough ? 'Interprétation' : project.effectiveWorkFocus;
+            final focus = project.effectiveWorkFocus;
             final focusMax = workFocusMaxMinutes(focus);
             final focusMin = workFocusMinMinutes(focus);
 
@@ -2461,20 +2371,14 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
             if (chunk < focusMin) break;
 
             final key = '${day.toIso8601String()}|$bestId';
-            final baseDetails = _methodPlanningDetails(project);
-            final detailsPrefix = baseDetails.isEmpty ? '' : '$baseDetails · ';
-            final planningDetails = dueForRunThrough
-                ? '${detailsPrefix}Run-through · exécution complète${project.targetTempo > 0 ? ' · cible ${project.targetTempo} BPM' : ''}'
-                : baseDetails;
-
             final item = PlanItem(
               id: newId(),
               date: day,
               duration: chunk,
               title: project.name,
-              details: planningDetails,
+              details: _methodPlanningDetails(project),
               projectId: project.id,
-              category: dueForRunThrough ? 'Run-through' : project.weakestCategory,
+              category: project.weakestCategory,
               method: project.method,
             );
             itemByDayAndProject[key] = item;
@@ -2485,11 +2389,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
             remainingByDay[day] =
                 remainingByDay[day]! - chunk;
             lastProjectByDay[day] = bestId;
-            lastScheduledDayByProject[bestId] = day;
-            scheduledCountByProject[bestId] =
-                (scheduledCountByProject[bestId] ?? 0) + 1;
-            scheduledMinutesByFocus[focus] =
-                (scheduledMinutesByFocus[focus] ?? 0) + chunk;
 
             if (remainingByProject[bestId]! <= 0) {
               remainingByProject.remove(bestId);
@@ -2596,7 +2495,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     p.progress = (totalMinutes / (p.targetHours! * 60)).clamp(0, 1);
   }
 
-  Future<void> startRunThrough(Project project, {PlanItem? plannedItem}) async {
+  Future<void> startRunThrough(Project project) async {
     final elapsedMinutes = await Navigator.of(navKey.currentContext!).push<int>(
       MaterialPageRoute(
         builder: (_) => const PracticeTimerScreen(
@@ -2636,7 +2535,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         initialRunThroughStopNote: stopNote.isEmpty ? null : stopNote,
         initialRunThroughStartTempo: result.startTempo,
         initialRunThroughEndTempo: result.endTempo,
-        initialPlannedDuration: plannedItem?.duration,
       ),
     );
     if (r == null) return;
@@ -2644,10 +2542,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     setState(() {
       _capturePreviousProgress(r);
       sessions.insert(0, r);
-      if (plannedItem != null) {
-        plannedItem.completed = true;
-        plannedItem.sourceSessionId = r.id;
-      }
       _updateAutoProgress(r.projectId);
     });
     await _persist();
@@ -2695,16 +2589,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         if (result == null) return; // fenetre fermee sans choix
         if (result is PlanItem) chosen = result;
         // si result == 'free', chosen reste null intentionnellement
-      }
-    }
-
-    if (chosen != null &&
-        chosen.category == 'Run-through' &&
-        chosen.projectId != null) {
-      final project = projectById(chosen.projectId);
-      if (project != null) {
-        await startRunThrough(project, plannedItem: chosen);
-        return;
       }
     }
 
