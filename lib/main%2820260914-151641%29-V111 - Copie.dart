@@ -1,4 +1,4 @@
-// V112 — finition UI globale : listes, dialogues, fiche morceau, accueil et cohérence visuelle.
+// V111 — finition UI globale : listes, dialogues, fiche morceau, accueil et cohérence visuelle.
 // V89
 import 'dart:async';
 import 'dart:convert';
@@ -1286,6 +1286,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       sessions = [];
       plan = [];
       challenges = [];
+      practiceStreak = 0;
       bestStreakEver = 0;
       seenBadgeIds = [];
       badgeBaselineMinutes = 0;
@@ -3449,7 +3450,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           _persist();
         },
         onImport: importData,
-        onResetPracticeBase: resetPracticeBase,
         projectById: projectById,
         onOrientSuggestion: orientSuggestion,
         onOrientSuggestionThisWeek: orientSuggestionThisWeek,
@@ -4134,7 +4134,6 @@ class Home extends StatelessWidget {
     required this.darkMode,
     required this.onToggleDarkMode,
     required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById,
     required this.onOrientSuggestion,
     required this.onOrientSuggestionThisWeek,
@@ -4160,7 +4159,6 @@ class Home extends StatelessWidget {
   final bool darkMode;
   final VoidCallback onToggleDarkMode;
   final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById;
   final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
@@ -4211,9 +4209,9 @@ class Home extends StatelessWidget {
           ),
           const Divider(),
           SimpleDialogOption(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(dc);
-              await onResetPracticeBase();
+              resetPracticeBase();
             },
             child: const Row(children: [
               Icon(Icons.restart_alt_outlined),
@@ -4715,7 +4713,6 @@ class CoachHome extends StatelessWidget {
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById, required this.onOrientSuggestion, required this.onOrientSuggestionThisWeek,
   });
   final List<Project> projects; final List<Session> sessions; final List<PlanItem> plan;
@@ -4726,7 +4723,6 @@ class CoachHome extends StatelessWidget {
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
   final VoidCallback onExport; final bool darkMode; final VoidCallback onToggleDarkMode; final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById; final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
 
@@ -5149,7 +5145,6 @@ class CoachHome extends StatelessWidget {
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onQuickProject(); }, child: const Row(children: [Icon(Icons.add_circle_outline), SizedBox(width: 12), Text('Ajouter un morceau')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onExport(); }, child: const Row(children: [Icon(Icons.download_outlined), SizedBox(width: 12), Text('Exporter mes données')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onImport(); }, child: const Row(children: [Icon(Icons.upload_outlined), SizedBox(width: 12), Text('Restaurer une sauvegarde')])),
-      SimpleDialogOption(onPressed: () async { Navigator.pop(dc); await onResetPracticeBase(); }, child: const Row(children: [Icon(Icons.restart_alt_outlined), SizedBox(width: 12), Text('Préparer une base de test propre')])),
     ]));
   }
 }

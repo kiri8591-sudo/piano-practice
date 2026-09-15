@@ -4211,9 +4211,9 @@ class Home extends StatelessWidget {
           ),
           const Divider(),
           SimpleDialogOption(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(dc);
-              await onResetPracticeBase();
+              resetPracticeBase();
             },
             child: const Row(children: [
               Icon(Icons.restart_alt_outlined),
@@ -4715,7 +4715,6 @@ class CoachHome extends StatelessWidget {
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById, required this.onOrientSuggestion, required this.onOrientSuggestionThisWeek,
   });
   final List<Project> projects; final List<Session> sessions; final List<PlanItem> plan;
@@ -4726,7 +4725,6 @@ class CoachHome extends StatelessWidget {
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
   final VoidCallback onExport; final bool darkMode; final VoidCallback onToggleDarkMode; final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById; final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
 

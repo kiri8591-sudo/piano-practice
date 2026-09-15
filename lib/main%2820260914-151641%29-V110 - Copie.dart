@@ -1,4 +1,4 @@
-// V112 — finition UI globale : listes, dialogues, fiche morceau, accueil et cohérence visuelle.
+// V110 — finition UI globale : listes, dialogues, fiche morceau, accueil et cohérence visuelle.
 // V89
 import 'dart:async';
 import 'dart:convert';
@@ -1235,88 +1235,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       seenBadgeIds = [];
     });
     await _persist();
-  }
-
-  Future<void> resetPracticeBase() async {
-    final context = navKey.currentContext!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Repartir sur une base propre ?'),
-        content: const Text(
-          'Les fiches morceaux et les méthodes seront conservées. '
-          'L’historique des séances, le planning généré, les défis, les badges et la série seront remis à zéro. '
-          'La progression et le tempo actuel des morceaux seront également réinitialisés.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Réinitialiser'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final now = DateTime.now();
-
-    setState(() {
-      // Conserver la fiche du morceau, mais remettre à zéro les données issues de la pratique.
-      for (final project in projects) {
-        project.progress = 0;
-        project.reading = 0;
-        project.handsTogether = 0;
-        project.memory = 0;
-        project.interpretation = 0;
-        project.currentTempo = 0;
-        project.statusIsManual = false;
-        project.status = statusFromStages(
-          reading: 0,
-          handsTogether: 0,
-          memory: 0,
-          interpretation: 0,
-        );
-        project.celebratedComplete = false;
-      }
-
-      sessions = [];
-      plan = [];
-      challenges = [];
-      bestStreakEver = 0;
-      seenBadgeIds = [];
-      badgeBaselineMinutes = 0;
-      badgeBaselineSessions = 0;
-      badgeBaselinePieces = 0;
-      badgeBaselineChallenges = 0;
-      badgeBaselineStreak = 0;
-      badgeBaselineProjectMinutes = {};
-
-      // Les défis seront régénérés à partir d'une base vierge.
-      _ensureWeeklyChallenges();
-
-      // Évite qu'une ancienne date de sauvegarde fasse croire que la nouvelle base
-      // de test est déjà sauvegardée.
-      lastBackupAt = null;
-
-      // Petite graine temporelle utile aux composants qui exploitent "aujourd'hui".
-      weeklyInstructions = weeklyInstructions;
-      _backupReminderShown = true;
-    });
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lastPracticeResetAt', now.toIso8601String());
-    await _persist();
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Base de test réinitialisée. Les morceaux et méthodes sont conservés.'),
-      ),
-    );
   }
 
   void openBadgesScreen() {
@@ -3449,7 +3367,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           _persist();
         },
         onImport: importData,
-        onResetPracticeBase: resetPracticeBase,
         projectById: projectById,
         onOrientSuggestion: orientSuggestion,
         onOrientSuggestionThisWeek: orientSuggestionThisWeek,
@@ -4134,7 +4051,6 @@ class Home extends StatelessWidget {
     required this.darkMode,
     required this.onToggleDarkMode,
     required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById,
     required this.onOrientSuggestion,
     required this.onOrientSuggestionThisWeek,
@@ -4160,7 +4076,6 @@ class Home extends StatelessWidget {
   final bool darkMode;
   final VoidCallback onToggleDarkMode;
   final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById;
   final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
@@ -4207,18 +4122,6 @@ class Home extends StatelessWidget {
               Icon(Icons.upload_outlined),
               SizedBox(width: 12),
               Expanded(child: Text('Restaurer une sauvegarde')),
-            ]),
-          ),
-          const Divider(),
-          SimpleDialogOption(
-            onPressed: () async {
-              Navigator.pop(dc);
-              await onResetPracticeBase();
-            },
-            child: const Row(children: [
-              Icon(Icons.restart_alt_outlined),
-              SizedBox(width: 12),
-              Expanded(child: Text('Préparer une base de test propre')),
             ]),
           ),
         ],
@@ -4715,7 +4618,6 @@ class CoachHome extends StatelessWidget {
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById, required this.onOrientSuggestion, required this.onOrientSuggestionThisWeek,
   });
   final List<Project> projects; final List<Session> sessions; final List<PlanItem> plan;
@@ -4726,7 +4628,6 @@ class CoachHome extends StatelessWidget {
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
   final VoidCallback onExport; final bool darkMode; final VoidCallback onToggleDarkMode; final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById; final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
 
@@ -5149,7 +5050,6 @@ class CoachHome extends StatelessWidget {
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onQuickProject(); }, child: const Row(children: [Icon(Icons.add_circle_outline), SizedBox(width: 12), Text('Ajouter un morceau')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onExport(); }, child: const Row(children: [Icon(Icons.download_outlined), SizedBox(width: 12), Text('Exporter mes données')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onImport(); }, child: const Row(children: [Icon(Icons.upload_outlined), SizedBox(width: 12), Text('Restaurer une sauvegarde')])),
-      SimpleDialogOption(onPressed: () async { Navigator.pop(dc); await onResetPracticeBase(); }, child: const Row(children: [Icon(Icons.restart_alt_outlined), SizedBox(width: 12), Text('Préparer une base de test propre')])),
     ]));
   }
 }

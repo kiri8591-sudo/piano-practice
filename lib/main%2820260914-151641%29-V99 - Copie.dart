@@ -1,4 +1,3 @@
-// V112 — finition UI globale : listes, dialogues, fiche morceau, accueil et cohérence visuelle.
 // V89
 import 'dart:async';
 import 'dart:convert';
@@ -15,32 +14,6 @@ int _idCounter = 0;
 String newId() {
   _idCounter += 1;
   return '${DateTime.now().microsecondsSinceEpoch}_$_idCounter';
-}
-
-// V100 : en-têtes légers pour les écrans de détail, sans cartes imbriquées.
-Widget _detailSectionHeader(BuildContext context, String title, {IconData? icon}) {
-  return Padding(
-    padding: const EdgeInsets.only(top: 14, bottom: 6),
-    child: Row(
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 17, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 7),
-        ],
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: .3,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,88 +1210,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await _persist();
   }
 
-  Future<void> resetPracticeBase() async {
-    final context = navKey.currentContext!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Repartir sur une base propre ?'),
-        content: const Text(
-          'Les fiches morceaux et les méthodes seront conservées. '
-          'L’historique des séances, le planning généré, les défis, les badges et la série seront remis à zéro. '
-          'La progression et le tempo actuel des morceaux seront également réinitialisés.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Réinitialiser'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final now = DateTime.now();
-
-    setState(() {
-      // Conserver la fiche du morceau, mais remettre à zéro les données issues de la pratique.
-      for (final project in projects) {
-        project.progress = 0;
-        project.reading = 0;
-        project.handsTogether = 0;
-        project.memory = 0;
-        project.interpretation = 0;
-        project.currentTempo = 0;
-        project.statusIsManual = false;
-        project.status = statusFromStages(
-          reading: 0,
-          handsTogether: 0,
-          memory: 0,
-          interpretation: 0,
-        );
-        project.celebratedComplete = false;
-      }
-
-      sessions = [];
-      plan = [];
-      challenges = [];
-      bestStreakEver = 0;
-      seenBadgeIds = [];
-      badgeBaselineMinutes = 0;
-      badgeBaselineSessions = 0;
-      badgeBaselinePieces = 0;
-      badgeBaselineChallenges = 0;
-      badgeBaselineStreak = 0;
-      badgeBaselineProjectMinutes = {};
-
-      // Les défis seront régénérés à partir d'une base vierge.
-      _ensureWeeklyChallenges();
-
-      // Évite qu'une ancienne date de sauvegarde fasse croire que la nouvelle base
-      // de test est déjà sauvegardée.
-      lastBackupAt = null;
-
-      // Petite graine temporelle utile aux composants qui exploitent "aujourd'hui".
-      weeklyInstructions = weeklyInstructions;
-      _backupReminderShown = true;
-    });
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lastPracticeResetAt', now.toIso8601String());
-    await _persist();
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Base de test réinitialisée. Les morceaux et méthodes sont conservés.'),
-      ),
-    );
-  }
-
   void openBadgesScreen() {
     Navigator.of(navKey.currentContext!).push(MaterialPageRoute(builder: (_) => BadgesScreen(
       badges: badges,
@@ -2179,17 +2070,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         ),
       );
       return Theme(data: flatTheme, child: AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       title: Text(initial == null ? 'Nouvelle méthode' : 'Modifier la méthode'),
       content: SizedBox(width: 520, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _detailSectionHeader(c, 'IDENTITÉ', icon: Icons.menu_book_outlined),
         TextField(controller: name, decoration: const InputDecoration(labelText: 'Nom de la méthode*')),
         const SizedBox(height: 6),
         TextField(controller: description, maxLines: 2, decoration: const InputDecoration(labelText: 'Description')),
         const SizedBox(height: 6),
-        _detailSectionHeader(c, 'CONTENU', icon: Icons.school_outlined),
         TextField(controller: objectives, maxLines: 3, decoration: const InputDecoration(labelText: 'Objectifs')),
         const SizedBox(height: 6),
         TextField(controller: exercises, maxLines: 4, decoration: const InputDecoration(labelText: 'Exercices / déroulé')),
@@ -2730,9 +2616,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
       _updateAutoProgress(existing?.projectId);
       _updateAutoProgress(r.projectId);
-      if (existing == null) _syncCompletedPlanItemsForSession(r);
-      _auditPlanningIntegrity();
-      _auditSessionIntegrity();
     });
     await _persist();
 
@@ -2939,11 +2822,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         sessions.insert(0, r);
         planItem.completed = true;
         planItem.sourceSessionId = r.id;
-        // Une séance réalisée invalide toute autre recommandation coach concurrente du même jour.
-        _removeDuplicatePendingCoachPlans(r.projectId, keepId: planItem.id);
         _updateAutoProgress(r.projectId);
-        _auditPlanningIntegrity();
-        _auditSessionIntegrity();
       });
       _persist();
       await _offerDetailedProgress(r);
@@ -2971,8 +2850,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           completed: true,
           sourceSessionId: r.id,
         ));
-        _auditPlanningIntegrity();
-        _auditSessionIntegrity();
       });
       _persist();
       await _offerDetailedProgress(r);
@@ -3014,57 +2891,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
   /// Retour coach de fin de séance. Le choix reste volontairement très rapide :
   /// 3 boutons, puis une recommandation concrète pour la prochaine séance.
-  bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
-
-  void _syncCompletedPlanItemsForSession(Session s) {
-    if (s.projectId == null) return;
-    for (final item in plan) {
-      if (item.projectId == s.projectId && _sameDay(item.date, s.date) && !item.completed && item.motsCles.contains('Coach')) {
-        item.completed = true;
-        item.sourceSessionId = s.id;
-        item.duration = s.duration;
-      }
-    }
-  }
-
-  void _removeDuplicatePendingCoachPlans(String? projectId, {String? keepId}) {
-    if (projectId == null) return;
-    var kept = false;
-    plan.removeWhere((item) {
-      final isCandidate = item.projectId == projectId && !item.completed && item.motsCles.contains('Prochaine séance');
-      if (!isCandidate) return false;
-      if (keepId != null && item.id == keepId) return false;
-      if (!kept) {
-        kept = true;
-        return false;
-      }
-      return true;
-    });
-  }
-
-  void _auditPlanningIntegrity() {
-    final seenCoach = <String>{};
-    final seenIds = <String>{};
-    plan.removeWhere((item) {
-      if (!seenIds.add(item.id)) return true;
-      if (item.duration < 1) item.duration = item.plannedDuration > 0 ? item.plannedDuration : 1;
-      if (item.projectId == null || !item.motsCles.contains('Prochaine séance')) return false;
-      final key = '${item.projectId}|${item.date.year}-${item.date.month}-${item.date.day}';
-      if (seenCoach.add(key)) return false;
-      return true;
-    });
-    plan.sort((a, b) => a.date.compareTo(b.date));
-  }
-
-  void _auditSessionIntegrity() {
-    sessions.sort((a, b) => b.date.compareTo(a.date));
-    final seen = <String>{};
-    sessions.removeWhere((s) {
-      if (seen.add(s.id)) return false;
-      return true;
-    });
-  }
-
   Future<void> _showCoachFeedback(Session session) async {
     final projectId = session.projectId;
     if (projectId == null) return;
@@ -3134,7 +2960,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       date: DateTime.now().add(const Duration(days: 1)),
       duration: nextMinutes,
       title: '${p.name} · ${p.effectiveWorkFocus}',
-      details: 'Coach · ${p.effectiveWorkFocus} · $nextMinutes min${p.goal.trim().isNotEmpty ? ' · Objectif : ${p.goal.trim()}' : ''}',
+      details: 'Coach · ${p.effectiveWorkFocus} · $nextMinutes min',
       projectId: p.id,
       // Le focus détaillé reste dans les mots-clés / données coach.
       // La catégorie doit toujours appartenir à la liste des catégories de séance valides.
@@ -3232,8 +3058,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       // Si le morceau repasse sous 100 % suite à cette suppression, on doit
       // pouvoir re-déclencher la célébration de fin de morceau plus tard.
       if (p != null && p.progress < 1) p.celebratedComplete = false;
-      _auditPlanningIntegrity();
-      _auditSessionIntegrity();
     });
     _persist();
   }
@@ -3246,8 +3070,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       final alreadyScheduled = plan.any((p) =>
           !p.completed &&
           p.projectId == item.projectId &&
-          p.motsCles.contains('Prochaine séance') &&
-          _sameDay(p.date, item.date));
+          p.motsCles.contains('Prochaine séance'));
       if (alreadyScheduled) {
         if (navKey.currentContext != null) {
           ScaffoldMessenger.of(navKey.currentContext!).showSnackBar(
@@ -3259,7 +3082,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
     setState(() {
       plan.add(item);
-      _auditPlanningIntegrity();
+      plan.sort((a, b) => a.date.compareTo(b.date));
     });
     _persist();
     if (navKey.currentContext != null) {
@@ -3449,7 +3272,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           _persist();
         },
         onImport: importData,
-        onResetPracticeBase: resetPracticeBase,
         projectById: projectById,
         onOrientSuggestion: orientSuggestion,
         onOrientSuggestionThisWeek: orientSuggestionThisWeek,
@@ -3520,13 +3342,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         brightness: Brightness.light,
         visualDensity: VisualDensity.standard,
         scaffoldBackgroundColor: const Color(0xFFF3F5FA),
-        dividerTheme: const DividerThemeData(space: 20, thickness: 1, indent: 0, endIndent: 0),
-        listTileTheme: const ListTileThemeData(contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 2), minLeadingWidth: 34),
-        dialogTheme: DialogThemeData(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-        ),
         appBarTheme: const AppBarTheme(
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -3582,13 +3397,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF8B82FF), brightness: Brightness.dark),
         brightness: Brightness.dark,
         visualDensity: VisualDensity.standard,
-        dividerTheme: const DividerThemeData(space: 20, thickness: 1, indent: 0, endIndent: 0),
-        listTileTheme: const ListTileThemeData(contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 2), minLeadingWidth: 34),
-        dialogTheme: DialogThemeData(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-        ),
         appBarTheme: const AppBarTheme(
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -3698,7 +3506,6 @@ class CardBox extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    color: Colors.transparent,
                   ),
                 ),
                 child: child,
@@ -4134,7 +3941,6 @@ class Home extends StatelessWidget {
     required this.darkMode,
     required this.onToggleDarkMode,
     required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById,
     required this.onOrientSuggestion,
     required this.onOrientSuggestionThisWeek,
@@ -4160,7 +3966,6 @@ class Home extends StatelessWidget {
   final bool darkMode;
   final VoidCallback onToggleDarkMode;
   final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById;
   final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
@@ -4207,18 +4012,6 @@ class Home extends StatelessWidget {
               Icon(Icons.upload_outlined),
               SizedBox(width: 12),
               Expanded(child: Text('Restaurer une sauvegarde')),
-            ]),
-          ),
-          const Divider(),
-          SimpleDialogOption(
-            onPressed: () async {
-              Navigator.pop(dc);
-              await onResetPracticeBase();
-            },
-            child: const Row(children: [
-              Icon(Icons.restart_alt_outlined),
-              SizedBox(width: 12),
-              Expanded(child: Text('Préparer une base de test propre')),
             ]),
           ),
         ],
@@ -4715,7 +4508,6 @@ class CoachHome extends StatelessWidget {
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
-    required this.onResetPracticeBase,
     required this.projectById, required this.onOrientSuggestion, required this.onOrientSuggestionThisWeek,
   });
   final List<Project> projects; final List<Session> sessions; final List<PlanItem> plan;
@@ -4726,7 +4518,6 @@ class CoachHome extends StatelessWidget {
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
   final VoidCallback onExport; final bool darkMode; final VoidCallback onToggleDarkMode; final VoidCallback onImport;
-  final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById; final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
 
@@ -5149,7 +4940,6 @@ class CoachHome extends StatelessWidget {
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onQuickProject(); }, child: const Row(children: [Icon(Icons.add_circle_outline), SizedBox(width: 12), Text('Ajouter un morceau')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onExport(); }, child: const Row(children: [Icon(Icons.download_outlined), SizedBox(width: 12), Text('Exporter mes données')])),
       SimpleDialogOption(onPressed: () { Navigator.pop(dc); onImport(); }, child: const Row(children: [Icon(Icons.upload_outlined), SizedBox(width: 12), Text('Restaurer une sauvegarde')])),
-      SimpleDialogOption(onPressed: () async { Navigator.pop(dc); await onResetPracticeBase(); }, child: const Row(children: [Icon(Icons.restart_alt_outlined), SizedBox(width: 12), Text('Préparer une base de test propre')])),
     ]));
   }
 }
@@ -5781,9 +5571,6 @@ class _SessionDialogState extends State<SessionDialog> {
       ),
     );
     return Theme(data: flatTheme, child: AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
       content: SingleChildScrollView(
         child: Column(
@@ -6564,10 +6351,9 @@ class _ProjectCoachDashboard extends StatelessWidget {
         recommendedTempo = recommendedTempo! + 3;
       }
     }
-    final goalHint = project.goal.trim().isNotEmpty ? ' · Objectif : ${project.goal.trim()}' : '';
     final concretePlan = recommendedTempo != null
-        ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM$goalHint'
-        : '$recommendedMinutes min · $recommendedFocus$goalHint';
+        ? '$recommendedMinutes min · $recommendedFocus · ${recommendedTempo} BPM'
+        : '$recommendedMinutes min · $recommendedFocus';
 
     // Synthèse dédiée des run-throughs : cet indicateur mesure la capacité à jouer
     // le morceau en continu, distinctement des séances de travail ciblé.
@@ -6636,8 +6422,8 @@ class _ProjectCoachDashboard extends StatelessWidget {
         ? 'Dernier Run-through terminé à ${last!.runThroughEndTempo} BPM : consolider la continuité avant d’accélérer.'
         : concreteWhy;
 
-    return Padding(
-      padding: EdgeInsets.zero,
+    return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -7427,9 +7213,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
       ),
     );
     return Theme(data: flatTheme, child: AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       title: Text(editing ? 'Modifier le morceau' : 'Nouveau morceau'),
       content: SizedBox(
         width: maxDialogWidth,
@@ -7438,7 +7221,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
           child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _detailSectionHeader(c, 'IDENTITÉ DU MORCEAU', icon: Icons.music_note_outlined),
             TextField(
               controller: nameCtrl,
               decoration: const InputDecoration(labelText: 'Nom'),
@@ -7462,7 +7244,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
               onChanged: (v) => setState(() => emoji = v ?? '🎵'),
             ),
             const SizedBox(height: 8),
-            _detailSectionHeader(c, 'AVANCEMENT', icon: Icons.trending_up_outlined),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Avancement automatique'),
@@ -7579,7 +7360,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
               ),
             ],
             const SizedBox(height: 8),
-            _detailSectionHeader(c, 'STATUT', icon: Icons.flag_outlined),
+            const Align(alignment: Alignment.centerLeft, child: Text('Statut du morceau', style: TextStyle(fontWeight: FontWeight.bold))),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               value: statusIsManual && projectStatuses.contains(status) ? status : '__AUTO__',
@@ -7716,8 +7497,10 @@ class _ProjectDialogState extends State<ProjectDialog> {
                       }
                     }).join(' ');
                     final hasFeeling = recent.any((s) => s.coachFeeling != null);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -7754,6 +7537,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                             ],
                           ],
                         ),
+                      ),
                     );
                   },
                 ),
@@ -9816,15 +9600,11 @@ class _PlanDialogState extends State<PlanDialog> {
       ),
     );
     return Theme(data: flatTheme, child: AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       title: Text(editing ? 'Modifier la séance' : 'Planifier une séance'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _detailSectionHeader(c, 'QUAND', icon: Icons.calendar_today_outlined),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text('Jour : ${date.day}/${date.month}/${date.year}'),
@@ -9839,7 +9619,6 @@ class _PlanDialogState extends State<PlanDialog> {
                 if (d != null) setState(() => date = d);
               },
             ),
-            _detailSectionHeader(c, 'TRAVAIL À PLANIFIER', icon: Icons.event_note_outlined),
             TextField(
               controller: titleCtrl,
               decoration: const InputDecoration(labelText: 'Travail prévu'),
@@ -9912,5 +9691,3 @@ class _PlanDialogState extends State<PlanDialog> {
     ));
   }
 }
-
-// V110 — boucle coach fiabilisee, adaptation session→prochaine, objectifs relies, planning/session audits.
