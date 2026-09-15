@@ -6514,6 +6514,7 @@ class _ProjectsState extends State<Projects> {
       if (statusCompare != 0) return statusCompare;
       return (b.priority ? 1 : 0) - (a.priority ? 1 : 0);
     });
+    _positionOnToday();
     return Column(
       children: [
         AppBar(title: Text('Morceaux · ${widget.items.length}'), actions: [IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add))]),

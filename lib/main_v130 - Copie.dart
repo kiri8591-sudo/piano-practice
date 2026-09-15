@@ -11,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '131.0';
+const String appVersion = '130.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -8513,9 +8513,6 @@ class Week extends StatefulWidget {
 class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   DateTime? filtreDate;
   late final AnimationController _coachPulseController;
-  final ScrollController _weekScrollController = ScrollController();
-  final Map<DateTime, GlobalKey> _dayKeys = {};
-  bool _todayPositioned = false;
 
   @override
   void initState() {
@@ -8528,36 +8525,10 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     )..repeat(reverse: true);
   }
 
-  void _positionOnToday() {
-    if (_todayPositioned || filtreDate != null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _todayPositioned || filtreDate != null) return;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) return;
-      _todayPositioned = true;
-      await Scrollable.ensureVisible(
-        contextForDay,
-        alignment: 0.08,
-        duration: const Duration(milliseconds: 450),
-        curve: Curves.easeOutCubic,
-      );
-    });
-  }
-
   @override
   void dispose() {
     _coachPulseController.dispose();
-    _weekScrollController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant Week oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _todayPositioned = false;
-    _positionOnToday();
   }
   String filtreMotCle = '';
 
@@ -8800,8 +8771,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
         ),
         Expanded(
           child: ListView(
-            controller: _weekScrollController,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.all(16),
             children: [
               CardBox(
                 child: Column(
@@ -8903,21 +8873,14 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               else
                 ...groupedByDay(sorted).entries.expand((entry) => [
                       Padding(
-                        key: _dayKeys.putIfAbsent(
-                          DateTime(entry.key.year, entry.key.month, entry.key.day),
-                          () => GlobalKey(),
-                        ),
-                        padding: const EdgeInsets.only(top: 11, bottom: 8),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                        padding: const EdgeInsets.only(top: 10, bottom: 7),
+                        child: Row(children: [
                           Expanded(
                             child: Row(children: [
                               Flexible(
                                 child: Text(
                                   '${weekday(entry.key.weekday)} ${entry.key.day}/${entry.key.month}',
                                   style: TextStyle(
-                                    fontSize: _isToday(entry.key) ? 18 : 15.5,
-                                    height: 1.05,
-                                    letterSpacing: _isToday(entry.key) ? .15 : 0,
                                     fontWeight: FontWeight.w900,
                                     color: _isToday(entry.key) ? Theme.of(c).colorScheme.primary : Colors.deepPurple,
                                   ),
@@ -8953,13 +8916,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           ),
                           if (_isToday(entry.key))
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Theme.of(c).colorScheme.primary.withOpacity(.12),
+                                color: Theme.of(c).colorScheme.primary.withOpacity(.10),
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
                               ),
-                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
+                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
                             ),
                         ]),
                       ),

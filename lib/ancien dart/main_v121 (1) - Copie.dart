@@ -11,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '131.0';
+const String appVersion = '121.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -497,58 +497,6 @@ String masteryLabel(double score) {
   return 'À construire';
 }
 
-class CoachDecision {
-  CoachDecision({
-    required this.id,
-    required this.date,
-    required this.sessionId,
-    required this.projectId,
-    required this.changed,
-    required this.title,
-    required this.message,
-    this.oldDuration,
-    this.newDuration,
-    this.reason,
-  });
-
-  final String id;
-  final DateTime date;
-  final String sessionId;
-  final String? projectId;
-  final bool changed;
-  final String title;
-  final String message;
-  final int? oldDuration;
-  final int? newDuration;
-  final String? reason;
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date.toIso8601String(),
-        'sessionId': sessionId,
-        'projectId': projectId,
-        'changed': changed,
-        'title': title,
-        'message': message,
-        'oldDuration': oldDuration,
-        'newDuration': newDuration,
-        'reason': reason,
-      };
-
-  factory CoachDecision.fromJson(Map<String, dynamic> j) => CoachDecision(
-        id: j['id'] as String? ?? newId(),
-        date: DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime.now(),
-        sessionId: j['sessionId'] as String? ?? '',
-        projectId: j['projectId'] as String?,
-        changed: j['changed'] as bool? ?? false,
-        title: j['title'] as String? ?? 'Analyse du coach',
-        message: j['message'] as String? ?? '',
-        oldDuration: (j['oldDuration'] as num?)?.toInt(),
-        newDuration: (j['newDuration'] as num?)?.toInt(),
-        reason: j['reason'] as String?,
-      );
-}
-
 class PlanItem {
   PlanItem({
     required this.id,
@@ -563,11 +511,6 @@ class PlanItem {
     List<String>? motsCles,
     this.sourceSessionId,
     int? plannedDuration,
-    this.coachAdjusted = false,
-    this.coachAdjustmentSeen = true,
-    this.coachAdjustmentReason,
-    this.coachAdjustedAt,
-    this.coachPreviousDuration,
   }) : motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
   final String id;
   DateTime date;
@@ -581,11 +524,6 @@ class PlanItem {
   List<String> motsCles; // mots-cles/tags libres pour filtrer le planning
   String? sourceSessionId; // id de la session creee quand cette entree a ete marquee terminee
   final int plannedDuration; // durée prévue conservée après réalisation
-  bool coachAdjusted; // le coach a modifié cette séance depuis sa création
-  bool coachAdjustmentSeen; // l'utilisateur a consulté le détail de la modification
-  String? coachAdjustmentReason; // explication courte de l'ajustement
-  DateTime? coachAdjustedAt; // moment de la dernière décision du coach
-  int? coachPreviousDuration; // durée avant la dernière décision, pour éviter les oscillations
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -600,43 +538,22 @@ class PlanItem {
         'motsCles': motsCles,
         'sourceSessionId': sourceSessionId,
         'plannedDuration': plannedDuration,
-        'coachAdjusted': coachAdjusted,
-        'coachAdjustmentSeen': coachAdjustmentSeen,
-        'coachAdjustmentReason': coachAdjustmentReason,
-        'coachAdjustedAt': coachAdjustedAt?.toIso8601String(),
-        'coachPreviousDuration': coachPreviousDuration,
       };
 
-  factory PlanItem.fromJson(Map<String, dynamic> j) {
-    final duration = (j['duration'] as num?)?.toInt() ?? 0;
-    final planned = (j['plannedDuration'] as num?)?.toInt() ?? duration;
-    final completed = j['completed'] as bool? ?? false;
-    final sourceSessionId = j['sourceSessionId'] as String?;
-    return PlanItem(
-      id: j['id'] as String,
-      date: DateTime.parse(j['date'] as String),
-      duration: duration,
-      title: j['title'] as String,
-      details: j['details'] as String,
-      projectId: j['projectId'] as String?,
-      category: j['category'] as String?,
-      method: j['method'] as String?,
-      completed: completed,
-      motsCles: (j['motsCles'] as List?)?.map((e) => e as String).toList() ?? [],
-      sourceSessionId: sourceSessionId,
-      plannedDuration: planned,
-      // Compatibilité avec les plannings V124 : si une séance future possède
-      // déjà une durée différente de sa durée initiale, on la considère comme
-      // une modification du coach, même si le nouveau champ n'existait pas.
-      coachAdjusted: j['coachAdjusted'] as bool? ??
-          (!completed && sourceSessionId == null && planned > 0 && duration != planned),
-      coachAdjustmentSeen: j['coachAdjustmentSeen'] as bool? ?? true,
-      coachAdjustmentReason: j['coachAdjustmentReason'] as String?,
-      coachAdjustedAt: DateTime.tryParse(j['coachAdjustedAt']?.toString() ?? ''),
-      coachPreviousDuration: (j['coachPreviousDuration'] as num?)?.toInt(),
-    );
-  }
-
+  factory PlanItem.fromJson(Map<String, dynamic> j) => PlanItem(
+        id: j['id'] as String,
+        date: DateTime.parse(j['date'] as String),
+        duration: j['duration'] as int,
+        title: j['title'] as String,
+        details: j['details'] as String,
+        projectId: j['projectId'] as String?,
+        category: j['category'] as String?,
+        method: j['method'] as String?,
+        completed: j['completed'] as bool? ?? false,
+        motsCles: (j['motsCles'] as List?)?.map((e) => e as String).toList() ?? [],
+        sourceSessionId: j['sourceSessionId'] as String?,
+        plannedDuration: (j['plannedDuration'] as num?)?.toInt() ?? (j['duration'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class RoutineItem {
@@ -841,11 +758,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   List<Project> projects = [];
   List<Session> sessions = [];
   List<PlanItem> plan = [];
-  List<CoachDecision> coachDecisionLog = [];
-  String? _lastCoachChangedItemId;
-  int? _lastCoachOldDuration;
-  int? _lastCoachNewDuration;
-  String? _lastCoachReason;
   List<RoutineItem> routine = [];
   List<Challenge> challenges = [];
   bool darkMode = false;
@@ -1559,7 +1471,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       projects = (jsonDecode(rawProjects) as List).map((e) => Project.fromJson(e)).toList();
       sessions = (jsonDecode(prefs.getString('sessions') ?? '[]') as List).map((e) => Session.fromJson(e)).toList();
       plan = (jsonDecode(prefs.getString('plan') ?? '[]') as List).map((e) => PlanItem.fromJson(e)).toList();
-      coachDecisionLog = (jsonDecode(prefs.getString('coachDecisionLog') ?? '[]') as List).map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map))).toList();
       routine =
           (jsonDecode(prefs.getString('routine') ?? '[]') as List).map((e) => RoutineItem.fromJson(e)).toList();
       challenges =
@@ -1666,7 +1577,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setString('projects', jsonEncode(projects.map((e) => e.toJson()).toList()));
     await prefs.setString('sessions', jsonEncode(sessions.map((e) => e.toJson()).toList()));
     await prefs.setString('plan', jsonEncode(plan.map((e) => e.toJson()).toList()));
-    await prefs.setString('coachDecisionLog', jsonEncode(coachDecisionLog.map((e) => e.toJson()).toList()));
     await prefs.setString('routine', jsonEncode(routine.map((e) => e.toJson()).toList()));
     await prefs.setString('challenges', jsonEncode(challenges.map((e) => e.toJson()).toList()));
   }
@@ -1716,7 +1626,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'projects': projects.map((e) => e.toJson()).toList(),
       'sessions': sessions.map((e) => e.toJson()).toList(),
       'plan': plan.map((e) => e.toJson()).toList(),
-      'coachDecisionLog': coachDecisionLog.map((e) => e.toJson()).toList(),
       'routine': routine.map((e) => e.toJson()).toList(),
       'challenges': challenges.map((e) => e.toJson()).toList(),
       'exportedAt': backupNow.toIso8601String(),
@@ -1812,7 +1721,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         projects = ((data['projects'] as List?) ?? []).map((e) => Project.fromJson(e)).toList();
         sessions = ((data['sessions'] as List?) ?? []).map((e) => Session.fromJson(e)).toList();
         plan = ((data['plan'] as List?) ?? []).map((e) => PlanItem.fromJson(e)).toList();
-        coachDecisionLog = ((data['coachDecisionLog'] as List?) ?? []).map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map))).toList();
         routine = ((data['routine'] as List?) ?? []).map((e) => RoutineItem.fromJson(e)).toList();
         challenges = ((data['challenges'] as List?) ?? []).map((e) => Challenge.fromJson(e)).toList();
         final importedBackup = data['exportedAt']?.toString();
@@ -2931,6 +2839,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       _auditPlanningIntegrity();
       _auditSessionIntegrity();
     });
+    setState(_adaptRemainingWeekToReality);
     await _persist();
 
     // Une session AJOUTEE manuellement est une vraie fin de session, au même
@@ -2941,128 +2850,15 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
     }
-    // Le ressenti est maintenant enregistré : le coach peut réellement
-    // recalibrer les jours futurs après cette séance.
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
     await _showPlanVsRealized(r);
     _checkCelebrations();
-  }
-
-  void _recordCoachDecision(Session session, bool changed) {
-    final existing = coachDecisionLog.where((d) => d.sessionId == session.id).toList();
-    if (existing.isNotEmpty) return;
-    final projectId = session.projectId;
-    final project = projectById(projectId);
-    final item = _lastCoachChangedItemId == null
-        ? null
-        : plan.where((x) => x.id == _lastCoachChangedItemId).firstOrNull;
-    final decision = CoachDecision(
-      id: newId(),
-      date: DateTime.now(),
-      sessionId: session.id,
-      projectId: projectId,
-      changed: changed,
-      title: changed ? 'Planning ajusté' : 'Analyse du coach',
-      message: changed
-          ? 'Le coach a modifié le planning à venir pour ${project?.name ?? 'ce morceau'}. '
-              '${item?.title ?? ''}'.trim()
-          : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.',
-      oldDuration: changed ? _lastCoachOldDuration : null,
-      newDuration: changed ? _lastCoachNewDuration : null,
-      reason: changed ? _lastCoachReason : null,
-    );
-    coachDecisionLog.insert(0, decision);
-    if (coachDecisionLog.length > 50) {
-      coachDecisionLog.removeRange(50, coachDecisionLog.length);
-    }
-  }
-
-  Future<void> _showCoachDecisionLog() async {
-    final decisions = [...coachDecisionLog]..sort((a, b) => b.date.compareTo(a.date));
-    await showDialog<void>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: const Text('🧠 Journal du coach'),
-        content: SizedBox(
-          width: 520,
-          height: 430,
-          child: decisions.isEmpty
-              ? const Center(child: Text('Aucune décision du coach enregistrée.'))
-              : ListView.separated(
-                  itemCount: decisions.length,
-                  separatorBuilder: (_, __) => const Divider(height: 12),
-                  itemBuilder: (_, i) {
-                    final d = decisions[i];
-                    final date = '${d.date.day.toString().padLeft(2,'0')}/${d.date.month.toString().padLeft(2,'0')} · ${d.date.hour.toString().padLeft(2,'0')}:${d.date.minute.toString().padLeft(2,'0')}';
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        radius: 17,
-                        child: Icon(d.changed ? Icons.auto_awesome : Icons.check, size: 17),
-                      ),
-                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('$date\n${d.message}${d.reason == null ? '' : '\n${d.reason}'}', maxLines: 4),
-                      trailing: d.oldDuration != null && d.newDuration != null
-                          ? Text('${d.oldDuration} → ${d.newDuration} min', style: const TextStyle(fontWeight: FontWeight.w800))
-                          : null,
-                    );
-                  },
-                ),
-        ),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Fermer'))],
-      ),
-    );
   }
 
   /// V121 : le planning constitue la stratégie de la semaine, mais les jours
   /// encore à venir sont recalibrés à partir de la pratique réellement observée.
   /// Les séances terminées ne sont jamais modifiées ; seules les séances futures
   /// non commencées peuvent voir leur durée ajustée.
-  Future<void> _showCoachPlanningResult(Session session, bool changed) async {
-    final project = projectById(session.projectId);
-    final name = project?.name ?? 'ta séance';
-    final title = changed ? '🧠 Planning ajusté' : '🧠 Analyse du coach';
-    final message = changed
-        ? 'J’ai analysé ta séance et ajusté le planning à venir.'
-        : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.';
-    await showDialog<void>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            Text(message, style: const TextStyle(height: 1.4)),
-            if (changed) ...[
-              const SizedBox(height: 10),
-              const Text('Un indicateur COACH apparaît sur le planning modifié.',
-                  style: TextStyle(fontSize: 12)),
-            ],
-          ],
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool _adaptRemainingWeekToReality() {
-    _lastCoachChangedItemId = null;
-    _lastCoachOldDuration = null;
-    _lastCoachNewDuration = null;
-    _lastCoachReason = null;
+  void _adaptRemainingWeekToReality() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekStart = startOfWeek(now);
@@ -3072,124 +2868,40 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         x.date.isAfter(today) &&
         !x.date.isBefore(weekStart) &&
         x.date.isBefore(weekEnd) &&
-        x.duration > 0 &&
-        x.sourceSessionId == null).toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
-    if (future.isEmpty) return false;
+        x.duration > 0).toList();
+    if (future.isEmpty) return;
 
-    final orderedSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
-    final latestSession = orderedSessions.isEmpty ? null : orderedSessions.first;
-    bool changed = false;
-
-    double factorForProject(String? projectId) {
+    double adjustmentFor(String? projectId) {
       if (projectId == null || projectId.isEmpty) return 1.0;
       final recent = sessions
           .where((s) => s.projectId == projectId && s.plannedDuration != null && s.plannedDuration! > 0)
           .toList()
         ..sort((a, b) => b.date.compareTo(a.date));
-      if (recent.isEmpty) return 1.0;
       final selected = recent.take(4).toList();
-      final adherence = selected.fold<double>(
-            0,
-            (sum, s) => sum + s.duration / s.plannedDuration!,
-          ) /
-          selected.length;
-      final last = selected.first;
-      if (last.coachFeeling == 'difficile' || _recentDifficultSessions(projectId) >= 2) return .88;
-      if (last.duration <= last.plannedDuration! - 5 || adherence < .78) return .90;
-      if (last.coachFeeling == 'facile' && last.duration >= last.plannedDuration!) return 1.08;
-      if (last.duration >= last.plannedDuration! + 5 || adherence > 1.18) return 1.06;
+      if (selected.isEmpty) return 1.0;
+      final adherence = selected.fold<double>(0, (sum, s) => sum + s.duration / s.plannedDuration!) / selected.length;
+      final difficult = _recentDifficultSessions(projectId);
+      final feeling = _lastFeeling(projectId);
+      if (difficult >= 2 || feeling == 'difficile') return .88;
+      if (adherence < .78) return .90;
+      if (adherence < .90) return .95;
+      if (adherence > 1.18 && feeling != 'difficile') return 1.08;
+      if (adherence > 1.05 && feeling == 'facile') return 1.04;
       return 1.0;
     }
 
-    bool applyAdjustment(PlanItem item, double factor, String reason) {
-      final adjusted = (item.duration * factor).round().clamp(10, 30).toInt();
-      if (adjusted == item.duration) return false;
-
-      // Anti-oscillation : sur une même occurrence, le coach ne renverse pas
-      // immédiatement sa dernière décision. Il attend au moins 48 h et une
-      // nouvelle information réellement exploitable.
-      final lastAt = item.coachAdjustedAt;
-      final previous = item.coachPreviousDuration;
-      if (lastAt != null && previous != null) {
-        final age = DateTime.now().difference(lastAt);
-        final lastDirection = item.duration - previous;
-        final newDirection = adjusted - item.duration;
-        if (age < const Duration(hours: 48) && lastDirection * newDirection < 0) {
-          return false;
-        }
-      }
-
-      final oldDuration = item.duration;
-      item.duration = adjusted;
-      item.coachAdjusted = true;
-      item.coachAdjustmentSeen = false;
-      item.coachAdjustmentReason = reason;
-      item.coachAdjustedAt = DateTime.now();
-      item.coachPreviousDuration = oldDuration;
-      _lastCoachChangedItemId = item.id;
-      _lastCoachOldDuration = oldDuration;
-      _lastCoachNewDuration = adjusted;
-      _lastCoachReason = reason;
-      return true;
+    for (final item in future) {
+      final factor = adjustmentFor(item.projectId);
+      if ((factor - 1).abs() < .001) continue;
+      final minMinutes = 10;
+      final maxMinutes = 30;
+      final adjusted = (item.duration * factor).round().clamp(minMinutes, maxMinutes).toInt();
+      if (adjusted == item.duration) continue;
+      // plannedDuration est volontairement final : pour une séance future,
+      // la durée affichée est le prochain plan ajusté, tandis que la durée
+      // historique d'une entrée déjà réalisée reste inchangée.
+      if (item.sourceSessionId == null) item.duration = adjusted;
     }
-
-    if (latestSession?.projectId != null) {
-      final projectId = latestSession!.projectId!;
-      final sameProject = future.where((x) => x.projectId == projectId).toList();
-      final factor = factorForProject(projectId);
-      if (factor != 1.0 && sameProject.isNotEmpty) {
-        final item = sameProject.first;
-        final reason = factor < 1
-            ? 'Après la dernière séance, le coach réduit la prochaine charge.'
-            : 'Après la dernière séance, le coach augmente légèrement la prochaine charge.';
-        changed = applyAdjustment(item, factor, reason);
-      }
-    }
-
-    if (!changed) {
-      for (final item in future) {
-        if (item.projectId == null) continue;
-        final factor = factorForProject(item.projectId);
-        if (factor == 1.0) continue;
-        final reason = factor < 1
-            ? 'Le coach allège cette séance à partir des dernières données.'
-            : 'Le coach augmente légèrement cette séance à partir des dernières données.';
-        if (applyAdjustment(item, factor, reason)) {
-          changed = true;
-          break;
-        }
-      }
-    }
-
-    if (!changed && latestSession?.projectId != null && latestSession?.coachFeeling == 'difficile') {
-      final projectId = latestSession!.projectId!;
-      final matching = future.where((x) => x.projectId == projectId).toList();
-      final item = matching.isNotEmpty ? matching.first : future.first;
-      final adjusted = math.max(10, item.duration - 5);
-      if (adjusted != item.duration) {
-        final previous = item.coachPreviousDuration;
-        final lastAt = item.coachAdjustedAt;
-        final reversing = previous != null && (item.duration - previous) * (adjusted - item.duration) < 0;
-        final recent = lastAt != null && DateTime.now().difference(lastAt) < const Duration(hours: 48);
-        if (!(reversing && recent)) {
-          final oldDuration = item.duration;
-          item.duration = adjusted;
-          item.coachAdjusted = true;
-          item.coachAdjustmentSeen = false;
-          item.coachAdjustmentReason = 'Le coach allège de 5 min après une séance ressentie comme difficile.';
-          item.coachAdjustedAt = DateTime.now();
-          item.coachPreviousDuration = oldDuration;
-          _lastCoachChangedItemId = item.id;
-          _lastCoachOldDuration = oldDuration;
-          _lastCoachNewDuration = adjusted;
-          _lastCoachReason = item.coachAdjustmentReason;
-          changed = true;
-        }
-      }
-    }
-
-    return changed;
   }
 
   Future<void> _showPlanVsRealized(Session s) async {
@@ -3300,11 +3012,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await _persist();
     await _offerDetailedProgress(r);
     await _showCoachFeedback(r);
-    // Le bilan express vient d'enregistrer le ressenti : recalibrage après coup.
-    final coachChanged = _adaptRemainingWeekToReality();
-    setState(() {});
-    await _persist();
-    await _showCoachPlanningResult(r, coachChanged);
     await _showPlanVsRealized(r);
     _checkCelebrations();
   }
@@ -3394,15 +3101,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
       });
-      await _persist();
+      _persist();
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
       await _showPlanVsRealized(r);
     } else {
       final r = await showDialog<Session>(
@@ -3429,15 +3130,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
       });
-      await _persist();
+      _persist();
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
       await _showPlanVsRealized(r);
     }
     _checkCelebrations();
@@ -3871,12 +3566,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
     await _offerDetailedProgress(newSession);
     await _showCoachFeedback(newSession);
-    final coachChanged = _adaptRemainingWeekToReality();
-    setState(() {});
-    await _persist();
-    _recordCoachDecision(newSession, coachChanged);
-    await _persist();
-    await _showCoachPlanningResult(newSession, coachChanged);
     await _showPlanVsRealized(newSession);
     _checkCelebrations();
   }
@@ -3946,13 +3635,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onEditCapacity: editDailyCapacity,
         onOpenRoutine: openRoutineScreen,
         onStartTimer: startPracticeTimer,
-        onCoachAdjustmentSeen: (item) {
-          setState(() {});
-          _persist();
-        },
         projectById: projectById,
         sessions: sessions,
-        onOpenCoachLog: _showCoachDecisionLog,
       ),
       MethodsScreen(
         methods: methodDefinitions,
@@ -5470,7 +5154,7 @@ class CoachHome extends StatelessWidget {
     final todayItems = plan.where((x) => _day(x.date) == today).toList()
       ..sort((a, b) => a.completed == b.completed ? a.id.compareTo(b.id) : (a.completed ? 1 : -1));
     final pending = todayItems.where((x) => !x.completed).toList();
-    final todayTarget = todayItems.fold(0, (a, x) => a + x.duration);
+    final todayTarget = todayItems.fold(0, (a, x) => a + x.plannedDuration);
     int realizedFor(PlanItem x) => x.sourceSessionId == null
         ? 0
         : sessions.where((s) => s.id == x.sourceSessionId).firstOrNull?.duration ?? 0;
@@ -8482,10 +8166,8 @@ class Week extends StatefulWidget {
     required this.onEditCapacity,
     required this.onOpenRoutine,
     required this.onStartTimer,
-    required this.onCoachAdjustmentSeen,
     required this.projectById,
     required this.sessions,
-    required this.onOpenCoachLog,
   });
   final List<PlanItem> items;
   final int minutes;
@@ -8501,64 +8183,15 @@ class Week extends StatefulWidget {
   final VoidCallback onEditCapacity;
   final VoidCallback onOpenRoutine;
   final void Function(PlanItem) onStartTimer;
-  final void Function(PlanItem) onCoachAdjustmentSeen;
   final Project? Function(String?) projectById;
   final List<Session> sessions;
-  final VoidCallback onOpenCoachLog;
 
   @override
   State<Week> createState() => _WeekState();
 }
 
-class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
+class _WeekState extends State<Week> {
   DateTime? filtreDate;
-  late final AnimationController _coachPulseController;
-  final ScrollController _weekScrollController = ScrollController();
-  final Map<DateTime, GlobalKey> _dayKeys = {};
-  bool _todayPositioned = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _coachPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-      lowerBound: .45,
-      upperBound: 1.0,
-    )..repeat(reverse: true);
-  }
-
-  void _positionOnToday() {
-    if (_todayPositioned || filtreDate != null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _todayPositioned || filtreDate != null) return;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) return;
-      _todayPositioned = true;
-      await Scrollable.ensureVisible(
-        contextForDay,
-        alignment: 0.08,
-        duration: const Duration(milliseconds: 450),
-        curve: Curves.easeOutCubic,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _coachPulseController.dispose();
-    _weekScrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant Week oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _todayPositioned = false;
-    _positionOnToday();
-  }
   String filtreMotCle = '';
 
   static String weekday(int n) => ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][n - 1];
@@ -8567,159 +8200,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final id = item.sourceSessionId;
     if (id == null) return null;
     return widget.sessions.where((s) => s.id == id).firstOrNull;
-  }
-
-  bool _isToday(DateTime d) {
-    final n = DateTime.now();
-    return d.year == n.year && d.month == n.month && d.day == n.day;
-  }
-
-  bool _wasAdjustedByCoach(PlanItem item) =>
-      !item.completed && item.sourceSessionId == null && item.coachAdjusted;
-
-  bool _hasUnseenCoachAdjustment(PlanItem item) =>
-      _wasAdjustedByCoach(item) && !item.coachAdjustmentSeen;
-
-  Widget _coachPulseDot(BuildContext c, {required bool visible}) {
-    if (!visible) return const SizedBox.shrink();
-    final color = Theme.of(c).colorScheme.primary;
-    return AnimatedBuilder(
-      animation: _coachPulseController,
-      builder: (_, __) => Opacity(
-        opacity: _coachPulseController.value,
-        child: Container(
-          width: 11,
-          height: 11,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: color.withOpacity(.30), blurRadius: 7, spreadRadius: 1)],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showCoachAdjustmentDetail(BuildContext c, PlanItem item) async {
-    if (!_wasAdjustedByCoach(item)) return;
-    final delta = item.duration - item.plannedDuration;
-    final evolution = delta < 0
-        ? 'Le coach a allégé cette séance.'
-        : delta > 0
-            ? 'Le coach a renforcé cette séance.'
-            : 'Le coach a ajusté cette séance.';
-    final detail = delta.abs() >= 1
-        ? '${item.plannedDuration} min → ${item.duration} min'
-        : '${item.duration} min';
-
-    if (!item.coachAdjustmentSeen) {
-      item.coachAdjustmentSeen = true;
-      widget.onCoachAdjustmentSeen(item);
-      if (mounted) setState(() {});
-    }
-
-    await showDialog<void>(
-      context: c,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(children: [
-          Icon(Icons.auto_awesome, color: Theme.of(dialogContext).colorScheme.primary),
-          const SizedBox(width: 8),
-          const Expanded(child: Text('Modification du coach')),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            Text(detail, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Theme.of(dialogContext).colorScheme.primary)),
-            const SizedBox(height: 8),
-            Text(evolution),
-            if ((item.coachAdjustmentReason ?? '').isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(item.coachAdjustmentReason!, style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
-            ],
-            const SizedBox(height: 10),
-            Text('Cette modification concerne le planning à venir. Les séances déjà réalisées ne sont jamais modifiées.', style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
-          ],
-        ),
-        actions: [
-          FilledButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('J’ai compris')),
-        ],
-      ),
-    );
-  }
-
-  bool _dayHasCoachAdjustment(List<PlanItem> items) => items.any(_wasAdjustedByCoach);
-  bool _dayHasUnseenCoachAdjustment(List<PlanItem> items) => items.any(_hasUnseenCoachAdjustment);
-
-  Widget _coachAdjustmentBanner(BuildContext c, List<PlanItem> items) {
-    if (!_dayHasCoachAdjustment(items)) return const SizedBox.shrink();
-    final adjusted = items.where(_wasAdjustedByCoach).length;
-    final unseen = _dayHasUnseenCoachAdjustment(items);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () async {
-          final first = items.firstWhere(_wasAdjustedByCoach);
-          await _showCoachAdjustmentDetail(c, first);
-        },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-          decoration: BoxDecoration(
-            color: Theme.of(c).colorScheme.primary.withOpacity(.07),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.18)),
-          ),
-          child: Row(children: [
-            _coachPulseDot(c, visible: true),
-            const SizedBox(width: 8),
-            Icon(Icons.auto_awesome, size: 17, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Planning ajusté par le coach · $adjusted modification${adjusted > 1 ? 's' : ''}',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurface),
-              ),
-            ),
-            Text(unseen ? 'Voir' : 'Détail', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _coachAdjustmentLabel(BuildContext c, PlanItem item) {
-    if (!_wasAdjustedByCoach(item)) return const SizedBox.shrink();
-    final delta = item.duration - item.plannedDuration;
-    final unseen = _hasUnseenCoachAdjustment(item);
-    final text = delta < 0
-        ? 'Coach : ${item.duration} min au lieu de ${item.plannedDuration} min · séance allégée'
-        : 'Coach : ${item.duration} min au lieu de ${item.plannedDuration} min · séance renforcée';
-    return Padding(
-      padding: const EdgeInsets.only(top: 7),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _showCoachAdjustmentDetail(c, item),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(c).colorScheme.primary.withOpacity(.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.18)),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            _coachPulseDot(c, visible: true),
-            if (unseen) const SizedBox(width: 7),
-            Icon(Icons.auto_awesome, size: 14, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 5),
-            Flexible(child: Text(text, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary))),
-          ]),
-        ),
-      ),
-    );
   }
 
   Widget _plannedVsRealized(BuildContext c, PlanItem item) {
@@ -8793,15 +8273,13 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
             IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
             IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
-            IconButton(onPressed: widget.onOpenCoachLog, icon: const Icon(Icons.psychology_outlined), tooltip: 'Journal du coach'),
             IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
             IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add)),
           ],
         ),
         Expanded(
           child: ListView(
-            controller: _weekScrollController,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.all(16),
             children: [
               CardBox(
                 child: Column(
@@ -8903,67 +8381,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               else
                 ...groupedByDay(sorted).entries.expand((entry) => [
                       Padding(
-                        key: _dayKeys.putIfAbsent(
-                          DateTime(entry.key.year, entry.key.month, entry.key.day),
-                          () => GlobalKey(),
+                        padding: const EdgeInsets.only(top: 8, bottom: 8),
+                        child: Text(
+                          '${weekday(entry.key.weekday)} ${entry.key.day}/${entry.key.month}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple),
                         ),
-                        padding: const EdgeInsets.only(top: 11, bottom: 8),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                          Expanded(
-                            child: Row(children: [
-                              Flexible(
-                                child: Text(
-                                  '${weekday(entry.key.weekday)} ${entry.key.day}/${entry.key.month}',
-                                  style: TextStyle(
-                                    fontSize: _isToday(entry.key) ? 18 : 15.5,
-                                    height: 1.05,
-                                    letterSpacing: _isToday(entry.key) ? .15 : 0,
-                                    fontWeight: FontWeight.w900,
-                                    color: _isToday(entry.key) ? Theme.of(c).colorScheme.primary : Colors.deepPurple,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (_dayHasUnseenCoachAdjustment(entry.value)) ...[
-                                Semantics(
-                                  label: 'Modification du coach non consultée',
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: () async {
-                                      final first = entry.value.firstWhere(_hasUnseenCoachAdjustment);
-                                      await _showCoachAdjustmentDetail(c, first);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(3),
-                                      child: _coachPulseDot(c, visible: true),
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  'COACH',
-                                  style: TextStyle(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: .5,
-                                    color: Theme.of(c).colorScheme.primary,
-                                  ),
-                                ),
-                              ],
-                            ]),
-                          ),
-                          if (_isToday(entry.key))
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: Theme.of(c).colorScheme.primary.withOpacity(.12),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
-                              ),
-                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
-                            ),
-                        ]),
                       ),
-                      _coachAdjustmentBanner(c, entry.value),
                       ...entry.value.map((x) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: swipeToDelete(
@@ -9028,7 +8451,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                   decoration: x.completed ? TextDecoration.lineThrough : null,
                                                 )),
                                               ],
-                                              _coachAdjustmentLabel(c, x),
                                               if (x.duration > 0 || x.method != null) ...[
                                                 const SizedBox(height: 6),
                                                 Wrap(spacing: 6, runSpacing: 6, children: [
@@ -9036,7 +8458,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                     Chip(
                                                       visualDensity: VisualDensity.compact,
                                                       avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
-                                                      label: Text('${x.duration} min', style: TextStyle(
+                                                      label: Text('${x.plannedDuration} min', style: TextStyle(
                                                         fontSize: 11,
                                                         color: x.completed ? Colors.grey : null,
                                                         decoration: x.completed ? TextDecoration.lineThrough : null,
@@ -9994,19 +9416,145 @@ class ProgressDashboardScreen extends StatelessWidget {
               Expanded(child: _statTile(c, icon: trend >= 0 ? Icons.trending_up : Icons.trending_down, label: 'Vs semaine précédente', value: trend == 0 ? 'Stable' : '${trend > 0 ? '+' : ''}$trend min', accent: trend >= 0 ? Colors.green.shade700 : Colors.deepOrange.shade700)),
             ]),
           ])),
-          const SizedBox(height: 16),
-          CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _sectionHeader(c, Icons.psychology_outlined, 'Le rôle du coach', subtitle: 'Les décisions d’action sont regroupées dans Mission du jour.'),
-            const SizedBox(height: 10),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.today_outlined, size: 20, color: Theme.of(c).colorScheme.primary),
-              const SizedBox(width: 9),
-              Expanded(child: Text(
-                'Mission du jour te dit quoi travailler aujourd’hui. La Progression explique où tu en es : morceaux en avance ou en difficulté, tempo, étapes, Run-through et régularité.',
-                style: TextStyle(fontSize: 12, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant),
-              )),
-            ]),
-          ])),
+          if (ranked.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionHeader(c, Icons.auto_awesome, 'Ce que le coach te propose aujourd’hui', subtitle: 'Une séquence courte et priorisée. Commence par l’action n°1.'),
+              const SizedBox(height: 10),
+              Builder(builder: (context) {
+                final today = DateTime.now();
+                // Une recommandation disparaît dès qu’une séance pour ce morceau est réellement enregistrée aujourd’hui.
+                final completedProjectIdsToday = sessions
+                    .where((s) =>
+                        s.date.year == today.year &&
+                        s.date.month == today.month &&
+                        s.date.day == today.day &&
+                        s.projectId != null)
+                    .map((s) => s.projectId!)
+                    .toSet();
+                final todayPicks = ranked
+                    .where((p) => !completedProjectIdsToday.contains(p.id))
+                    .take(3)
+                    .toList();
+                final totalSuggested = todayPicks.fold<int>(0, (sum, item) => sum + recommendedMinutes(item));
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(.42),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.schedule_outlined, size: 18, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('${todayPicks.length} actions · environ $totalSuggested min', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      Text('Aujourd’hui', style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                  const SizedBox(height: 10),
+                  for (var i = 0; i < todayPicks.length; i++) ...[
+                    Builder(builder: (context) {
+                      final p = todayPicks[i];
+                      final minutes = recommendedMinutes(p);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => onOpenProject(p),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(.45),
+                              ),
+                              child: Row(children: [
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Theme.of(context).colorScheme.primary.withOpacity(.12),
+                                  ),
+                                  child: Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
+                                ),
+                                const SizedBox(width: 8),
+                                CircleAvatar(radius: 14, child: Text(p.emoji, style: const TextStyle(fontSize: 16))),
+                                const SizedBox(width: 9),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Row(children: [
+                                    Expanded(child: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                    Text('${(p.progress * 100).round()} %', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                                  ]),
+                                  const SizedBox(height: 2),
+                                  Text('${p.effectiveWorkFocus} · $minutes min', style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)),
+                                  const SizedBox(height: 2),
+                                  Text(coachReason(p), style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                                ])),
+                                const SizedBox(width: 4),
+                                Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                              ]),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: () => onStartRecommended(recommendedPlanItem(p)),
+                              icon: const Icon(Icons.play_arrow_rounded, size: 19),
+                              label: Text(i == 0 ? '▶ Commencer maintenant · $minutes min' : 'Démarrer · $minutes min'),
+                            ),
+                          ),
+                        ]),
+                      );
+                    }),
+                  ],
+                  Text(
+                    todayPicks.isEmpty
+                        ? 'Les actions du jour sont terminées : le coach te laisse choisir une séance libre ou reprendre un morceau qui n’a pas encore été travaillé aujourd’hui.'
+                        : 'Le coach privilégie d’abord le besoin le plus important, puis la variété pour éviter de retravailler un morceau déjà travaillé aujourd’hui.',
+                    style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ]);
+              }),
+            ])),
+            const SizedBox(height: 16),
+            CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionHeader(c, Icons.psychology_outlined, 'Ce que le coach ferait maintenant', subtitle: 'Les morceaux qui méritent le plus d’attention. Appuie sur un morceau pour ouvrir sa fiche.'),
+              const SizedBox(height: 12),
+              for (final p in ranked.take(4))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => onOpenProject(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+                      child: Row(children: [
+                        Text(p.emoji, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(width: 9),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            Expanded(child: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+                            if (p.priority) const Icon(Icons.star, size: 18, color: Colors.amber),
+                          ]),
+                          const SizedBox(height: 3),
+                          Text('${(p.progress * 100).round()} % · ${p.effectiveWorkFocus}',
+                            style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                          const SizedBox(height: 3),
+                          Text(coachReason(p),
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600,
+                              color: Theme.of(c).colorScheme.primary)),
+                        ])),
+                        const SizedBox(width: 6),
+                        Icon(Icons.chevron_right, size: 19, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                      ]),
+                    ),
+                  ),
+                ),
+            ])),
+          ],
           const SizedBox(height: 12),
           Text('Cette vue complète le bilan hebdomadaire : elle regarde l’ensemble des morceaux et non uniquement la semaine en cours.', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
         ],

@@ -11,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '131.0';
+const String appVersion = '127.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -497,58 +497,6 @@ String masteryLabel(double score) {
   return 'À construire';
 }
 
-class CoachDecision {
-  CoachDecision({
-    required this.id,
-    required this.date,
-    required this.sessionId,
-    required this.projectId,
-    required this.changed,
-    required this.title,
-    required this.message,
-    this.oldDuration,
-    this.newDuration,
-    this.reason,
-  });
-
-  final String id;
-  final DateTime date;
-  final String sessionId;
-  final String? projectId;
-  final bool changed;
-  final String title;
-  final String message;
-  final int? oldDuration;
-  final int? newDuration;
-  final String? reason;
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date.toIso8601String(),
-        'sessionId': sessionId,
-        'projectId': projectId,
-        'changed': changed,
-        'title': title,
-        'message': message,
-        'oldDuration': oldDuration,
-        'newDuration': newDuration,
-        'reason': reason,
-      };
-
-  factory CoachDecision.fromJson(Map<String, dynamic> j) => CoachDecision(
-        id: j['id'] as String? ?? newId(),
-        date: DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime.now(),
-        sessionId: j['sessionId'] as String? ?? '',
-        projectId: j['projectId'] as String?,
-        changed: j['changed'] as bool? ?? false,
-        title: j['title'] as String? ?? 'Analyse du coach',
-        message: j['message'] as String? ?? '',
-        oldDuration: (j['oldDuration'] as num?)?.toInt(),
-        newDuration: (j['newDuration'] as num?)?.toInt(),
-        reason: j['reason'] as String?,
-      );
-}
-
 class PlanItem {
   PlanItem({
     required this.id,
@@ -566,8 +514,6 @@ class PlanItem {
     this.coachAdjusted = false,
     this.coachAdjustmentSeen = true,
     this.coachAdjustmentReason,
-    this.coachAdjustedAt,
-    this.coachPreviousDuration,
   }) : motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
   final String id;
   DateTime date;
@@ -584,8 +530,6 @@ class PlanItem {
   bool coachAdjusted; // le coach a modifié cette séance depuis sa création
   bool coachAdjustmentSeen; // l'utilisateur a consulté le détail de la modification
   String? coachAdjustmentReason; // explication courte de l'ajustement
-  DateTime? coachAdjustedAt; // moment de la dernière décision du coach
-  int? coachPreviousDuration; // durée avant la dernière décision, pour éviter les oscillations
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -603,8 +547,6 @@ class PlanItem {
         'coachAdjusted': coachAdjusted,
         'coachAdjustmentSeen': coachAdjustmentSeen,
         'coachAdjustmentReason': coachAdjustmentReason,
-        'coachAdjustedAt': coachAdjustedAt?.toIso8601String(),
-        'coachPreviousDuration': coachPreviousDuration,
       };
 
   factory PlanItem.fromJson(Map<String, dynamic> j) {
@@ -632,8 +574,6 @@ class PlanItem {
           (!completed && sourceSessionId == null && planned > 0 && duration != planned),
       coachAdjustmentSeen: j['coachAdjustmentSeen'] as bool? ?? true,
       coachAdjustmentReason: j['coachAdjustmentReason'] as String?,
-      coachAdjustedAt: DateTime.tryParse(j['coachAdjustedAt']?.toString() ?? ''),
-      coachPreviousDuration: (j['coachPreviousDuration'] as num?)?.toInt(),
     );
   }
 
@@ -841,11 +781,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   List<Project> projects = [];
   List<Session> sessions = [];
   List<PlanItem> plan = [];
-  List<CoachDecision> coachDecisionLog = [];
-  String? _lastCoachChangedItemId;
-  int? _lastCoachOldDuration;
-  int? _lastCoachNewDuration;
-  String? _lastCoachReason;
   List<RoutineItem> routine = [];
   List<Challenge> challenges = [];
   bool darkMode = false;
@@ -1559,7 +1494,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       projects = (jsonDecode(rawProjects) as List).map((e) => Project.fromJson(e)).toList();
       sessions = (jsonDecode(prefs.getString('sessions') ?? '[]') as List).map((e) => Session.fromJson(e)).toList();
       plan = (jsonDecode(prefs.getString('plan') ?? '[]') as List).map((e) => PlanItem.fromJson(e)).toList();
-      coachDecisionLog = (jsonDecode(prefs.getString('coachDecisionLog') ?? '[]') as List).map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map))).toList();
       routine =
           (jsonDecode(prefs.getString('routine') ?? '[]') as List).map((e) => RoutineItem.fromJson(e)).toList();
       challenges =
@@ -1666,7 +1600,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setString('projects', jsonEncode(projects.map((e) => e.toJson()).toList()));
     await prefs.setString('sessions', jsonEncode(sessions.map((e) => e.toJson()).toList()));
     await prefs.setString('plan', jsonEncode(plan.map((e) => e.toJson()).toList()));
-    await prefs.setString('coachDecisionLog', jsonEncode(coachDecisionLog.map((e) => e.toJson()).toList()));
     await prefs.setString('routine', jsonEncode(routine.map((e) => e.toJson()).toList()));
     await prefs.setString('challenges', jsonEncode(challenges.map((e) => e.toJson()).toList()));
   }
@@ -1716,7 +1649,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'projects': projects.map((e) => e.toJson()).toList(),
       'sessions': sessions.map((e) => e.toJson()).toList(),
       'plan': plan.map((e) => e.toJson()).toList(),
-      'coachDecisionLog': coachDecisionLog.map((e) => e.toJson()).toList(),
       'routine': routine.map((e) => e.toJson()).toList(),
       'challenges': challenges.map((e) => e.toJson()).toList(),
       'exportedAt': backupNow.toIso8601String(),
@@ -1812,7 +1744,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         projects = ((data['projects'] as List?) ?? []).map((e) => Project.fromJson(e)).toList();
         sessions = ((data['sessions'] as List?) ?? []).map((e) => Session.fromJson(e)).toList();
         plan = ((data['plan'] as List?) ?? []).map((e) => PlanItem.fromJson(e)).toList();
-        coachDecisionLog = ((data['coachDecisionLog'] as List?) ?? []).map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map))).toList();
         routine = ((data['routine'] as List?) ?? []).map((e) => RoutineItem.fromJson(e)).toList();
         challenges = ((data['challenges'] as List?) ?? []).map((e) => Challenge.fromJson(e)).toList();
         final importedBackup = data['exportedAt']?.toString();
@@ -2931,6 +2862,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       _auditPlanningIntegrity();
       _auditSessionIntegrity();
     });
+    setState(_adaptRemainingWeekToReality);
     await _persist();
 
     // Une session AJOUTEE manuellement est une vraie fin de session, au même
@@ -2941,132 +2873,20 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
     }
-    // Le ressenti est maintenant enregistré : le coach peut réellement
-    // recalibrer les jours futurs après cette séance.
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
     await _showPlanVsRealized(r);
     _checkCelebrations();
-  }
-
-  void _recordCoachDecision(Session session, bool changed) {
-    final existing = coachDecisionLog.where((d) => d.sessionId == session.id).toList();
-    if (existing.isNotEmpty) return;
-    final projectId = session.projectId;
-    final project = projectById(projectId);
-    final item = _lastCoachChangedItemId == null
-        ? null
-        : plan.where((x) => x.id == _lastCoachChangedItemId).firstOrNull;
-    final decision = CoachDecision(
-      id: newId(),
-      date: DateTime.now(),
-      sessionId: session.id,
-      projectId: projectId,
-      changed: changed,
-      title: changed ? 'Planning ajusté' : 'Analyse du coach',
-      message: changed
-          ? 'Le coach a modifié le planning à venir pour ${project?.name ?? 'ce morceau'}. '
-              '${item?.title ?? ''}'.trim()
-          : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.',
-      oldDuration: changed ? _lastCoachOldDuration : null,
-      newDuration: changed ? _lastCoachNewDuration : null,
-      reason: changed ? _lastCoachReason : null,
-    );
-    coachDecisionLog.insert(0, decision);
-    if (coachDecisionLog.length > 50) {
-      coachDecisionLog.removeRange(50, coachDecisionLog.length);
-    }
-  }
-
-  Future<void> _showCoachDecisionLog() async {
-    final decisions = [...coachDecisionLog]..sort((a, b) => b.date.compareTo(a.date));
-    await showDialog<void>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: const Text('🧠 Journal du coach'),
-        content: SizedBox(
-          width: 520,
-          height: 430,
-          child: decisions.isEmpty
-              ? const Center(child: Text('Aucune décision du coach enregistrée.'))
-              : ListView.separated(
-                  itemCount: decisions.length,
-                  separatorBuilder: (_, __) => const Divider(height: 12),
-                  itemBuilder: (_, i) {
-                    final d = decisions[i];
-                    final date = '${d.date.day.toString().padLeft(2,'0')}/${d.date.month.toString().padLeft(2,'0')} · ${d.date.hour.toString().padLeft(2,'0')}:${d.date.minute.toString().padLeft(2,'0')}';
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        radius: 17,
-                        child: Icon(d.changed ? Icons.auto_awesome : Icons.check, size: 17),
-                      ),
-                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('$date\n${d.message}${d.reason == null ? '' : '\n${d.reason}'}', maxLines: 4),
-                      trailing: d.oldDuration != null && d.newDuration != null
-                          ? Text('${d.oldDuration} → ${d.newDuration} min', style: const TextStyle(fontWeight: FontWeight.w800))
-                          : null,
-                    );
-                  },
-                ),
-        ),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Fermer'))],
-      ),
-    );
   }
 
   /// V121 : le planning constitue la stratégie de la semaine, mais les jours
   /// encore à venir sont recalibrés à partir de la pratique réellement observée.
   /// Les séances terminées ne sont jamais modifiées ; seules les séances futures
   /// non commencées peuvent voir leur durée ajustée.
-  Future<void> _showCoachPlanningResult(Session session, bool changed) async {
-    final project = projectById(session.projectId);
-    final name = project?.name ?? 'ta séance';
-    final title = changed ? '🧠 Planning ajusté' : '🧠 Analyse du coach';
-    final message = changed
-        ? 'J’ai analysé ta séance et ajusté le planning à venir.'
-        : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.';
-    await showDialog<void>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            Text(message, style: const TextStyle(height: 1.4)),
-            if (changed) ...[
-              const SizedBox(height: 10),
-              const Text('Un indicateur COACH apparaît sur le planning modifié.',
-                  style: TextStyle(fontSize: 12)),
-            ],
-          ],
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool _adaptRemainingWeekToReality() {
-    _lastCoachChangedItemId = null;
-    _lastCoachOldDuration = null;
-    _lastCoachNewDuration = null;
-    _lastCoachReason = null;
+  void _adaptRemainingWeekToReality() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekStart = startOfWeek(now);
     final weekEnd = weekStart.add(const Duration(days: 7));
+
     final future = plan.where((x) =>
         !x.completed &&
         x.date.isAfter(today) &&
@@ -3075,11 +2895,10 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         x.duration > 0 &&
         x.sourceSessionId == null).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
-    if (future.isEmpty) return false;
+    if (future.isEmpty) return;
 
     final orderedSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
     final latestSession = orderedSessions.isEmpty ? null : orderedSessions.first;
-    bool changed = false;
 
     double factorForProject(String? projectId) {
       if (projectId == null || projectId.isEmpty) return 1.0;
@@ -3089,11 +2908,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         ..sort((a, b) => b.date.compareTo(a.date));
       if (recent.isEmpty) return 1.0;
       final selected = recent.take(4).toList();
-      final adherence = selected.fold<double>(
-            0,
-            (sum, s) => sum + s.duration / s.plannedDuration!,
-          ) /
-          selected.length;
+      final adherence = selected.fold<double>(0, (sum, s) => sum + s.duration / s.plannedDuration!) / selected.length;
       final last = selected.first;
       if (last.coachFeeling == 'difficile' || _recentDifficultSessions(projectId) >= 2) return .88;
       if (last.duration <= last.plannedDuration! - 5 || adherence < .78) return .90;
@@ -3105,91 +2920,54 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     bool applyAdjustment(PlanItem item, double factor, String reason) {
       final adjusted = (item.duration * factor).round().clamp(10, 30).toInt();
       if (adjusted == item.duration) return false;
-
-      // Anti-oscillation : sur une même occurrence, le coach ne renverse pas
-      // immédiatement sa dernière décision. Il attend au moins 48 h et une
-      // nouvelle information réellement exploitable.
-      final lastAt = item.coachAdjustedAt;
-      final previous = item.coachPreviousDuration;
-      if (lastAt != null && previous != null) {
-        final age = DateTime.now().difference(lastAt);
-        final lastDirection = item.duration - previous;
-        final newDirection = adjusted - item.duration;
-        if (age < const Duration(hours: 48) && lastDirection * newDirection < 0) {
-          return false;
-        }
-      }
-
-      final oldDuration = item.duration;
       item.duration = adjusted;
       item.coachAdjusted = true;
       item.coachAdjustmentSeen = false;
       item.coachAdjustmentReason = reason;
-      item.coachAdjustedAt = DateTime.now();
-      item.coachPreviousDuration = oldDuration;
-      _lastCoachChangedItemId = item.id;
-      _lastCoachOldDuration = oldDuration;
-      _lastCoachNewDuration = adjusted;
-      _lastCoachReason = reason;
       return true;
     }
 
+    // Le coach réagit d'abord à la prochaine occurrence du morceau qui vient
+    // d'être travaillé : la conséquence est immédiatement compréhensible.
     if (latestSession?.projectId != null) {
-      final projectId = latestSession!.projectId!;
-      final sameProject = future.where((x) => x.projectId == projectId).toList();
-      final factor = factorForProject(projectId);
+      final sameProject = future.where((x) => x.projectId == latestSession!.projectId).toList();
+      final factor = factorForProject(latestSession!.projectId);
       if (factor != 1.0 && sameProject.isNotEmpty) {
         final item = sameProject.first;
         final reason = factor < 1
             ? 'Après la dernière séance, le coach réduit la prochaine charge.'
             : 'Après la dernière séance, le coach augmente légèrement la prochaine charge.';
-        changed = applyAdjustment(item, factor, reason);
+        if (applyAdjustment(item, factor, reason)) return;
       }
     }
 
-    if (!changed) {
-      for (final item in future) {
-        if (item.projectId == null) continue;
-        final factor = factorForProject(item.projectId);
-        if (factor == 1.0) continue;
-        final reason = factor < 1
-            ? 'Le coach allège cette séance à partir des dernières données.'
-            : 'Le coach augmente légèrement cette séance à partir des dernières données.';
-        if (applyAdjustment(item, factor, reason)) {
-          changed = true;
-          break;
-        }
-      }
+    // Sinon, une autre pièce dont l'historique justifie une adaptation peut
+    // être ajustée, une seule fois, pour conserver une semaine lisible.
+    for (final item in future) {
+      if (item.projectId == null) continue;
+      final factor = factorForProject(item.projectId);
+      if (factor == 1.0) continue;
+      final reason = factor < 1
+          ? 'Le coach allège cette séance à partir des dernières données.'
+          : 'Le coach augmente légèrement cette séance à partir des dernières données.';
+      if (applyAdjustment(item, factor, reason)) return;
     }
 
-    if (!changed && latestSession?.projectId != null && latestSession?.coachFeeling == 'difficile') {
-      final projectId = latestSession!.projectId!;
-      final matching = future.where((x) => x.projectId == projectId).toList();
-      final item = matching.isNotEmpty ? matching.first : future.first;
+    // Même avec un ratio prévu/réalisé proche de 100 %, un ressenti difficile
+    // est une information suffisante pour allonger la récupération de 5 min.
+    if (latestSession?.projectId != null && latestSession?.coachFeeling == 'difficile') {
+      final item = future.firstWhere(
+        (x) => x.projectId == latestSession!.projectId,
+        orElse: () => future.first,
+      );
       final adjusted = math.max(10, item.duration - 5);
       if (adjusted != item.duration) {
-        final previous = item.coachPreviousDuration;
-        final lastAt = item.coachAdjustedAt;
-        final reversing = previous != null && (item.duration - previous) * (adjusted - item.duration) < 0;
-        final recent = lastAt != null && DateTime.now().difference(lastAt) < const Duration(hours: 48);
-        if (!(reversing && recent)) {
-          final oldDuration = item.duration;
-          item.duration = adjusted;
-          item.coachAdjusted = true;
-          item.coachAdjustmentSeen = false;
-          item.coachAdjustmentReason = 'Le coach allège de 5 min après une séance ressentie comme difficile.';
-          item.coachAdjustedAt = DateTime.now();
-          item.coachPreviousDuration = oldDuration;
-          _lastCoachChangedItemId = item.id;
-          _lastCoachOldDuration = oldDuration;
-          _lastCoachNewDuration = adjusted;
-          _lastCoachReason = item.coachAdjustmentReason;
-          changed = true;
-        }
+        item.duration = adjusted;
+        item.coachAdjusted = true;
+        item.coachAdjustmentSeen = false;
+        item.coachAdjustmentReason = 'Le coach allège de 5 min après une séance ressentie comme difficile.';
       }
     }
-
-    return changed;
   }
 
   Future<void> _showPlanVsRealized(Session s) async {
@@ -3300,11 +3078,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await _persist();
     await _offerDetailedProgress(r);
     await _showCoachFeedback(r);
-    // Le bilan express vient d'enregistrer le ressenti : recalibrage après coup.
-    final coachChanged = _adaptRemainingWeekToReality();
-    setState(() {});
-    await _persist();
-    await _showCoachPlanningResult(r, coachChanged);
     await _showPlanVsRealized(r);
     _checkCelebrations();
   }
@@ -3394,15 +3167,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
       });
-      await _persist();
+      _persist();
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
       await _showPlanVsRealized(r);
     } else {
       final r = await showDialog<Session>(
@@ -3429,15 +3196,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
       });
-      await _persist();
+      _persist();
       await _offerDetailedProgress(r);
       await _showCoachFeedback(r);
-      final coachChanged = _adaptRemainingWeekToReality();
-      setState(() {});
-      await _persist();
-      _recordCoachDecision(r, coachChanged);
-      await _persist();
-      await _showCoachPlanningResult(r, coachChanged);
       await _showPlanVsRealized(r);
     }
     _checkCelebrations();
@@ -3871,12 +3632,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
     await _offerDetailedProgress(newSession);
     await _showCoachFeedback(newSession);
-    final coachChanged = _adaptRemainingWeekToReality();
-    setState(() {});
-    await _persist();
-    _recordCoachDecision(newSession, coachChanged);
-    await _persist();
-    await _showCoachPlanningResult(newSession, coachChanged);
     await _showPlanVsRealized(newSession);
     _checkCelebrations();
   }
@@ -3952,7 +3707,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         },
         projectById: projectById,
         sessions: sessions,
-        onOpenCoachLog: _showCoachDecisionLog,
       ),
       MethodsScreen(
         methods: methodDefinitions,
@@ -8485,7 +8239,6 @@ class Week extends StatefulWidget {
     required this.onCoachAdjustmentSeen,
     required this.projectById,
     required this.sessions,
-    required this.onOpenCoachLog,
   });
   final List<PlanItem> items;
   final int minutes;
@@ -8504,7 +8257,6 @@ class Week extends StatefulWidget {
   final void Function(PlanItem) onCoachAdjustmentSeen;
   final Project? Function(String?) projectById;
   final List<Session> sessions;
-  final VoidCallback onOpenCoachLog;
 
   @override
   State<Week> createState() => _WeekState();
@@ -8513,9 +8265,6 @@ class Week extends StatefulWidget {
 class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   DateTime? filtreDate;
   late final AnimationController _coachPulseController;
-  final ScrollController _weekScrollController = ScrollController();
-  final Map<DateTime, GlobalKey> _dayKeys = {};
-  bool _todayPositioned = false;
 
   @override
   void initState() {
@@ -8528,36 +8277,10 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     )..repeat(reverse: true);
   }
 
-  void _positionOnToday() {
-    if (_todayPositioned || filtreDate != null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _todayPositioned || filtreDate != null) return;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) return;
-      _todayPositioned = true;
-      await Scrollable.ensureVisible(
-        contextForDay,
-        alignment: 0.08,
-        duration: const Duration(milliseconds: 450),
-        curve: Curves.easeOutCubic,
-      );
-    });
-  }
-
   @override
   void dispose() {
     _coachPulseController.dispose();
-    _weekScrollController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant Week oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _todayPositioned = false;
-    _positionOnToday();
   }
   String filtreMotCle = '';
 
@@ -8793,15 +8516,13 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
             IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
             IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
-            IconButton(onPressed: widget.onOpenCoachLog, icon: const Icon(Icons.psychology_outlined), tooltip: 'Journal du coach'),
             IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
             IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add)),
           ],
         ),
         Expanded(
           child: ListView(
-            controller: _weekScrollController,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.all(16),
             children: [
               CardBox(
                 child: Column(
@@ -8903,21 +8624,14 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               else
                 ...groupedByDay(sorted).entries.expand((entry) => [
                       Padding(
-                        key: _dayKeys.putIfAbsent(
-                          DateTime(entry.key.year, entry.key.month, entry.key.day),
-                          () => GlobalKey(),
-                        ),
-                        padding: const EdgeInsets.only(top: 11, bottom: 8),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                        padding: const EdgeInsets.only(top: 10, bottom: 7),
+                        child: Row(children: [
                           Expanded(
                             child: Row(children: [
                               Flexible(
                                 child: Text(
                                   '${weekday(entry.key.weekday)} ${entry.key.day}/${entry.key.month}',
                                   style: TextStyle(
-                                    fontSize: _isToday(entry.key) ? 18 : 15.5,
-                                    height: 1.05,
-                                    letterSpacing: _isToday(entry.key) ? .15 : 0,
                                     fontWeight: FontWeight.w900,
                                     color: _isToday(entry.key) ? Theme.of(c).colorScheme.primary : Colors.deepPurple,
                                   ),
@@ -8953,13 +8667,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           ),
                           if (_isToday(entry.key))
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Theme.of(c).colorScheme.primary.withOpacity(.12),
+                                color: Theme.of(c).colorScheme.primary.withOpacity(.10),
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
                               ),
-                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
+                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
                             ),
                         ]),
                       ),
