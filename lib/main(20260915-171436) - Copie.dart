@@ -11,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '134.0';
+const String appVersion = '133.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -9850,46 +9850,140 @@ class ProgressDashboardScreen extends StatelessWidget {
     final history = weeklyHistory(weeks: 4);
     final trend = history.length >= 2 ? history.last.totalMinutes - history[history.length - 2].totalMinutes : 0;
 
-    final mediaWidth = MediaQuery.sizeOf(c).width;
-    final compact = mediaWidth < 600;
-    Widget progress(double v) => ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: v, minHeight: 7));
+    final ranked = [...active]..sort((a, b) {
+      final scoreA = (1 - a.progress) * (a.priority ? 1.5 : 1) + (1 - a.weakestStageValue) * .5;
+      final scoreB = (1 - b.progress) * (b.priority ? 1.5 : 1) + (1 - b.weakestStageValue) * .5;
+      return scoreB.compareTo(scoreA);
+    });
+
+    String lastWorkLabel(Project p) {
+      final projectSessions = sessions.where((s) => s.projectId == p.id).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+      if (projectSessions.isEmpty) return 'Jamais travaillé';
+      final age = DateTime.now().difference(projectSessions.first.date).inDays;
+      if (age <= 0) return 'Travaillé aujourd’hui';
+      if (age == 1) return 'Dernière séance : hier';
+      return 'Dernière séance : il y a $age j';
+    }
+
+    String coachAction(Project p) {
+      switch (p.effectiveWorkFocus) {
+        case 'Déchiffrage':
+          return 'Action : lecture lente + repérage des notes et rythmes';
+        case 'Mains ensemble':
+          return 'Action : travailler par petites sections, mains ensemble';
+        case 'Rythme':
+          return 'Action : sécuriser le rythme, puis jouer sans accélérer';
+        case 'Accords':
+          return 'Action : isoler les accords et enchaînements difficiles';
+        case 'Passages difficiles':
+          return 'Action : boucler les passages difficiles à tempo réduit';
+        case 'Mémorisation':
+          return 'Action : jouer de mémoire par phrases courtes';
+        case 'Interprétation':
+          return 'Action : phrasé, nuances et continuité musicale';
+        case 'Tempo':
+          return 'Action : monter progressivement le tempo sans perdre la propreté';
+        case 'Consolidation':
+          return 'Action : répéter les zones fragiles puis faire un passage complet';
+        case 'Entretien':
+          return 'Action : jouer un passage complet pour entretenir les acquis';
+        default:
+          return 'Action : consolider l’étape actuellement ciblée';
+      }
+    }
+
+
+    int recommendedMinutes(Project p) {
+      final recent = sessions.where((s) => s.projectId == p.id).toList()..sort((a, b) => b.date.compareTo(a.date));
+      if (recent.isNotEmpty && recent.first.coachFeeling == 'difficile') return 15;
+      if (recent.length >= 3 && recent.take(3).where((s) => s.coachFeeling == 'difficile').length >= 2) return 15;
+      return 20;
+    }
+
+    PlanItem recommendedPlanItem(Project p) {
+      final focus = p.effectiveWorkFocus;
+      final minutes = recommendedMinutes(p);
+      return PlanItem(
+        id: newId(),
+        date: DateTime.now(),
+        duration: minutes,
+        title: '${p.name} · $focus',
+        details: 'Coach · $focus · ${minutes} min',
+        projectId: p.id,
+        // Le type de session doit rester dans objectiveCategories.
+        // Le focus détaillé du coach est transmis séparément via motsCles.
+        category: objectiveCategories.contains(focus) ? focus : 'Répertoire',
+        method: p.method,
+        motsCles: [focus, 'Coach', 'Prochaine séance'],
+      );
+    }
+
+    String coachReason(Project p) {
+      final projectSessions = sessions.where((s) => s.projectId == p.id).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+      final last = projectSessions.isEmpty ? null : projectSessions.first;
+      final daysSince = last == null ? null : DateTime.now().difference(last.date).inDays;
+      final difficultCount = projectSessions.take(3).where((s) => s.coachFeeling == 'difficile').length;
+      if (p.priority && daysSince != null && daysSince >= 4) return 'Priorité à relancer · $daysSince j sans séance';
+      if (p.weakestStageValue <= .45) return 'Étape faible : ${p.weakestStageName}';
+      if (difficultCount >= 2) return '2+ séances difficiles récemment · consolider';
+      if (p.currentTempo > 0 && p.targetTempo > 0 && p.currentTempo < p.targetTempo * .75) {
+        return 'Tempo à consolider · ${p.currentTempo}/${p.targetTempo} BPM';
+      }
+      if (daysSince == null) return 'Jamais travaillé · bonne candidate pour démarrer';
+      if (daysSince >= 7) return 'À relancer · $daysSince j depuis la dernière séance';
+      return 'Poursuivre · ${p.effectiveWorkFocus}';
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Vue globale de progression')),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(compact ? 12 : 20, 14, compact ? 12 : 20, 20),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final horizontal = constraints.maxWidth < 600 ? 12.0 : 20.0;
+        return ListView(
+        padding: EdgeInsets.fromLTRB(horizontal, 14, horizontal, 20),
         children: [
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _sectionHeader(c, Icons.insights, 'Où en suis-je ?', subtitle: 'Une vision synthétique de tes morceaux, de ta maîtrise et de ta régularité.'),
             const SizedBox(height: 16),
-            if (compact) ...[
-              _progressMetric(c, 'Progression moyenne', avgProgress, '${(avgProgress * 100).round()} %'),
-              const SizedBox(height: 16),
-              _progressMetric(c, 'Maîtrise tempo', tempoMastery ?? 0, tempoMastery == null ? '—' : '${(tempoMastery * 100).round()} %'),
-            ] else
-              Row(children: [
-                Expanded(child: _progressMetric(c, 'Progression moyenne', avgProgress, '${(avgProgress * 100).round()} %')),
+            LayoutBuilder(builder: (context, constraints) {
+              final compact = constraints.maxWidth < 560;
+              final first = _progressMetric(c, 'Progression moyenne', avgProgress, '${(avgProgress * 100).round()} %');
+              final second = _progressMetric(c, 'Maîtrise tempo', tempoMastery ?? 0, tempoMastery == null ? '—' : '${(tempoMastery * 100).round()} %');
+              if (compact) {
+                return Column(children: [first, const SizedBox(height: 16), second]);
+              }
+              return Row(children: [
+                Expanded(child: first),
                 const SizedBox(width: 16),
-                Expanded(child: _progressMetric(c, 'Maîtrise tempo', tempoMastery ?? 0, tempoMastery == null ? '—' : '${(tempoMastery * 100).round()} %')),
-              ]),
+                Expanded(child: second),
+              ]);
+            }),
           ])),
           const SizedBox(height: 16),
-          if (compact)
-            Column(children: [
-              SizedBox(width: double.infinity, child: _statTile(c, icon: Icons.music_note, label: 'Morceaux', value: '${projects.length}', sub: '$completed terminé${completed > 1 ? 's' : ''}')),
-              const SizedBox(height: 8),
-              SizedBox(width: double.infinity, child: _statTile(c, icon: Icons.build_circle_outlined, label: 'Entretien', value: '$maintenance')),
-              const SizedBox(height: 8),
-              SizedBox(width: double.infinity, child: _statTile(c, icon: Icons.star_outline, label: 'Priorités', value: '${priority.length}')),
-            ])
-          else
-            Row(children: [
-              Expanded(child: _statTile(c, icon: Icons.music_note, label: 'Morceaux', value: '${projects.length}', sub: '$completed terminé${completed > 1 ? 's' : ''}')),
+          LayoutBuilder(builder: (context, constraints) {
+            final compact = constraints.maxWidth < 620;
+            final tiles = [
+              _statTile(c, icon: Icons.music_note, label: 'Morceaux', value: '${projects.length}', sub: '$completed terminé${completed > 1 ? 's' : ''}'),
+              _statTile(c, icon: Icons.build_circle_outlined, label: 'Entretien', value: '$maintenance'),
+              _statTile(c, icon: Icons.star_outline, label: 'Priorités', value: '${priority.length}'),
+            ];
+            if (compact) {
+              return Column(children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  SizedBox(width: double.infinity, child: tiles[i]),
+                  if (i < tiles.length - 1) const SizedBox(height: 8),
+                ],
+              ]);
+            }
+            return Row(children: [
+              Expanded(child: tiles[0]),
               const SizedBox(width: 10),
-              Expanded(child: _statTile(c, icon: Icons.build_circle_outlined, label: 'Entretien', value: '$maintenance')),
+              Expanded(child: tiles[1]),
               const SizedBox(width: 10),
-              Expanded(child: _statTile(c, icon: Icons.star_outline, label: 'Priorités', value: '${priority.length}')),
-            ]),
+              Expanded(child: tiles[2]),
+            ]);
+          }),
           const SizedBox(height: 16),
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _sectionHeader(c, Icons.donut_small_outlined, 'État du répertoire', subtitle: 'Répartition actuelle de tes morceaux.'),
@@ -9897,20 +9991,36 @@ class ProgressDashboardScreen extends StatelessWidget {
             Builder(builder: (context) {
               final statusCounts = <String, int>{};
               for (final p in projects) {
-                statusCounts[p.effectiveStatus] = (statusCounts[p.effectiveStatus] ?? 0) + 1;
+                final s = p.effectiveStatus;
+                statusCounts[s] = (statusCounts[s] ?? 0) + 1;
               }
-              const statuses = ['À découvrir', 'En cours de déchiffrage', 'En mémorisation', 'Acquis', 'Répertoire d’entretien'];
-              Widget progress(double v) => ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: v, minHeight: 7));
-              return Column(children: [
-                for (final s in statuses)
-                  Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
-                    Expanded(child: Text(s, style: const TextStyle(fontWeight: FontWeight.w700))),
-                    const SizedBox(width: 8),
-                    SizedBox(width: compact ? 80 : 90, child: progress(projects.isEmpty ? 0 : ((statusCounts[s] ?? 0) / projects.length).clamp(0.0, 1.0).toDouble())),
-                    const SizedBox(width: 8),
-                    Text('${statusCounts[s] ?? 0}'),
-                  ])),
-              ]);
+              final orderedStatuses = <String>[
+                'À découvrir',
+                'En cours de déchiffrage',
+                'En mémorisation',
+                'Acquis',
+                'Répertoire d’entretien',
+              ];
+              return Column(
+                children: [
+                  for (final s in orderedStatuses)
+                    if ((statusCounts[s] ?? 0) > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: Row(children: [
+                          Expanded(child: Text(s, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
+                          Text('${statusCounts[s]}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 90,
+                            child: progress(
+                              projects.isEmpty ? 0 : ((statusCounts[s] ?? 0) / projects.length).clamp(0.0, 1.0).toDouble(),
+                            ),
+                          ),
+                        ]),
+                      ),
+                ],
+              );
             }),
           ])),
           const SizedBox(height: 16),
@@ -9940,32 +10050,57 @@ class ProgressDashboardScreen extends StatelessWidget {
               const SizedBox(height: 12),
               for (final e in (tempoMeasured.entries.toList()..sort((a, b) => (a.value / a.key.targetTempo).compareTo(b.value / b.key.targetTempo))).take(5)) ...[
                 Builder(builder: (context) {
-                  final runs = sessions.where((s) => s.projectId == e.key.id && s.type == 'Run-through' && s.runThroughCompleted == true && (s.runThroughEndTempo ?? 0) > 0).toList()..sort((a, b) => b.date.compareTo(a.date));
+                  final runs = sessions.where((s) => s.projectId == e.key.id && s.type == 'Run-through' && s.runThroughCompleted == true && (s.runThroughEndTempo ?? 0) > 0).toList()
+                    ..sort((a, b) => b.date.compareTo(a.date));
                   final lastTempo = runs.isNotEmpty ? runs.first.runThroughEndTempo! : null;
-                  final delta = lastTempo != null && runs.length >= 2 ? lastTempo - (runs[1].runThroughEndTempo ?? lastTempo) : null;
-                  final ratio = e.key.targetTempo > 0 ? ((e.value / e.key.targetTempo).clamp(0.0, 1.0)).toDouble() : 1.0;
-                  final advice = ratio >= 1.0
-                      ? 'Conseil : tempo cible atteinte — travailler maintenant la régularité et l’interprétation.'
-                      : ratio >= .90
-                          ? 'Conseil : proche de la cible — consolider avant de monter le tempo.'
-                          : delta != null && delta > 0
-                              ? 'Conseil : progression positive — poursuivre par petites hausses de tempo.'
-                              : ratio >= .80
-                                  ? 'Conseil : continuité en bonne voie — stabiliser ce tempo avant de monter.'
-                                  : 'Conseil : revenir au tempo confortable et sécuriser les passages fragiles.';
+                  final delta = lastTempo != null && runs.length >= 2
+                      ? lastTempo - (runs[1].runThroughEndTempo ?? lastTempo)
+                      : null;
                   return InkWell(
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => onOpenProject(e.key),
-                    child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [Text(e.key.emoji), const SizedBox(width: 7), Expanded(child: Text(e.key.name, style: const TextStyle(fontWeight: FontWeight.w600))), Text('${e.value}/${e.key.targetTempo} BPM', style: const TextStyle(fontWeight: FontWeight.w700)), const SizedBox(width: 4), Icon(Icons.chevron_right, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)]),
-                      const SizedBox(height: 5),
-                      progress(ratio),
-                      const SizedBox(height: 4),
-                      Text(delta == null ? 'Dernier Run-through : ${lastTempo ?? e.value} BPM' : 'Dernier : $lastTempo BPM · évolution ${delta >= 0 ? '+' : ''}$delta BPM', style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      const SizedBox(height: 3),
-                      Text(advice, style: TextStyle(fontSize: 10.2, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 7),
-                    ])),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text(e.key.emoji),
+                          const SizedBox(width: 7),
+                          Expanded(child: Text(e.key.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                          Text('${e.value}/${e.key.targetTempo} BPM', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ]),
+                        const SizedBox(height: 5),
+                        progress((e.value / e.key.targetTempo).clamp(0.0, 1.0).toDouble()),
+                        const SizedBox(height: 4),
+                        Text(
+                          delta == null
+                              ? 'Dernier Run-through : ${lastTempo ?? e.value} BPM'
+                              : 'Dernier : $lastTempo BPM · évolution ${delta >= 0 ? '+' : ''}$delta BPM',
+                          style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 3),
+                        Builder(builder: (context) {
+                          final ratio = e.key.targetTempo > 0
+                              ? ((e.value / e.key.targetTempo).clamp(0.0, 1.0)).toDouble()
+                              : 1.0;
+                          final advice = ratio >= 1.0
+                              ? 'Conseil : tempo cible atteinte — travailler maintenant la régularité et l’interprétation.'
+                              : ratio >= .90
+                                  ? 'Conseil : proche de la cible — consolider avant de monter le tempo.'
+                                  : delta != null && delta > 0
+                                      ? 'Conseil : progression positive — poursuivre par petites hausses de tempo.'
+                                      : ratio >= .80
+                                          ? 'Conseil : continuité en bonne voie — stabiliser ce tempo avant de monter.'
+                                          : 'Conseil : revenir au tempo confortable et sécuriser les passages fragiles.';
+                          return Text(
+                            advice,
+                            style: TextStyle(fontSize: 10.2, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
+                          );
+                        }),
+                        const SizedBox(height: 7),
+                      ]),
+                    ),
                   );
                 }),
               ],
@@ -9975,22 +10110,29 @@ class ProgressDashboardScreen extends StatelessWidget {
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _sectionHeader(c, Icons.calendar_today_outlined, 'Régularité récente'),
             const SizedBox(height: 12),
-            if (compact)
-              Column(children: [
-                SizedBox(width: double.infinity, child: _statTile(c, icon: Icons.timer_outlined, label: '7 derniers jours', value: '${recentMinutes} min')),
-                const SizedBox(height: 8),
-                SizedBox(width: double.infinity, child: _statTile(c, icon: Icons.warning_amber_outlined, label: 'Séances difficiles', value: '$difficult')),
-                const SizedBox(height: 8),
-                SizedBox(width: double.infinity, child: _statTile(c, icon: trend >= 0 ? Icons.trending_up : Icons.trending_down, label: 'Vs semaine précédente', value: trend == 0 ? 'Stable' : '${trend > 0 ? '+' : ''}$trend min', accent: trend >= 0 ? Colors.green.shade700 : Colors.deepOrange.shade700)),
-              ])
-            else
-              Row(children: [
-                Expanded(child: _statTile(c, icon: Icons.timer_outlined, label: '7 derniers jours', value: '${recentMinutes} min')),
+            LayoutBuilder(builder: (context, constraints) {
+              final compact = constraints.maxWidth < 620;
+              final tiles = [
+                _statTile(c, icon: Icons.timer_outlined, label: '7 derniers jours', value: '${recentMinutes} min'),
+                _statTile(c, icon: Icons.warning_amber_outlined, label: 'Séances difficiles', value: '$difficult'),
+                _statTile(c, icon: trend >= 0 ? Icons.trending_up : Icons.trending_down, label: 'Vs semaine précédente', value: trend == 0 ? 'Stable' : '${trend > 0 ? '+' : ''}$trend min', accent: trend >= 0 ? Colors.green.shade700 : Colors.deepOrange.shade700),
+              ];
+              if (compact) {
+                return Column(children: [
+                  for (var i = 0; i < tiles.length; i++) ...[
+                    SizedBox(width: double.infinity, child: tiles[i]),
+                    if (i < tiles.length - 1) const SizedBox(height: 8),
+                  ],
+                ]);
+              }
+              return Row(children: [
+                Expanded(child: tiles[0]),
                 const SizedBox(width: 10),
-                Expanded(child: _statTile(c, icon: Icons.warning_amber_outlined, label: 'Séances difficiles', value: '$difficult')),
+                Expanded(child: tiles[1]),
                 const SizedBox(width: 10),
-                Expanded(child: _statTile(c, icon: trend >= 0 ? Icons.trending_up : Icons.trending_down, label: 'Vs semaine précédente', value: trend == 0 ? 'Stable' : '${trend > 0 ? '+' : ''}$trend min', accent: trend >= 0 ? Colors.green.shade700 : Colors.deepOrange.shade700)),
-              ]),
+                Expanded(child: tiles[2]),
+              ]);
+            }),
           ])),
           const SizedBox(height: 16),
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -9999,13 +10141,17 @@ class ProgressDashboardScreen extends StatelessWidget {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.today_outlined, size: 20, color: Theme.of(c).colorScheme.primary),
               const SizedBox(width: 9),
-              Expanded(child: Text('Mission du jour te dit quoi travailler aujourd’hui. La Progression explique où tu en es : morceaux en avance ou en difficulté, tempo, étapes, Run-through et régularité.', style: TextStyle(fontSize: 12, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+              Expanded(child: Text(
+                'Mission du jour te dit quoi travailler aujourd’hui. La Progression explique où tu en es : morceaux en avance ou en difficulté, tempo, étapes, Run-through et régularité.',
+                style: TextStyle(fontSize: 12, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant),
+              )),
             ]),
           ])),
           const SizedBox(height: 12),
           Text('Cette vue complète le bilan hebdomadaire : elle regarde l’ensemble des morceaux et non uniquement la semaine en cours.', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
         ],
-      ),
+      );
+      }),
     );
   }
 
@@ -10048,8 +10194,10 @@ class TempoHistoryScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text('Tempo — $projectName')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final horizontal = constraints.maxWidth < 600 ? 12.0 : 20.0;
+        return ListView(
+        padding: EdgeInsets.fromLTRB(horizontal, 14, horizontal, 20),
         children: [
           Row(children: [
             Expanded(
@@ -10170,7 +10318,8 @@ class TempoHistoryScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      );
+    });
     );
   }
 }
