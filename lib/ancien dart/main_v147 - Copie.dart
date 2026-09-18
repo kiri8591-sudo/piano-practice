@@ -1,5 +1,4 @@
-// V148 — duplication à 0 % + fiche Session mobile réorganisée.
-// Base fonctionnelle : V134 -> V145 -> V146 -> V147.
+// V147 — fiche Morceaux : tri par dernière modification, date/heure, duplication indépendante.
 // V120 — coach adaptatif : le planning apprend du temps réellement joué.
 // V119 — ergonomie des détails : hiérarchie plus nette, cartes internes allégées.
 // V118 — maîtrise morceau : progression globale + tempo + continuité + stabilité.
@@ -13,7 +12,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '148.0';
+const String appVersion = '147.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -3826,26 +3825,22 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   }
 
   void duplicateProject(Project p) {
-    // Une duplication crée une nouvelle fiche de travail indépendante.
-    // On conserve les informations descriptives, mais le suivi d'avancement
-    // repart à zéro pour éviter de donner au nouveau morceau l'impression
-    // qu'il a déjà été travaillé.
     final copy = Project(
       id: newId(),
       name: p.name.trim().isEmpty ? 'Copie du morceau' : '${p.name} (copie)',
-      progress: 0,
+      progress: p.progress,
       goal: p.goal,
       method: p.method,
       priority: p.priority,
       workFocus: p.workFocus,
       workIntensity: p.workIntensity,
-      status: 'À découvrir',
-      statusIsManual: false,
-      reading: 0,
-      handsTogether: 0,
-      memory: 0,
-      interpretation: 0,
-      currentTempo: 0,
+      status: p.status,
+      statusIsManual: p.statusIsManual,
+      reading: p.reading,
+      handsTogether: p.handsTogether,
+      memory: p.memory,
+      interpretation: p.interpretation,
+      currentTempo: p.currentTempo,
       targetTempo: p.targetTempo,
       measures: p.measures,
       targetHours: p.targetHours,
@@ -6426,94 +6421,10 @@ class _SessionDialogState extends State<SessionDialog> {
     super.dispose();
   }
 
-  Widget _sectionHeader(BuildContext c, String title, IconData icon) => Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 6),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .35),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _coachSection(BuildContext c, int? plannedMinutes) {
-    final hasCoach = widget.initialCoachFocus != null ||
-        widget.initialCoachRecommendation != null ||
-        widget.initialCoachTempo != null;
-    if (!hasCoach) return const SizedBox.shrink();
-
-    final recommendation = widget.initialCoachRecommendation?.trim() ?? '';
-    final onSurfaceVariant = Theme.of(c).colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        decoration: BoxDecoration(
-          color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.55),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
-                const SizedBox(width: 7),
-                const Expanded(
-                  child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
-                ),
-              ],
-            ),
-            if (plannedMinutes != null || (widget.initialDuration != null && plannedMinutes != widget.initialDuration)) ...[
-              const SizedBox(height: 7),
-              Wrap(
-                spacing: 10,
-                runSpacing: 4,
-                children: [
-                  if (plannedMinutes != null)
-                    Text('⏱ $plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
-                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes)
-                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11, color: onSurfaceVariant)),
-                ],
-              ),
-            ],
-            if (widget.initialCoachFocus != null) ...[
-              const SizedBox(height: 7),
-              Text('🎯 Focus : ${widget.initialCoachFocus}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, height: 1.25)),
-            ],
-            if (widget.initialCoachTempo != null && widget.initialCoachTempo! > 0) ...[
-              const SizedBox(height: 4),
-              Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 11.5, height: 1.25)),
-            ],
-            if (recommendation.isNotEmpty) ...[
-              const SizedBox(height: 7),
-              Text(
-                recommendation,
-                softWrap: true,
-                style: TextStyle(fontSize: 11.5, height: 1.35, color: onSurfaceVariant),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
     final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
-    final media = MediaQuery.of(c);
-    final maxWidth = math.min(media.size.width - 24, 620.0);
-    final maxHeight = math.min(media.size.height * .82, 720.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: Theme.of(c).inputDecorationTheme.copyWith(
         border: const UnderlineInputBorder(),
@@ -6526,140 +6437,131 @@ class _SessionDialogState extends State<SessionDialog> {
         contentPadding: const EdgeInsets.only(left: 0, right: 0, top: 10, bottom: 8),
       ),
     );
-
-    return Theme(
-      data: flatTheme,
-      child: AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-        titlePadding: const EdgeInsets.fromLTRB(22, 18, 22, 6),
-        contentPadding: const EdgeInsets.fromLTRB(22, 4, 22, 4),
-        actionsPadding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-        title: Row(
+    return Theme(data: flatTheme, child: AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(22, 18, 22, 6),
+      contentPadding: const EdgeInsets.fromLTRB(22, 6, 22, 6),
+      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+      title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(editing ? Icons.edit_note_outlined : Icons.add_task_outlined, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 9),
-            Expanded(child: Text(editing ? 'Modifier la session' : 'Nouvelle session')),
+            DropdownButtonFormField<Project?>(
+              value: project,
+              decoration: const InputDecoration(labelText: 'Morceau'),
+              items: projectItems(widget.projects),
+              onChanged: (v) => setState(() => project = v),
+            ),
+            TextField(
+              controller: durationCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Durée (minutes)'),
+              onChanged: (v) => setState(() => duration = int.tryParse(v) ?? duration),
+            ),
+            DropdownButtonFormField<String>(
+              value: type,
+              decoration: const InputDecoration(labelText: 'Type de travail'),
+              items: ['Run-through', ...objectiveCategories]
+                  .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                  .toList(),
+              onChanged: (v) => setState(() => type = v ?? type),
+            ),
+            DropdownButtonFormField<String?>(
+              value: method,
+              decoration: const InputDecoration(labelText: 'Application / méthode'),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Aucune')),
+                ...learningMethods.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+              ],
+              onChanged: (v) => setState(() => method = v),
+            ),
+            TextField(
+              controller: notesCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Notes'),
+            ),
+            if (widget.initialCoachFocus != null || widget.initialCoachRecommendation != null || widget.initialCoachTempo != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
+                    if (plannedMinutes != null)
+                      Text('$plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                  ]),
+                  if (widget.initialCoachFocus != null) ...[
+                    const SizedBox(height: 6),
+                    Text('🎯 Focus : ${widget.initialCoachFocus}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  ],
+                  if (widget.initialCoachTempo != null && widget.initialCoachTempo! > 0) ...[
+                    const SizedBox(height: 3),
+                    Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 11.5)),
+                  ],
+                  if (widget.initialCoachRecommendation != null && widget.initialCoachRecommendation!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(widget.initialCoachRecommendation!, style: TextStyle(fontSize: 11.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  ],
+                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes) ...[
+                    const SizedBox(height: 5),
+                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  ],
+                ]),
+              ),
+            ],
+            DropdownButtonFormField<int>(
+              value: rating,
+              decoration: const InputDecoration(labelText: 'Note'),
+              items: List.generate(5, (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1)))),
+              onChanged: (v) => setState(() => rating = v ?? rating),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: maxWidth,
-          height: maxHeight,
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sectionHeader(c, 'SÉANCE', Icons.music_note_outlined),
-                DropdownButtonFormField<Project?>(
-                  isExpanded: true,
-                  value: project,
-                  decoration: const InputDecoration(labelText: 'Morceau'),
-                  items: projectItems(widget.projects),
-                  onChanged: (v) => setState(() => project = v),
-                ),
-                const SizedBox(height: 5),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  value: type,
-                  decoration: const InputDecoration(labelText: 'Type de travail'),
-                  items: ['Run-through', ...objectiveCategories]
-                      .map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))
-                      .toList(),
-                  onChanged: (v) => setState(() => type = v ?? type),
-                ),
-                const SizedBox(height: 5),
-                DropdownButtonFormField<String?>(
-                  isExpanded: true,
-                  value: method,
-                  decoration: const InputDecoration(labelText: 'Application / méthode'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Aucune')),
-                    ...learningMethods.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: (v) => setState(() => method = v),
-                ),
-                const SizedBox(height: 5),
-                TextField(
-                  controller: durationCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Durée (minutes)', suffixText: 'min'),
-                  onChanged: (v) => setState(() => duration = int.tryParse(v) ?? duration),
-                ),
-
-                _coachSection(c, plannedMinutes),
-
-                _sectionHeader(c, 'NOTES ET RESSENTI', Icons.edit_note_outlined),
-                TextField(
-                  controller: notesCtrl,
-                  minLines: 2,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
-                    hintText: 'Ce qui a été travaillé, difficultés, remarques…',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-
-                _sectionHeader(c, 'ÉVALUATION', Icons.star_outline),
-                DropdownButtonFormField<int>(
-                  isExpanded: true,
-                  value: rating,
-                  decoration: const InputDecoration(labelText: 'Note de séance'),
-                  items: List.generate(
-                    5,
-                    (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1))),
-                  ),
-                  onChanged: (v) => setState(() => rating = v ?? rating),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(
-              c,
-              Session(
-                id: widget.existing?.id ?? newId(),
-                date: widget.existing?.date ?? DateTime.now(),
-                duration: duration,
-                projectId: project?.id,
-                type: type,
-                rating: rating,
-                notes: notesCtrl.text,
-                method: method,
-                previousReading: widget.existing?.previousReading,
-                previousHandsTogether: widget.existing?.previousHandsTogether,
-                previousMemory: widget.existing?.previousMemory,
-                previousInterpretation: widget.existing?.previousInterpretation,
-                previousTempo: widget.existing?.previousTempo,
-                newTempo: widget.existing?.newTempo,
-                newReading: widget.existing?.newReading,
-                newHandsTogether: widget.existing?.newHandsTogether,
-                newMemory: widget.existing?.newMemory,
-                newInterpretation: widget.existing?.newInterpretation,
-                coachFeeling: widget.existing?.coachFeeling,
-                coachFocus: widget.existing?.coachFocus ?? widget.initialCoachFocus,
-                coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
-                plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
-                plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
-                runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
-                runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
-                runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
-                runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
-              ),
-            ),
-            icon: const Icon(Icons.check, size: 18),
-            label: Text(editing ? 'Enregistrer' : 'Créer la session'),
-          ),
-        ],
       ),
-    );
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            c,
+            Session(
+              id: widget.existing?.id ?? newId(),
+              date: widget.existing?.date ?? DateTime.now(),
+              duration: duration,
+              projectId: project?.id,
+              type: type,
+              rating: rating,
+              notes: notesCtrl.text,
+              method: method,
+              previousReading: widget.existing?.previousReading,
+              previousHandsTogether: widget.existing?.previousHandsTogether,
+              previousMemory: widget.existing?.previousMemory,
+              previousInterpretation: widget.existing?.previousInterpretation,
+              previousTempo: widget.existing?.previousTempo,
+              newTempo: widget.existing?.newTempo,
+              newReading: widget.existing?.newReading,
+              newHandsTogether: widget.existing?.newHandsTogether,
+              newMemory: widget.existing?.newMemory,
+              newInterpretation: widget.existing?.newInterpretation,
+              coachFeeling: widget.existing?.coachFeeling,
+              coachFocus: widget.existing?.coachFocus ?? widget.initialCoachFocus,
+              coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
+              plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
+              plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
+              runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
+              runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
+              runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
+              runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
+            ),
+          ),
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    ));
   }
-}
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // Projets
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,3 @@
-// V148 — duplication à 0 % + fiche Session mobile réorganisée.
-// Base fonctionnelle : V134 -> V145 -> V146 -> V147.
 // V120 — coach adaptatif : le planning apprend du temps réellement joué.
 // V119 — ergonomie des détails : hiérarchie plus nette, cartes internes allégées.
 // V118 — maîtrise morceau : progression globale + tempo + continuité + stabilité.
@@ -13,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '148.0';
+const String appVersion = '146.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -21,16 +19,6 @@ int _idCounter = 0;
 String newId() {
   _idCounter += 1;
   return '${DateTime.now().microsecondsSinceEpoch}_$_idCounter';
-}
-
-String _formatProjectDateTime(DateTime value) {
-  if (value.millisecondsSinceEpoch <= 0) return '—';
-  final local = value.toLocal();
-  final dd = local.day.toString().padLeft(2, '0');
-  final mm = local.month.toString().padLeft(2, '0');
-  final hh = local.hour.toString().padLeft(2, '0');
-  final min = local.minute.toString().padLeft(2, '0');
-  return '$dd/$mm/${local.year} à $hh:$min';
 }
 
 // V100 : en-têtes légers pour les écrans de détail, sans cartes imbriquées.
@@ -193,8 +181,7 @@ class Project {
     this.targetHours,
     this.celebratedComplete = false,
     this.emoji = '🎵',
-    DateTime? lastModified,
-  }) : lastModified = lastModified ?? DateTime.now();
+  });
   final String id;
   String name;
   double progress;
@@ -215,7 +202,6 @@ class Project {
   double? targetHours; // si defini, l'avancement est calcule automatiquement depuis le temps pratique
   bool celebratedComplete; // evite de refeter le passage a 100% a chaque rebuild
   String emoji; // emoji visuel du morceau
-  DateTime lastModified; // dernière modification de la fiche / du suivi du morceau
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -238,7 +224,6 @@ class Project {
         'targetHours': targetHours,
         'celebratedComplete': celebratedComplete,
         'emoji': emoji,
-        'lastModified': lastModified.toIso8601String(),
       };
 
   factory Project.fromJson(Map<String, dynamic> j) => Project(
@@ -265,9 +250,6 @@ class Project {
         targetHours: (j['targetHours'] as num?)?.toDouble(),
         celebratedComplete: j['celebratedComplete'] as bool? ?? false,
         emoji: j['emoji'] as String? ?? '🎵',
-        lastModified: j['lastModified'] is String
-            ? (DateTime.tryParse(j['lastModified'] as String) ?? DateTime.fromMillisecondsSinceEpoch(0))
-            : DateTime.fromMillisecondsSinceEpoch(0),
       );
 
   String get effectiveWorkFocus {
@@ -3336,7 +3318,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         plannedItem.sourceSessionId = r.id;
       }
       _updateAutoProgress(r.projectId);
-      _touchProject(r.projectId);
     });
     await _persist();
     await _offerDetailedProgress(r);
@@ -3433,7 +3414,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         // Une séance réalisée invalide toute autre recommandation coach concurrente du même jour.
         _removeDuplicatePendingCoachPlans(r.projectId, keepId: planItem.id);
         _updateAutoProgress(r.projectId);
-        _touchProject(r.projectId);
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
       });
@@ -3458,7 +3438,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         _capturePreviousProgress(r);
         sessions.insert(0, r);
         _updateAutoProgress(r.projectId);
-        _touchProject(r.projectId);
         plan.add(PlanItem(
           id: newId(),
           date: DateTime.now(),
@@ -3528,7 +3507,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       session.newHandsTogether = result.handsTogether;
       session.newMemory = result.memory;
       session.newInterpretation = result.interpretation;
-      p.lastModified = DateTime.now();
     });
     await _persist();
   }
@@ -3750,7 +3728,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
 
       _updateAutoProgress(s.projectId);
-      _touchProject(s.projectId);
       // Si le morceau repasse sous 100 % suite à cette suppression, on doit
       // pouvoir re-déclencher la célébration de fin de morceau plus tard.
       if (p != null && p.progress < 1) p.celebratedComplete = false;
@@ -3791,12 +3768,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
   }
 
-  void _touchProject(String? projectId) {
-    if (projectId == null) return;
-    final p = projectById(projectId);
-    if (p != null) p.lastModified = DateTime.now();
-  }
-
   Future<void> addOrEditProject([Project? existing]) async {
     final totalMinutes = existing == null
         ? 0
@@ -3811,10 +3782,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     if (r == null) return;
     setState(() {
       if (existing == null) {
-        r.lastModified = DateTime.now();
         projects.add(r);
       } else {
-        r.lastModified = DateTime.now();
         projects[projects.indexWhere((p) => p.id == existing.id)] = r;
       }
       // Une méthode utilisée par un projet doit toujours apparaître dans
@@ -3823,46 +3792,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     });
     _persist();
     _checkCelebrations();
-  }
-
-  void duplicateProject(Project p) {
-    // Une duplication crée une nouvelle fiche de travail indépendante.
-    // On conserve les informations descriptives, mais le suivi d'avancement
-    // repart à zéro pour éviter de donner au nouveau morceau l'impression
-    // qu'il a déjà été travaillé.
-    final copy = Project(
-      id: newId(),
-      name: p.name.trim().isEmpty ? 'Copie du morceau' : '${p.name} (copie)',
-      progress: 0,
-      goal: p.goal,
-      method: p.method,
-      priority: p.priority,
-      workFocus: p.workFocus,
-      workIntensity: p.workIntensity,
-      status: 'À découvrir',
-      statusIsManual: false,
-      reading: 0,
-      handsTogether: 0,
-      memory: 0,
-      interpretation: 0,
-      currentTempo: 0,
-      targetTempo: p.targetTempo,
-      measures: p.measures,
-      targetHours: p.targetHours,
-      celebratedComplete: false,
-      emoji: p.emoji,
-      lastModified: DateTime.now(),
-    );
-    setState(() {
-      projects.insert(0, copy);
-      _syncMethodsFromUsage();
-    });
-    _persist();
-    if (navKey.currentContext != null) {
-      ScaffoldMessenger.of(navKey.currentContext!).showSnackBar(
-        SnackBar(content: Text('Morceau dupliqué : ${copy.name}')),
-      );
-    }
   }
 
   void deleteProject(Project p) {
@@ -3976,7 +3905,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       sessions.insert(0, newSession);
       x.sourceSessionId = newSession.id;
       _updateAutoProgress(x.projectId);
-      _touchProject(x.projectId);
     });
     _persist();
     await _offerDetailedProgress(newSession);
@@ -4041,7 +3969,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         projectById: projectById,
         onOpenProject: (p) => addOrEditProject(p),
       ),
-      Projects(items: projects, sessions: sessions, onAdd: () => addOrEditProject(), onEdit: addOrEditProject, onDelete: deleteProject, onDuplicate: duplicateProject),
+      Projects(items: projects, sessions: sessions, onAdd: () => addOrEditProject(), onEdit: addOrEditProject, onDelete: deleteProject),
       Week(
         items: plan,
         minutes: minutes,
@@ -6426,94 +6354,10 @@ class _SessionDialogState extends State<SessionDialog> {
     super.dispose();
   }
 
-  Widget _sectionHeader(BuildContext c, String title, IconData icon) => Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 6),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .35),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _coachSection(BuildContext c, int? plannedMinutes) {
-    final hasCoach = widget.initialCoachFocus != null ||
-        widget.initialCoachRecommendation != null ||
-        widget.initialCoachTempo != null;
-    if (!hasCoach) return const SizedBox.shrink();
-
-    final recommendation = widget.initialCoachRecommendation?.trim() ?? '';
-    final onSurfaceVariant = Theme.of(c).colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        decoration: BoxDecoration(
-          color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.55),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
-                const SizedBox(width: 7),
-                const Expanded(
-                  child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
-                ),
-              ],
-            ),
-            if (plannedMinutes != null || (widget.initialDuration != null && plannedMinutes != widget.initialDuration)) ...[
-              const SizedBox(height: 7),
-              Wrap(
-                spacing: 10,
-                runSpacing: 4,
-                children: [
-                  if (plannedMinutes != null)
-                    Text('⏱ $plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
-                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes)
-                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11, color: onSurfaceVariant)),
-                ],
-              ),
-            ],
-            if (widget.initialCoachFocus != null) ...[
-              const SizedBox(height: 7),
-              Text('🎯 Focus : ${widget.initialCoachFocus}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, height: 1.25)),
-            ],
-            if (widget.initialCoachTempo != null && widget.initialCoachTempo! > 0) ...[
-              const SizedBox(height: 4),
-              Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 11.5, height: 1.25)),
-            ],
-            if (recommendation.isNotEmpty) ...[
-              const SizedBox(height: 7),
-              Text(
-                recommendation,
-                softWrap: true,
-                style: TextStyle(fontSize: 11.5, height: 1.35, color: onSurfaceVariant),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
     final plannedMinutes = widget.existing?.plannedDuration ?? widget.initialPlannedDuration;
-    final media = MediaQuery.of(c);
-    final maxWidth = math.min(media.size.width - 24, 620.0);
-    final maxHeight = math.min(media.size.height * .82, 720.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: Theme.of(c).inputDecorationTheme.copyWith(
         border: const UnderlineInputBorder(),
@@ -6526,140 +6370,131 @@ class _SessionDialogState extends State<SessionDialog> {
         contentPadding: const EdgeInsets.only(left: 0, right: 0, top: 10, bottom: 8),
       ),
     );
-
-    return Theme(
-      data: flatTheme,
-      child: AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-        titlePadding: const EdgeInsets.fromLTRB(22, 18, 22, 6),
-        contentPadding: const EdgeInsets.fromLTRB(22, 4, 22, 4),
-        actionsPadding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-        title: Row(
+    return Theme(data: flatTheme, child: AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(22, 18, 22, 6),
+      contentPadding: const EdgeInsets.fromLTRB(22, 6, 22, 6),
+      actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+      title: Text(editing ? 'Modifier la session' : 'Nouvelle session'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(editing ? Icons.edit_note_outlined : Icons.add_task_outlined, color: Theme.of(c).colorScheme.primary),
-            const SizedBox(width: 9),
-            Expanded(child: Text(editing ? 'Modifier la session' : 'Nouvelle session')),
+            DropdownButtonFormField<Project?>(
+              value: project,
+              decoration: const InputDecoration(labelText: 'Morceau'),
+              items: projectItems(widget.projects),
+              onChanged: (v) => setState(() => project = v),
+            ),
+            TextField(
+              controller: durationCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Durée (minutes)'),
+              onChanged: (v) => setState(() => duration = int.tryParse(v) ?? duration),
+            ),
+            DropdownButtonFormField<String>(
+              value: type,
+              decoration: const InputDecoration(labelText: 'Type de travail'),
+              items: ['Run-through', ...objectiveCategories]
+                  .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                  .toList(),
+              onChanged: (v) => setState(() => type = v ?? type),
+            ),
+            DropdownButtonFormField<String?>(
+              value: method,
+              decoration: const InputDecoration(labelText: 'Application / méthode'),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Aucune')),
+                ...learningMethods.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+              ],
+              onChanged: (v) => setState(() => method = v),
+            ),
+            TextField(
+              controller: notesCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Notes'),
+            ),
+            if (widget.initialCoachFocus != null || widget.initialCoachRecommendation != null || widget.initialCoachTempo != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
+                    if (plannedMinutes != null)
+                      Text('$plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                  ]),
+                  if (widget.initialCoachFocus != null) ...[
+                    const SizedBox(height: 6),
+                    Text('🎯 Focus : ${widget.initialCoachFocus}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  ],
+                  if (widget.initialCoachTempo != null && widget.initialCoachTempo! > 0) ...[
+                    const SizedBox(height: 3),
+                    Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 11.5)),
+                  ],
+                  if (widget.initialCoachRecommendation != null && widget.initialCoachRecommendation!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(widget.initialCoachRecommendation!, style: TextStyle(fontSize: 11.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  ],
+                  if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes) ...[
+                    const SizedBox(height: 5),
+                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  ],
+                ]),
+              ),
+            ],
+            DropdownButtonFormField<int>(
+              value: rating,
+              decoration: const InputDecoration(labelText: 'Note'),
+              items: List.generate(5, (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1)))),
+              onChanged: (v) => setState(() => rating = v ?? rating),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: maxWidth,
-          height: maxHeight,
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sectionHeader(c, 'SÉANCE', Icons.music_note_outlined),
-                DropdownButtonFormField<Project?>(
-                  isExpanded: true,
-                  value: project,
-                  decoration: const InputDecoration(labelText: 'Morceau'),
-                  items: projectItems(widget.projects),
-                  onChanged: (v) => setState(() => project = v),
-                ),
-                const SizedBox(height: 5),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  value: type,
-                  decoration: const InputDecoration(labelText: 'Type de travail'),
-                  items: ['Run-through', ...objectiveCategories]
-                      .map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))
-                      .toList(),
-                  onChanged: (v) => setState(() => type = v ?? type),
-                ),
-                const SizedBox(height: 5),
-                DropdownButtonFormField<String?>(
-                  isExpanded: true,
-                  value: method,
-                  decoration: const InputDecoration(labelText: 'Application / méthode'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Aucune')),
-                    ...learningMethods.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis))),
-                  ],
-                  onChanged: (v) => setState(() => method = v),
-                ),
-                const SizedBox(height: 5),
-                TextField(
-                  controller: durationCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Durée (minutes)', suffixText: 'min'),
-                  onChanged: (v) => setState(() => duration = int.tryParse(v) ?? duration),
-                ),
-
-                _coachSection(c, plannedMinutes),
-
-                _sectionHeader(c, 'NOTES ET RESSENTI', Icons.edit_note_outlined),
-                TextField(
-                  controller: notesCtrl,
-                  minLines: 2,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
-                    hintText: 'Ce qui a été travaillé, difficultés, remarques…',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-
-                _sectionHeader(c, 'ÉVALUATION', Icons.star_outline),
-                DropdownButtonFormField<int>(
-                  isExpanded: true,
-                  value: rating,
-                  decoration: const InputDecoration(labelText: 'Note de séance'),
-                  items: List.generate(
-                    5,
-                    (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1))),
-                  ),
-                  onChanged: (v) => setState(() => rating = v ?? rating),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(
-              c,
-              Session(
-                id: widget.existing?.id ?? newId(),
-                date: widget.existing?.date ?? DateTime.now(),
-                duration: duration,
-                projectId: project?.id,
-                type: type,
-                rating: rating,
-                notes: notesCtrl.text,
-                method: method,
-                previousReading: widget.existing?.previousReading,
-                previousHandsTogether: widget.existing?.previousHandsTogether,
-                previousMemory: widget.existing?.previousMemory,
-                previousInterpretation: widget.existing?.previousInterpretation,
-                previousTempo: widget.existing?.previousTempo,
-                newTempo: widget.existing?.newTempo,
-                newReading: widget.existing?.newReading,
-                newHandsTogether: widget.existing?.newHandsTogether,
-                newMemory: widget.existing?.newMemory,
-                newInterpretation: widget.existing?.newInterpretation,
-                coachFeeling: widget.existing?.coachFeeling,
-                coachFocus: widget.existing?.coachFocus ?? widget.initialCoachFocus,
-                coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
-                plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
-                plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
-                runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
-                runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
-                runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
-                runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
-              ),
-            ),
-            icon: const Icon(Icons.check, size: 18),
-            label: Text(editing ? 'Enregistrer' : 'Créer la session'),
-          ),
-        ],
       ),
-    );
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            c,
+            Session(
+              id: widget.existing?.id ?? newId(),
+              date: widget.existing?.date ?? DateTime.now(),
+              duration: duration,
+              projectId: project?.id,
+              type: type,
+              rating: rating,
+              notes: notesCtrl.text,
+              method: method,
+              previousReading: widget.existing?.previousReading,
+              previousHandsTogether: widget.existing?.previousHandsTogether,
+              previousMemory: widget.existing?.previousMemory,
+              previousInterpretation: widget.existing?.previousInterpretation,
+              previousTempo: widget.existing?.previousTempo,
+              newTempo: widget.existing?.newTempo,
+              newReading: widget.existing?.newReading,
+              newHandsTogether: widget.existing?.newHandsTogether,
+              newMemory: widget.existing?.newMemory,
+              newInterpretation: widget.existing?.newInterpretation,
+              coachFeeling: widget.existing?.coachFeeling,
+              coachFocus: widget.existing?.coachFocus ?? widget.initialCoachFocus,
+              coachRecommendation: widget.existing?.coachRecommendation ?? widget.initialCoachRecommendation,
+              plannedDuration: widget.existing?.plannedDuration ?? widget.initialPlannedDuration,
+              plannedTempo: widget.existing?.plannedTempo ?? widget.initialCoachTempo,
+              runThroughCompleted: widget.existing?.runThroughCompleted ?? widget.initialRunThroughCompleted,
+              runThroughStopNote: widget.existing?.runThroughStopNote ?? widget.initialRunThroughStopNote,
+              runThroughStartTempo: widget.existing?.runThroughStartTempo ?? widget.initialRunThroughStartTempo,
+              runThroughEndTempo: widget.existing?.runThroughEndTempo ?? widget.initialRunThroughEndTempo,
+            ),
+          ),
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    ));
   }
-}
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // Projets
 // ---------------------------------------------------------------------------
 
@@ -6696,13 +6531,12 @@ Widget _miniProgress(String label, double value) => Chip(
     );
 
 class Projects extends StatefulWidget {
-  const Projects({super.key, required this.items, required this.sessions, required this.onAdd, required this.onEdit, required this.onDelete, required this.onDuplicate});
+  const Projects({super.key, required this.items, required this.sessions, required this.onAdd, required this.onEdit, required this.onDelete});
   final List<Project> items;
   final List<Session> sessions;
   final VoidCallback onAdd;
   final void Function(Project) onEdit;
   final void Function(Project) onDelete;
-  final void Function(Project) onDuplicate;
 
   @override
   State<Projects> createState() => _ProjectsState();
@@ -6710,14 +6544,6 @@ class Projects extends StatefulWidget {
 
 class _ProjectsState extends State<Projects> {
   String? filterStatus;
-  String sortMode = 'recent';
-
-  DateTime _lastModifiedFor(Project p) {
-    if (p.lastModified.millisecondsSinceEpoch > 0) return p.lastModified;
-    final pieceSessions = widget.sessions.where((s) => s.projectId == p.id).toList();
-    if (pieceSessions.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
-    return pieceSessions.map((s) => s.date).reduce((a, b) => a.isAfter(b) ? a : b);
-  }
 
   @override
   Widget build(BuildContext c) {
@@ -6725,63 +6551,31 @@ class _ProjectsState extends State<Projects> {
         ? [...widget.items]
         : widget.items.where((p) => p.effectiveStatus == filterStatus).toList();
     final sorted = [...visible]..sort((a, b) {
-      switch (sortMode) {
-        case 'name':
-          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        case 'status':
-          final statusCompare = projectStatuses.indexOf(a.effectiveStatus).compareTo(projectStatuses.indexOf(b.effectiveStatus));
-          if (statusCompare != 0) return statusCompare;
-          return (b.priority ? 1 : 0) - (a.priority ? 1 : 0);
-        case 'recent':
-        default:
-          return _lastModifiedFor(b).compareTo(_lastModifiedFor(a));
-      }
+      final statusCompare = projectStatuses.indexOf(a.effectiveStatus).compareTo(projectStatuses.indexOf(b.effectiveStatus));
+      if (statusCompare != 0) return statusCompare;
+      return (b.priority ? 1 : 0) - (a.priority ? 1 : 0);
     });
     return Column(
       children: [
         AppBar(title: Text('Morceaux · ${widget.items.length}'), actions: [IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add))]),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String?>(
-                  value: filterStatus,
-                  decoration: const InputDecoration(
-                    labelText: 'Filtrer',
-                    prefixIcon: Icon(Icons.filter_list),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Tous les morceaux')),
-                    ...projectStatuses.map((status) => DropdownMenuItem<String?>(
-                          value: status,
-                          child: Text('${projectStatusEmoji(status)}  $status'),
-                        )),
-                  ],
-                  onChanged: (v) => setState(() => filterStatus = v),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: sortMode,
-                  decoration: const InputDecoration(
-                    labelText: 'Trier',
-                    prefixIcon: Icon(Icons.sort),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'recent', child: Text('Dernière modification')),
-                    DropdownMenuItem(value: 'status', child: Text('Statut')),
-                    DropdownMenuItem(value: 'name', child: Text('Nom')),
-                  ],
-                  onChanged: (v) => setState(() => sortMode = v ?? 'recent'),
-                ),
-              ),
+          child: DropdownButtonFormField<String?>(
+            value: filterStatus,
+            decoration: const InputDecoration(
+              labelText: 'Filtrer par statut',
+              prefixIcon: Icon(Icons.filter_list),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('Tous les morceaux')),
+              ...projectStatuses.map((status) => DropdownMenuItem<String?>(
+                    value: status,
+                    child: Text('${projectStatusEmoji(status)}  $status'),
+                  )),
             ],
+            onChanged: (v) => setState(() => filterStatus = v),
           ),
         ),
         Expanded(
@@ -6824,27 +6618,11 @@ class _ProjectsState extends State<Projects> {
                                 Expanded(child: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
                                 IconButton(
-                                  icon: const Icon(Icons.copy_outlined, size: 20),
-                                  tooltip: 'Dupliquer',
-                                  onPressed: () => widget.onDuplicate(p),
-                                ),
-                                IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 20),
                                   tooltip: 'Supprimer',
                                   onPressed: () async {
                                     if (await confirmDelete(c, 'ce morceau')) widget.onDelete(p);
                                   },
-                                ),
-                              ]),
-                              const SizedBox(height: 5),
-                              Row(children: [
-                                Icon(Icons.update_outlined, size: 14, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                                const SizedBox(width: 5),
-                                Expanded(
-                                  child: Text(
-                                    'Dernière modification : ${_formatProjectDateTime(_lastModifiedFor(p))}',
-                                    style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                                  ),
                                 ),
                               ]),
                               const SizedBox(height: 10),
@@ -8716,7 +8494,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
                       measures: measuresCtrl.text.trim(),
                       targetHours: autoProgress ? targetHours : null,
                       celebratedComplete: newProgress >= 1 ? (widget.existing?.celebratedComplete ?? false) : false,
-                      lastModified: widget.existing?.lastModified ?? DateTime.now(),
                     ),
                   );
                 },
