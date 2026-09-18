@@ -1,4 +1,3 @@
-// V161 — analyse globale du planning après chaque séance : le coach examine tous les créneaux restants avant de décider.
 // V159 — moteur coach : adaptations pédagogiques et significatives, sans micro-ajustements artificiels.
 // V155 — journal coach : date de l'ajustement + bon morceau concerné.
 // V154 — maîtrise des morceaux + adaptation charge/variété + clarté Coach/Planning.
@@ -19,7 +18,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '161.0';
+const String appVersion = '159.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -3303,10 +3302,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     );
   }
 
-  /// V161 : le coach réexamine l'ensemble du planning restant après chaque séance.
-  /// Il ne se contente plus de chercher une adaptation du même morceau : il
-  /// compare priorité, charge récente, variété, ancienneté de pratique,
-  /// avancement et ressenti pour décider s'il y a une action réellement utile.
   bool _adaptRemainingWeekToReality() {
     _lastCoachChangedItemId = null;
     _lastCoachOldDuration = null;
@@ -3320,134 +3315,39 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final today = DateTime(now.year, now.month, now.day);
     final weekStart = startOfWeek(now);
     final weekEnd = weekStart.add(const Duration(days: 7));
-
-    // Toute séance future/non commencée de la semaine est candidate à l'analyse,
-    // y compris une autre séance le jour même après celle qui vient d'être réalisée.
     final future = plan.where((x) =>
         !x.completed &&
-        !x.date.isBefore(today) &&
+        x.date.isAfter(today) &&
         !x.date.isBefore(weekStart) &&
         x.date.isBefore(weekEnd) &&
         x.duration > 0 &&
         x.sourceSessionId == null).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
-
-    if (future.isEmpty) {
-      _lastCoachReason = 'J’ai réexaminé le planning restant : aucune séance future à ajuster cette semaine.';
-      return false;
-    }
+    if (future.isEmpty) return false;
 
     final orderedSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
     final latestSession = orderedSessions.isEmpty ? null : orderedSessions.first;
-    final latestProject = latestSession?.projectId == null
-        ? null
-        : projectById(latestSession!.projectId);
-    if (latestSession == null || latestProject == null) {
-      _lastCoachReason = 'J’ai réexaminé le planning restant, mais je ne peux pas relier la dernière séance à un morceau.';
-      return false;
-    }
-
-    DateTime? latestSessionFor(String projectId) {
-      DateTime? latest;
-      for (final s in sessions) {
-        if (s.projectId != projectId) continue;
-        if (latest == null || s.date.isAfter(latest!)) latest = s.date;
-      }
-      return latest;
-    }
-
-    String? lastFeelingFor(String projectId) {
-      Session? last;
-      for (final s in sessions) {
-        if (s.projectId != projectId) continue;
-        if (last == null || s.date.isAfter(last!.date)) last = s;
-      }
-      return last?.coachFeeling;
-    }
-
-    int recentMinutes7d(String projectId) {
-      final cutoff = now.subtract(const Duration(days: 7));
-      return sessions
-          .where((s) => s.projectId == projectId &&
-              !s.date.isBefore(cutoff) &&
-              !s.date.isAfter(now))
-          .fold(0, (a, s) => a + s.duration);
-    }
-
-    int recentCount7d(String projectId) {
-      final cutoff = now.subtract(const Duration(days: 7));
-      return sessions
-          .where((s) => s.projectId == projectId &&
-              !s.date.isBefore(cutoff) &&
-              !s.date.isAfter(now))
-          .length;
-    }
+    final latestProject = latestSession?.projectId == null ? null : projectById(latestSession!.projectId);
+    if (latestSession == null || latestProject == null) return false;
 
     double plannedAdherence(String projectId) {
       final recent = sessions
-          .where((s) => s.projectId == projectId &&
-              s.plannedDuration != null &&
-              s.plannedDuration! > 0)
+          .where((s) => s.projectId == projectId && s.plannedDuration != null && s.plannedDuration! > 0)
           .toList()
         ..sort((a, b) => b.date.compareTo(a.date));
       if (recent.isEmpty) return 1.0;
       final selected = recent.take(4).toList();
-      return selected.fold<double>(0, (sum, s) =>
-              sum + s.duration / s.plannedDuration!) /
-          selected.length;
+      return selected.fold<double>(0, (sum, s) => sum + s.duration / s.plannedDuration!) / selected.length;
     }
 
-    int daysSinceLastPractice(Project p) {
-      final latest = latestSessionFor(p.id);
-      if (latest == null) return 999;
-      final lastDay = DateTime(latest.year, latest.month, latest.day);
-      return today.difference(lastDay).inDays;
+    int practiceMinutes7d(String projectId) {
+      final cutoff = now.subtract(const Duration(days: 7));
+      return sessions.where((s) => s.projectId == projectId && !s.date.isBefore(cutoff) && !s.date.isAfter(now)).fold(0, (a, s) => a + s.duration);
     }
 
-    // Un score de besoin global : plus il est haut, plus le morceau mérite une
-    // adaptation du planning restant. La priorité du morceau reste dominante,
-    // mais la charge récente et la variété peuvent faire émerger un autre morceau.
-    double needScore(Project p) {
-      final days = daysSinceLastPractice(p);
-      final minutes = recentMinutes7d(p.id);
-      final count = recentCount7d(p.id);
-      final feeling = lastFeelingFor(p.id);
-      final adherence = plannedAdherence(p.id);
-      var score = 0.0;
-
-      if (p.priority) score += 100;
-      if (days >= 999) {
-        score += 28;
-      } else {
-        score += math.min(days, 7) * 7.0;
-      }
-
-      if (minutes < 20) {
-        score += 24;
-      } else if (minutes < 40) {
-        score += 14;
-      } else if (minutes > 90) {
-        score -= 14;
-      }
-
-      if (count >= 3) score -= 20;
-      else if (count == 0) score += 12;
-
-      score += (1.0 - p.progress).clamp(0.0, 1.0) * 18.0;
-      score += (1.0 - p.weakestStageValue).clamp(0.0, 1.0) * 18.0;
-
-      if (feeling == 'difficile') score += 20;
-      if (feeling == 'facile') score += 4;
-      if (adherence < .78) score += 10;
-
-      // Après une séance, le coach évite naturellement de remonter aussitôt
-      // le même morceau, sauf s'il reste clairement prioritaire ou en difficulté.
-      if (p.id == latestProject.id &&
-          !p.priority &&
-          feeling != 'difficile') {
-        score -= 35;
-      }
-      return score;
+    int practiceCount7d(String projectId) {
+      final cutoff = now.subtract(const Duration(days: 7));
+      return sessions.where((s) => s.projectId == projectId && !s.date.isBefore(cutoff) && !s.date.isAfter(now)).length;
     }
 
     String? nextFocus(Project p, Session s) {
@@ -3459,38 +3359,25 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
       if (s.coachFeeling == 'facile') {
         if (p.targetTempo > 0 && p.currentTempo < p.targetTempo) return 'Tempo';
-        const progression = [
-          'Déchiffrage',
-          'Mains ensemble',
-          'Mémorisation',
-          'Interprétation'
-        ];
+        const progression = ['Déchiffrage', 'Mains ensemble', 'Mémorisation', 'Interprétation'];
         final index = progression.indexOf(current);
-        if (index >= 0 && index < progression.length - 1) {
-          return progression[index + 1];
-        }
+        if (index >= 0 && index < progression.length - 1) return progression[index + 1];
         if (current != 'Interprétation') return 'Interprétation';
       }
-      if (current != p.weakestStageName) return p.weakestStageName;
+      final weak = p.weakestStageName;
+      if (current != weak) return weak;
       return null;
     }
 
     int? meaningfulDuration(int current, String focus, bool increase) {
-      const ladder = <int>[10, 20, 30, 40];
+      final ladder = <int>[10, 20, 30];
       if (increase) {
-        final candidate = ladder.firstWhere(
-          (v) => v > current,
-          orElse: () => current,
-        );
+        final candidate = ladder.firstWhere((v) => v > current, orElse: () => current);
         if (candidate == current) return null;
         final max = workFocusMaxMinutes(focus);
-        final bounded = math.min(candidate, max);
-        return bounded > current ? bounded : null;
+        return math.min(candidate, max) > current ? math.min(candidate, max) : null;
       }
-      final candidate = ladder.reversed.firstWhere(
-        (v) => v < current,
-        orElse: () => current,
-      );
+      final candidate = ladder.reversed.firstWhere((v) => v < current, orElse: () => current);
       final min = math.max(20, workFocusMinMinutes(focus));
       return candidate < current && candidate >= min ? candidate : null;
     }
@@ -3503,10 +3390,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         final age = now.difference(lastAt);
         final lastDirection = item.duration - previous;
         final newDirection = newDuration - item.duration;
-        if (age < const Duration(hours: 48) &&
-            lastDirection * newDirection < 0) {
-          return false;
-        }
+        if (age < const Duration(hours: 48) && lastDirection * newDirection < 0) return false;
       }
       final old = item.duration;
       item.duration = newDuration;
@@ -3536,8 +3420,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       item.coachAdjustmentType = 'focus';
       item.coachPreviousFocus = oldFocus;
       item.coachNewFocus = newFocus;
-      item.details =
-          '${item.details.split(' · 🎯 Focus coach :').first} · 🎯 Focus coach : $newFocus';
+      item.details = '${item.details.split(' · 🎯 Focus coach :').first} · 🎯 Focus coach : $newFocus';
       _lastCoachChangedItemId = item.id;
       _lastCoachReason = reason;
       _lastCoachAdjustmentType = 'focus';
@@ -3546,123 +3429,79 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       return true;
     }
 
-    // Le morceau associé à chaque séance future est évalué, puis le coach choisit
-    // le besoin le plus pertinent dans le planning restant, pas seulement le morceau
-    // qui vient d'être joué.
-    final candidates = <MapEntry<PlanItem, Project>>[];
-    for (final item in future) {
-      final p = projectById(item.projectId);
-      if (p == null || p.effectiveStatus == 'Répertoire d’entretien') continue;
-      candidates.add(MapEntry(item, p));
-    }
+    final sameProject = future.where((x) => x.projectId == latestProject.id).toList();
+    final adherence = plannedAdherence(latestProject.id);
+    final lastFeeling = latestSession.coachFeeling;
+    final difficult = _recentDifficultSessions(latestProject.id) >= 2;
 
-    if (candidates.isEmpty) {
-      _lastCoachReason =
-          'J’ai réexaminé le planning restant : aucune séance d’un morceau actif ne nécessite actuellement d’adaptation.';
-      return false;
-    }
-
-    candidates.sort((a, b) =>
-        needScore(b.value).compareTo(needScore(a.value)));
-
-    final selected = candidates.first;
-    final candidate = selected.key;
-    final candidateProject = selected.value;
-    final selectedScore = needScore(candidateProject);
-    final candidateFeeling = lastFeelingFor(candidateProject.id);
-    final candidateMinutes = recentMinutes7d(candidateProject.id);
-    final candidateDays = daysSinceLastPractice(candidateProject);
-    final candidateCount = recentCount7d(candidateProject.id);
-    final candidateAdherence = plannedAdherence(candidateProject.id);
-
-    // Aucun changement de façade si le besoin global est trop faible : le coach
-    // a bien analysé le planning, mais confirme que sa structure reste pertinente.
-    if (selectedScore < 48) {
-      _lastCoachReason = candidateDays >= 999
-          ? 'J’ai réexaminé ${future.length} séance(s) restante(s). Le planning reste inchangé : aucune adaptation suffisamment utile ne se dégage encore.'
-          : 'J’ai réexaminé ${future.length} séance(s) restante(s). ${candidateProject.name} reste le prochain besoin identifié, mais sa charge ($candidateMinutes min sur 7 jours) est encore compatible avec le planning.';
-      return false;
-    }
-
-    // 1) Une séance difficile/peu réalisée sur un morceau qui a encore un créneau
-    //    futur : vraie réduction par bloc ou, à défaut, changement de contenu.
-    if (candidateProject.id == latestProject.id &&
-        (latestSession.coachFeeling == 'difficile' ||
-            _recentDifficultSessions(candidateProject.id) >= 2 ||
-            candidateAdherence < .78)) {
-      final focus = _focusFor(candidateProject);
-      final newDuration =
-          meaningfulDuration(candidate.duration, focus, false);
+    // 1) Une séance difficile ou une faible adhérence entraîne une vraie
+    //    réduction par bloc, jamais un -2 ou -3 minutes artificiel.
+    if (sameProject.isNotEmpty && (lastFeeling == 'difficile' || difficult || adherence < .78)) {
+      final item = sameProject.first;
+      final focus = _focusFor(latestProject);
+      final newDuration = meaningfulDuration(item.duration, focus, false);
       if (newDuration != null) {
-        final reason = latestSession.coachFeeling == 'difficile'
-            ? 'La séance sur ${latestProject.name} a été ressentie comme difficile. J’ai réexaminé tout le planning et réduit la prochaine charge d’un bloc complet pour laisser davantage de place à la consolidation.'
-            : 'Les dernières séances sur ${latestProject.name} sont régulièrement réalisées sous le temps prévu. J’ai réexaminé le planning et réduit la prochaine charge d’un bloc plutôt que de conserver une durée trop ambitieuse.';
-        return applyDuration(candidate, newDuration, reason);
+        final reason = lastFeeling == 'difficile'
+            ? 'La dernière séance a été ressentie comme difficile : le coach réduit la prochaine charge d’un bloc pour favoriser la consolidation.'
+            : 'Les dernières séances sont réalisées en dessous du temps prévu : le coach réduit la prochaine charge d’un bloc plutôt que de conserver une durée trop ambitieuse.';
+        return applyDuration(item, newDuration, reason);
       }
-      final focusChange = nextFocus(candidateProject, latestSession);
+
+      // Si la séance est déjà à sa durée minimale pertinente, le coach agit sur
+      // le contenu plutôt que de créer une micro-séance.
+      final focusChange = nextFocus(latestProject, latestSession);
       if (focusChange != null) {
-        return applyFocus(
-          candidate,
-          candidateProject,
-          focusChange,
-          'La durée de ${candidateProject.name} est déjà adaptée. J’ai réexaminé le planning et choisi de conserver le créneau tout en ciblant ${focusChange}, plus utile après la dernière séance.',
-        );
+        final reason = lastFeeling == 'difficile' || difficult
+            ? 'La durée est déjà courte : le coach conserve le créneau et change le focus pour consolider le point le plus utile.'
+            : 'La durée est déjà adaptée : le coach change le focus pour rendre la prochaine séance plus accessible.';
+        return applyFocus(item, latestProject, focusChange, reason);
       }
     }
 
-    // 2) Un morceau différent, peu travaillé ou prioritaire peut recevoir un vrai
-    //    bloc supplémentaire. Cela rend le moteur capable d'agir sur la variété,
-    //    au lieu de modifier artificiellement la séance qui vient d'être jouée.
-    if (candidateProject.id != latestProject.id &&
-        (candidateProject.priority ||
-            candidateDays >= 4 ||
-            candidateCount == 0) &&
-        candidateAdherence >= .90) {
-      final currentFocus = _focusFor(candidateProject);
-      final newDuration =
-          meaningfulDuration(candidate.duration, currentFocus, true);
+    // 2) Une séance facile et réellement tenue peut justifier un bloc
+    //    supplémentaire. Le coach ne monte jamais de quelques minutes.
+    if (sameProject.isNotEmpty && lastFeeling == 'facile' && adherence >= .95) {
+      final item = sameProject.first;
+      final focus = _focusFor(latestProject);
+      final newDuration = meaningfulDuration(item.duration, focus, true);
       if (newDuration != null) {
         return applyDuration(
-          candidate,
+          item,
           newDuration,
-          '${latestProject.name} vient d’être travaillé. Après réexamen de toute la semaine, ${candidateProject.name} ressort comme un besoin plus important (priorité : ${candidateProject.priority ? 'oui' : 'non'}, $candidateMinutes min sur 7 jours, ${candidateDays >= 999 ? 'jamais travaillé' : '$candidateDays j depuis la dernière séance'}). J’ajoute donc un bloc complet plutôt que de réduire artificiellement une autre séance.',
+          'La dernière séance a été facile et la durée prévue est bien absorbée : le coach ajoute un bloc complet pour faire progresser le travail.',
         );
       }
-
-      final weakFocus = candidateProject.weakestStageName;
-      final currentPlannedFocus = candidate.coachNewFocus ?? _focusFor(candidateProject);
-      if (weakFocus != currentPlannedFocus) {
+      final focusChange = nextFocus(latestProject, latestSession);
+      if (focusChange != null) {
         return applyFocus(
-          candidate,
-          candidateProject,
-          weakFocus,
-          '${latestProject.name} vient d’être travaillé. Après réexamen de toute la semaine, je conserve la durée de ${candidateProject.name} mais j’oriente son prochain créneau vers ${weakFocus}, qui reste le point le plus fragile.',
-        );
-      }
-    }
-
-    // 3) Une répétition trop forte sur un morceau non prioritaire justifie un
-    //    changement de contenu, sans diminuer de quelques minutes.
-    if (candidateCount >= 3 &&
-        !candidateProject.priority &&
-        candidateProject.id != latestProject.id) {
-      final focusChange = candidateProject.weakestStageName;
-      final currentFocus = candidate.coachNewFocus ?? _focusFor(candidateProject);
-      if (focusChange != currentFocus) {
-        return applyFocus(
-          candidate,
-          candidateProject,
+          item,
+          latestProject,
           focusChange,
-          'J’ai réexaminé la charge récente : ${candidateProject.name} a déjà reçu $candidateMinutes min en $candidateCount contacts cette semaine. Je conserve le créneau mais varie le travail vers ${focusChange} pour maintenir la diversité.',
+          'La durée est déjà au bon niveau : le coach fait progresser le contenu plutôt que d’allonger artificiellement la séance.',
         );
       }
     }
 
-    // 4) Même si aucune transformation n'est déclenchée, le coach laisse une trace
-    //    explicite de son réexamen global.
-    final names = candidates.take(3).map((e) => e.value.name).join(', ');
-    _lastCoachReason =
-        'J’ai réexaminé l’ensemble des ${future.length} séance(s) restantes. Les besoins les plus élevés sont actuellement : $names. Aucune modification suffisamment utile ne justifie de changer le planning à ce stade.';
+    // 3) La charge récente et la variété peuvent conduire à changer le contenu
+    //    d’une séance future, sans diminuer de quelques minutes un autre morceau.
+    final recentMinutes = practiceMinutes7d(latestProject.id);
+    final recentCount = practiceCount7d(latestProject.id);
+    if (sameProject.isNotEmpty && recentCount >= 3 && latestProject.priority == false) {
+      final candidate = sameProject.first;
+      final altFocus = nextFocus(latestProject, latestSession);
+      if (altFocus != null) {
+        return applyFocus(
+          candidate,
+          latestProject,
+          altFocus,
+          'Le morceau a déjà reçu plusieurs contacts cette semaine ($recentMinutes min) : le coach conserve le créneau mais varie le travail pour éviter la répétition.',
+        );
+      }
+    }
+
+    // 4) Rien de suffisamment significatif : le coach laisse le planning
+    //    intact. C’est un résultat valide et explicable.
+    _lastCoachReason = 'Aucune modification suffisamment utile : le planning reste inchangé. Le coach évite de modifier artificiellement une séance de quelques minutes.';
     return false;
   }
 

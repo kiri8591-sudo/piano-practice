@@ -1,8 +1,3 @@
-// V161 — analyse globale du planning après chaque séance : le coach examine tous les créneaux restants avant de décider.
-// V159 — moteur coach : adaptations pédagogiques et significatives, sans micro-ajustements artificiels.
-// V155 — journal coach : date de l'ajustement + bon morceau concerné.
-// V154 — maîtrise des morceaux + adaptation charge/variété + clarté Coach/Planning.
-// V153 — coche verte pour les séances réalisées, sans réactivation.
 // V151 — COACH toujours visible + analyse récente intégrée au planning.
 // V150 — coach explicable : morceaux à faire avancer + analyse récente du coach.
 // Base fonctionnelle : V134 -> V145 -> V146 -> V147.
@@ -19,7 +14,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '161.0';
+const String appVersion = '152.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -533,23 +528,11 @@ class CoachDecision {
     this.oldDuration,
     this.newDuration,
     this.reason,
-    this.adjustedPlanItemId,
-    this.adjustedProjectId,
-    this.adjustedPlanDate,
-    this.analyzedProjectName,
-    this.adjustedProjectName,
-    this.adjustedPlanTitle,
-    this.analyzedSessionDate,
-    this.adjustedAt,
-    this.adjustmentType,
-    this.oldFocus,
-    this.newFocus,
   });
 
   final String id;
   final DateTime date;
   final String sessionId;
-  /// Morceau de la séance analysée.
   final String? projectId;
   final bool changed;
   final String title;
@@ -557,25 +540,6 @@ class CoachDecision {
   final int? oldDuration;
   final int? newDuration;
   final String? reason;
-  /// Morceau réellement modifié dans le planning, qui peut être différent
-  /// du morceau de la séance analysée.
-  final String? adjustedPlanItemId;
-  final String? adjustedProjectId;
-  final DateTime? adjustedPlanDate;
-  /// Instantanés des libellés au moment de la décision. Ils évitent qu'une
-  /// modification ultérieure des fiches ne fasse apparaître un mauvais morceau
-  /// dans le journal du coach.
-  final String? analyzedProjectName;
-  final String? adjustedProjectName;
-  final String? adjustedPlanTitle;
-  /// Date/heure de la séance réellement analysée.
-  final DateTime? analyzedSessionDate;
-  /// Date/heure à laquelle le coach a effectivement modifié l’élément du planning.
-  final DateTime? adjustedAt;
-  /// Type d'adaptation : duration, focus ou none.
-  final String? adjustmentType;
-  final String? oldFocus;
-  final String? newFocus;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -588,17 +552,6 @@ class CoachDecision {
         'oldDuration': oldDuration,
         'newDuration': newDuration,
         'reason': reason,
-        'adjustedPlanItemId': adjustedPlanItemId,
-        'adjustedProjectId': adjustedProjectId,
-        'adjustedPlanDate': adjustedPlanDate?.toIso8601String(),
-        'analyzedProjectName': analyzedProjectName,
-        'adjustedProjectName': adjustedProjectName,
-        'adjustedPlanTitle': adjustedPlanTitle,
-        'analyzedSessionDate': analyzedSessionDate?.toIso8601String(),
-        'adjustedAt': adjustedAt?.toIso8601String(),
-        'adjustmentType': adjustmentType,
-        'oldFocus': oldFocus,
-        'newFocus': newFocus,
       };
 
   factory CoachDecision.fromJson(Map<String, dynamic> j) => CoachDecision(
@@ -612,17 +565,6 @@ class CoachDecision {
         oldDuration: (j['oldDuration'] as num?)?.toInt(),
         newDuration: (j['newDuration'] as num?)?.toInt(),
         reason: j['reason'] as String?,
-        adjustedPlanItemId: j['adjustedPlanItemId'] as String?,
-        adjustedProjectId: j['adjustedProjectId'] as String?,
-        adjustedPlanDate: DateTime.tryParse(j['adjustedPlanDate']?.toString() ?? ''),
-        analyzedProjectName: j['analyzedProjectName'] as String?,
-        adjustedProjectName: j['adjustedProjectName'] as String?,
-        adjustedPlanTitle: j['adjustedPlanTitle'] as String?,
-        analyzedSessionDate: DateTime.tryParse(j['analyzedSessionDate']?.toString() ?? ''),
-        adjustedAt: DateTime.tryParse(j['adjustedAt']?.toString() ?? ''),
-        adjustmentType: j['adjustmentType'] as String?,
-        oldFocus: j['oldFocus'] as String?,
-        newFocus: j['newFocus'] as String?,
       );
 }
 
@@ -645,9 +587,6 @@ class PlanItem {
     this.coachAdjustmentReason,
     this.coachAdjustedAt,
     this.coachPreviousDuration,
-    this.coachAdjustmentType,
-    this.coachPreviousFocus,
-    this.coachNewFocus,
   }) : motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
   final String id;
   DateTime date;
@@ -666,9 +605,6 @@ class PlanItem {
   String? coachAdjustmentReason; // explication courte de l'ajustement
   DateTime? coachAdjustedAt; // moment de la dernière décision du coach
   int? coachPreviousDuration; // durée avant la dernière décision, pour éviter les oscillations
-  String? coachAdjustmentType; // duration / focus
-  String? coachPreviousFocus;
-  String? coachNewFocus;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -688,9 +624,6 @@ class PlanItem {
         'coachAdjustmentReason': coachAdjustmentReason,
         'coachAdjustedAt': coachAdjustedAt?.toIso8601String(),
         'coachPreviousDuration': coachPreviousDuration,
-        'coachAdjustmentType': coachAdjustmentType,
-        'coachPreviousFocus': coachPreviousFocus,
-        'coachNewFocus': coachNewFocus,
       };
 
   factory PlanItem.fromJson(Map<String, dynamic> j) {
@@ -720,9 +653,6 @@ class PlanItem {
       coachAdjustmentReason: j['coachAdjustmentReason'] as String?,
       coachAdjustedAt: DateTime.tryParse(j['coachAdjustedAt']?.toString() ?? ''),
       coachPreviousDuration: (j['coachPreviousDuration'] as num?)?.toInt(),
-      coachAdjustmentType: j['coachAdjustmentType'] as String?,
-      coachPreviousFocus: j['coachPreviousFocus'] as String?,
-      coachNewFocus: j['coachNewFocus'] as String?,
     );
   }
 
@@ -917,12 +847,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     return recent.take(3).where((s) => s.coachFeeling == 'difficile').length;
   }
 
-  // V160 : focus effectif utilise par le moteur d'adaptation du coach.
-  // Le moteur vit dans _PianoPracticeAppState ; il ne peut pas appeler
-  // la methode homonyme de CoachHome, qui est une autre classe.
-  String _focusFor(Project p) =>
-      p.workFocus == 'Automatique' ? p.effectiveWorkFocus : p.workFocus;
-
   final navKey = GlobalKey<NavigatorState>();
   int tab = 0;
   bool loading = true;
@@ -945,9 +869,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   int? _lastCoachOldDuration;
   int? _lastCoachNewDuration;
   String? _lastCoachReason;
-  String? _lastCoachAdjustmentType;
-  String? _lastCoachOldFocus;
-  String? _lastCoachNewFocus;
   List<RoutineItem> routine = [];
   List<Challenge> challenges = [];
   bool darkMode = false;
@@ -3073,38 +2994,14 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _checkCelebrations();
   }
 
-  String _coachPlanDateLabel(DateTime value) {
-    const weekdays = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
-    final local = value.toLocal();
-    return '${weekdays[local.weekday - 1]} ${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
-  }
-
-  String _coachDateTimeLabel(DateTime? value) {
-    if (value == null) return 'date non disponible';
-    final local = value.toLocal();
-    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year} à ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _coachDecisionTargetLabel(CoachDecision d) {
-    final target = d.adjustedPlanDate;
-    if (target == null) return 'Date de la séance ajustée : non disponible';
-    return 'Séance concernée : ${_coachPlanDateLabel(target)}';
-  }
-
   void _recordCoachDecision(Session session, bool changed) {
     final existing = coachDecisionLog.where((d) => d.sessionId == session.id).toList();
     if (existing.isNotEmpty) return;
     final projectId = session.projectId;
-    final analyzedProject = projectById(projectId);
+    final project = projectById(projectId);
     final item = _lastCoachChangedItemId == null
         ? null
         : plan.where((x) => x.id == _lastCoachChangedItemId).firstOrNull;
-    final adjustedProject = item == null ? null : projectById(item.projectId);
-    final adjustedDate = item?.date;
-    final analyzedName = analyzedProject?.name;
-    final adjustedName = adjustedProject?.name ?? item?.title;
-    final adjustedTitle = item?.title;
-    final adjustedAt = item?.coachAdjustedAt ?? (changed ? DateTime.now() : null);
     final decision = CoachDecision(
       id: newId(),
       date: DateTime.now(),
@@ -3113,22 +3010,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       changed: changed,
       title: changed ? 'Planning ajusté' : 'Analyse du coach',
       message: changed
-          ? 'J’ai analysé ta séance sur ${analyzedName ?? 'morceau non renseigné'} et ajusté le planning à venir : ${adjustedName ?? 'morceau du planning'}${adjustedDate == null ? '' : ' le ${_coachPlanDateLabel(adjustedDate)}'}${_lastCoachAdjustmentType == 'duration' && _lastCoachOldDuration != null && _lastCoachNewDuration != null ? ', ${_lastCoachOldDuration} → ${_lastCoachNewDuration} min' : _lastCoachAdjustmentType == 'focus' && _lastCoachOldFocus != null && _lastCoachNewFocus != null ? ', focus ${_lastCoachOldFocus} → ${_lastCoachNewFocus}' : ''}.'
-          : 'J’ai analysé ta séance sur ${analyzedName ?? 'ce morceau'}. Rien ne justifie de changer le planning.',
+          ? 'Le coach a modifié le planning à venir pour ${project?.name ?? 'ce morceau'}. '
+              '${item?.title ?? ''}'.trim()
+          : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.',
       oldDuration: changed ? _lastCoachOldDuration : null,
       newDuration: changed ? _lastCoachNewDuration : null,
       reason: changed ? _lastCoachReason : null,
-      adjustedPlanItemId: changed ? item?.id : null,
-      adjustedProjectId: changed ? item?.projectId : null,
-      adjustedPlanDate: changed ? adjustedDate : null,
-      analyzedProjectName: analyzedName,
-      adjustedProjectName: changed ? adjustedName : null,
-      adjustedPlanTitle: changed ? adjustedTitle : null,
-      analyzedSessionDate: session.date,
-      adjustedAt: adjustedAt,
-      adjustmentType: changed ? _lastCoachAdjustmentType : null,
-      oldFocus: changed ? _lastCoachOldFocus : null,
-      newFocus: changed ? _lastCoachNewFocus : null,
     );
     coachDecisionLog.insert(0, decision);
     if (coachDecisionLog.length > 50) {
@@ -3143,82 +3030,27 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       builder: (c) => AlertDialog(
         title: const Text('🧠 Journal du coach'),
         content: SizedBox(
-          width: 560,
-          height: 480,
+          width: 520,
+          height: 430,
           child: decisions.isEmpty
-              ? const Center(child: Text('Aucune analyse du coach enregistrée.'))
+              ? const Center(child: Text('Aucune décision du coach enregistrée.'))
               : ListView.separated(
                   itemCount: decisions.length,
-                  separatorBuilder: (_, __) => const Divider(height: 16),
+                  separatorBuilder: (_, __) => const Divider(height: 12),
                   itemBuilder: (_, i) {
                     final d = decisions[i];
-                    final analyzedName = d.analyzedProjectName ?? projectById(d.projectId)?.name ?? 'morceau non renseigné';
-                    final adjustedName = d.adjustedProjectName ?? projectById(d.adjustedProjectId)?.name ?? 'morceau du planning';
-                    final analysisDate = d.analyzedSessionDate ?? d.date;
-                    final targetDate = d.adjustedPlanDate;
-                    final changeAt = d.adjustedAt;
-                    final hasReason = (d.reason ?? '').trim().isNotEmpty;
-                    return Card(
-                      margin: EdgeInsets.zero,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                CircleAvatar(
-                                  radius: 17,
-                                  child: Icon(d.changed ? Icons.auto_awesome : Icons.check, size: 17),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(d.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                      const SizedBox(height: 2),
-                                      Text('Analyse : ${_coachDateTimeLabel(analysisDate)}', style: const TextStyle(fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                                if (d.oldDuration != null && d.newDuration != null)
-                                  Text('${d.oldDuration} → ${d.newDuration} min', style: const TextStyle(fontWeight: FontWeight.w800)),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            const Text('Séance analysée', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 2),
-                            Text('🎹 $analyzedName', style: const TextStyle(fontWeight: FontWeight.w700)),
-                            Text('Réalisée le ${_coachDateTimeLabel(analysisDate)}', style: const TextStyle(fontSize: 12)),
-                            if (d.changed) ...[
-                              const SizedBox(height: 9),
-                              const Text('Modification du planning', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 2),
-                              Text('🎹 $adjustedName', style: const TextStyle(fontWeight: FontWeight.w700)),
-                              if (targetDate != null)
-                                Text('Séance déplacée/ajustée pour ${_coachPlanDateLabel(targetDate)}', style: const TextStyle(fontSize: 12)),
-                              if (changeAt != null)
-                                Text('Modification effectuée le ${_coachDateTimeLabel(changeAt)}', style: const TextStyle(fontSize: 12)),
-                              if (d.adjustmentType == 'duration' && d.oldDuration != null && d.newDuration != null)
-                                Text('Durée : ${d.oldDuration} → ${d.newDuration} min', style: const TextStyle(fontSize: 12))
-                              else if (d.adjustmentType == 'focus' && d.oldFocus != null && d.newFocus != null)
-                                Text('Focus : ${d.oldFocus} → ${d.newFocus}', style: const TextStyle(fontSize: 12)),
-                              const SizedBox(height: 8),
-                              const Text('Pourquoi ?', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 2),
-                              Text(
-                                hasReason ? d.reason! : d.message,
-                                style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.35),
-                              ),
-                            ] else ...[
-                              const SizedBox(height: 8),
-                              Text('Aucune modification du planning après cette analyse.', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12)),
-                            ],
-                          ],
-                        ),
+                    final date = '${d.date.day.toString().padLeft(2,'0')}/${d.date.month.toString().padLeft(2,'0')} · ${d.date.hour.toString().padLeft(2,'0')}:${d.date.minute.toString().padLeft(2,'0')}';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        radius: 17,
+                        child: Icon(d.changed ? Icons.auto_awesome : Icons.check, size: 17),
                       ),
+                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text('$date\n${d.message}${d.reason == null ? '' : '\n${d.reason}'}', maxLines: 4),
+                      trailing: d.oldDuration != null && d.newDuration != null
+                          ? Text('${d.oldDuration} → ${d.newDuration} min', style: const TextStyle(fontWeight: FontWeight.w800))
+                          : null,
                     );
                   },
                 ),
@@ -3233,437 +3065,172 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// Les séances terminées ne sont jamais modifiées ; seules les séances futures
   /// non commencées peuvent voir leur durée ajustée.
   Future<void> _showCoachPlanningResult(Session session, bool changed) async {
-    final analyzedProject = projectById(session.projectId);
-    final analyzedName = analyzedProject?.name ?? 'morceau non renseigné';
-    final adjustedItem = _lastCoachChangedItemId == null
-        ? null
-        : plan.where((x) => x.id == _lastCoachChangedItemId).firstOrNull;
-    final adjustedProject = adjustedItem == null ? null : projectById(adjustedItem.projectId);
-    final adjustedName = adjustedProject?.name ?? adjustedItem?.title ?? 'un morceau du planning';
-    final adjustedDate = adjustedItem?.date;
-    final adjustedDateText = adjustedDate == null ? 'date non disponible' : _coachPlanDateLabel(adjustedDate);
-    final changedAt = adjustedItem?.coachAdjustedAt;
-
+    final project = projectById(session.projectId);
+    final name = project?.name ?? 'ta séance';
+    final title = changed ? '🧠 Planning ajusté' : '🧠 Analyse du coach';
+    final message = changed
+        ? 'J’ai analysé ta séance et ajusté le planning à venir.'
+        : 'J’ai analysé ta séance. Rien ne justifie de changer le planning.';
     await showDialog<void>(
       context: navKey.currentContext!,
       builder: (c) => AlertDialog(
-        title: const Text('🧠 Analyse du coach'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Séance analysée', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 3),
-              Text('${analyzedProject?.emoji ?? '🎹'} $analyzedName', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-              const SizedBox(height: 3),
-              Text('Réalisée le ${_coachDateTimeLabel(session.date)}', style: const TextStyle(fontSize: 12)),
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Text(message, style: const TextStyle(height: 1.4)),
+            if (changed) ...[
               const SizedBox(height: 10),
-              Text(
-                changed
-                    ? 'J’ai analysé ta séance sur $analyzedName et j’ai ajusté le planning à venir.'
-                    : 'J’ai analysé ta séance sur $analyzedName. Aucun ajustement du planning n’a été nécessaire.',
-                style: const TextStyle(height: 1.4),
-              ),
-              if (changed && adjustedItem != null) ...[
-                const SizedBox(height: 14),
-                const Text('Modification du planning', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                Text('${adjustedProject?.emoji ?? '🎹'} $adjustedName', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                const SizedBox(height: 2),
-                Text('Séance concernée : $adjustedDateText', style: const TextStyle(fontSize: 12)),
-                if (changedAt != null) Text('Modification effectuée : ${_coachDateTimeLabel(changedAt)}', style: const TextStyle(fontSize: 12)),
-                if (_lastCoachAdjustmentType == 'duration' && _lastCoachOldDuration != null && _lastCoachNewDuration != null) ...[
-                  const SizedBox(height: 3),
-                  Text('Durée : ${_lastCoachOldDuration} → ${_lastCoachNewDuration} min'),
-                ] else if (_lastCoachAdjustmentType == 'focus' && _lastCoachOldFocus != null && _lastCoachNewFocus != null) ...[
-                  const SizedBox(height: 3),
-                  Text('Focus : $_lastCoachOldFocus → $_lastCoachNewFocus'),
-                ],
-                if ((_lastCoachReason ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Text('Pourquoi ?', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 3),
-                  Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.35)),
-                ],
-              ] else if (changed) ...[
-                const SizedBox(height: 10),
-                const Text('Le planning a été ajusté, mais la séance concernée n’est plus disponible dans les données actuelles.', style: TextStyle(fontSize: 12)),
-              ] else if ((_lastCoachReason ?? '').trim().isNotEmpty) ...[
-                const SizedBox(height: 9),
-                const Text('Pourquoi aucune modification ?', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.35)),
-              ],
+              const Text('Un indicateur COACH apparaît sur le planning modifié.',
+                  style: TextStyle(fontSize: 12)),
             ],
-          ),
+          ],
         ),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
   }
 
-  /// V161 : le coach réexamine l'ensemble du planning restant après chaque séance.
-  /// Il ne se contente plus de chercher une adaptation du même morceau : il
-  /// compare priorité, charge récente, variété, ancienneté de pratique,
-  /// avancement et ressenti pour décider s'il y a une action réellement utile.
   bool _adaptRemainingWeekToReality() {
     _lastCoachChangedItemId = null;
     _lastCoachOldDuration = null;
     _lastCoachNewDuration = null;
     _lastCoachReason = null;
-    _lastCoachAdjustmentType = null;
-    _lastCoachOldFocus = null;
-    _lastCoachNewFocus = null;
-
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekStart = startOfWeek(now);
     final weekEnd = weekStart.add(const Duration(days: 7));
-
-    // Toute séance future/non commencée de la semaine est candidate à l'analyse,
-    // y compris une autre séance le jour même après celle qui vient d'être réalisée.
     final future = plan.where((x) =>
         !x.completed &&
-        !x.date.isBefore(today) &&
+        x.date.isAfter(today) &&
         !x.date.isBefore(weekStart) &&
         x.date.isBefore(weekEnd) &&
         x.duration > 0 &&
         x.sourceSessionId == null).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
-
-    if (future.isEmpty) {
-      _lastCoachReason = 'J’ai réexaminé le planning restant : aucune séance future à ajuster cette semaine.';
-      return false;
-    }
+    if (future.isEmpty) return false;
 
     final orderedSessions = [...sessions]..sort((a, b) => b.date.compareTo(a.date));
     final latestSession = orderedSessions.isEmpty ? null : orderedSessions.first;
-    final latestProject = latestSession?.projectId == null
-        ? null
-        : projectById(latestSession!.projectId);
-    if (latestSession == null || latestProject == null) {
-      _lastCoachReason = 'J’ai réexaminé le planning restant, mais je ne peux pas relier la dernière séance à un morceau.';
-      return false;
-    }
+    bool changed = false;
 
-    DateTime? latestSessionFor(String projectId) {
-      DateTime? latest;
-      for (final s in sessions) {
-        if (s.projectId != projectId) continue;
-        if (latest == null || s.date.isAfter(latest!)) latest = s.date;
-      }
-      return latest;
-    }
-
-    String? lastFeelingFor(String projectId) {
-      Session? last;
-      for (final s in sessions) {
-        if (s.projectId != projectId) continue;
-        if (last == null || s.date.isAfter(last!.date)) last = s;
-      }
-      return last?.coachFeeling;
-    }
-
-    int recentMinutes7d(String projectId) {
-      final cutoff = now.subtract(const Duration(days: 7));
-      return sessions
-          .where((s) => s.projectId == projectId &&
-              !s.date.isBefore(cutoff) &&
-              !s.date.isAfter(now))
-          .fold(0, (a, s) => a + s.duration);
-    }
-
-    int recentCount7d(String projectId) {
-      final cutoff = now.subtract(const Duration(days: 7));
-      return sessions
-          .where((s) => s.projectId == projectId &&
-              !s.date.isBefore(cutoff) &&
-              !s.date.isAfter(now))
-          .length;
-    }
-
-    double plannedAdherence(String projectId) {
+    double factorForProject(String? projectId) {
+      if (projectId == null || projectId.isEmpty) return 1.0;
       final recent = sessions
-          .where((s) => s.projectId == projectId &&
-              s.plannedDuration != null &&
-              s.plannedDuration! > 0)
+          .where((s) => s.projectId == projectId && s.plannedDuration != null && s.plannedDuration! > 0)
           .toList()
         ..sort((a, b) => b.date.compareTo(a.date));
       if (recent.isEmpty) return 1.0;
       final selected = recent.take(4).toList();
-      return selected.fold<double>(0, (sum, s) =>
-              sum + s.duration / s.plannedDuration!) /
+      final adherence = selected.fold<double>(
+            0,
+            (sum, s) => sum + s.duration / s.plannedDuration!,
+          ) /
           selected.length;
+      final last = selected.first;
+      if (last.coachFeeling == 'difficile' || _recentDifficultSessions(projectId) >= 2) return .88;
+      if (last.duration <= last.plannedDuration! - 5 || adherence < .78) return .90;
+      if (last.coachFeeling == 'facile' && last.duration >= last.plannedDuration!) return 1.08;
+      if (last.duration >= last.plannedDuration! + 5 || adherence > 1.18) return 1.06;
+      return 1.0;
     }
 
-    int daysSinceLastPractice(Project p) {
-      final latest = latestSessionFor(p.id);
-      if (latest == null) return 999;
-      final lastDay = DateTime(latest.year, latest.month, latest.day);
-      return today.difference(lastDay).inDays;
-    }
+    bool applyAdjustment(PlanItem item, double factor, String reason) {
+      final adjusted = (item.duration * factor).round().clamp(10, 30).toInt();
+      if (adjusted == item.duration) return false;
 
-    // Un score de besoin global : plus il est haut, plus le morceau mérite une
-    // adaptation du planning restant. La priorité du morceau reste dominante,
-    // mais la charge récente et la variété peuvent faire émerger un autre morceau.
-    double needScore(Project p) {
-      final days = daysSinceLastPractice(p);
-      final minutes = recentMinutes7d(p.id);
-      final count = recentCount7d(p.id);
-      final feeling = lastFeelingFor(p.id);
-      final adherence = plannedAdherence(p.id);
-      var score = 0.0;
-
-      if (p.priority) score += 100;
-      if (days >= 999) {
-        score += 28;
-      } else {
-        score += math.min(days, 7) * 7.0;
-      }
-
-      if (minutes < 20) {
-        score += 24;
-      } else if (minutes < 40) {
-        score += 14;
-      } else if (minutes > 90) {
-        score -= 14;
-      }
-
-      if (count >= 3) score -= 20;
-      else if (count == 0) score += 12;
-
-      score += (1.0 - p.progress).clamp(0.0, 1.0) * 18.0;
-      score += (1.0 - p.weakestStageValue).clamp(0.0, 1.0) * 18.0;
-
-      if (feeling == 'difficile') score += 20;
-      if (feeling == 'facile') score += 4;
-      if (adherence < .78) score += 10;
-
-      // Après une séance, le coach évite naturellement de remonter aussitôt
-      // le même morceau, sauf s'il reste clairement prioritaire ou en difficulté.
-      if (p.id == latestProject.id &&
-          !p.priority &&
-          feeling != 'difficile') {
-        score -= 35;
-      }
-      return score;
-    }
-
-    String? nextFocus(Project p, Session s) {
-      final current = _focusFor(p);
-      if (s.runThroughCompleted == false) return p.weakestStageName;
-      if (s.coachFeeling == 'difficile' || _recentDifficultSessions(p.id) >= 2) {
-        if (current != 'Consolidation') return 'Consolidation';
-        return p.weakestStageName;
-      }
-      if (s.coachFeeling == 'facile') {
-        if (p.targetTempo > 0 && p.currentTempo < p.targetTempo) return 'Tempo';
-        const progression = [
-          'Déchiffrage',
-          'Mains ensemble',
-          'Mémorisation',
-          'Interprétation'
-        ];
-        final index = progression.indexOf(current);
-        if (index >= 0 && index < progression.length - 1) {
-          return progression[index + 1];
-        }
-        if (current != 'Interprétation') return 'Interprétation';
-      }
-      if (current != p.weakestStageName) return p.weakestStageName;
-      return null;
-    }
-
-    int? meaningfulDuration(int current, String focus, bool increase) {
-      const ladder = <int>[10, 20, 30, 40];
-      if (increase) {
-        final candidate = ladder.firstWhere(
-          (v) => v > current,
-          orElse: () => current,
-        );
-        if (candidate == current) return null;
-        final max = workFocusMaxMinutes(focus);
-        final bounded = math.min(candidate, max);
-        return bounded > current ? bounded : null;
-      }
-      final candidate = ladder.reversed.firstWhere(
-        (v) => v < current,
-        orElse: () => current,
-      );
-      final min = math.max(20, workFocusMinMinutes(focus));
-      return candidate < current && candidate >= min ? candidate : null;
-    }
-
-    bool applyDuration(PlanItem item, int newDuration, String reason) {
-      if (newDuration == item.duration) return false;
+      // Anti-oscillation : sur une même occurrence, le coach ne renverse pas
+      // immédiatement sa dernière décision. Il attend au moins 48 h et une
+      // nouvelle information réellement exploitable.
       final lastAt = item.coachAdjustedAt;
       final previous = item.coachPreviousDuration;
       if (lastAt != null && previous != null) {
-        final age = now.difference(lastAt);
+        final age = DateTime.now().difference(lastAt);
         final lastDirection = item.duration - previous;
-        final newDirection = newDuration - item.duration;
-        if (age < const Duration(hours: 48) &&
-            lastDirection * newDirection < 0) {
+        final newDirection = adjusted - item.duration;
+        if (age < const Duration(hours: 48) && lastDirection * newDirection < 0) {
           return false;
         }
       }
-      final old = item.duration;
-      item.duration = newDuration;
+
+      final oldDuration = item.duration;
+      item.duration = adjusted;
       item.coachAdjusted = true;
       item.coachAdjustmentSeen = false;
       item.coachAdjustmentReason = reason;
-      item.coachAdjustedAt = now;
-      item.coachPreviousDuration = old;
-      item.coachAdjustmentType = 'duration';
-      item.coachPreviousFocus = null;
-      item.coachNewFocus = null;
+      item.coachAdjustedAt = DateTime.now();
+      item.coachPreviousDuration = oldDuration;
       _lastCoachChangedItemId = item.id;
-      _lastCoachOldDuration = old;
-      _lastCoachNewDuration = newDuration;
+      _lastCoachOldDuration = oldDuration;
+      _lastCoachNewDuration = adjusted;
       _lastCoachReason = reason;
-      _lastCoachAdjustmentType = 'duration';
       return true;
     }
 
-    bool applyFocus(PlanItem item, Project p, String newFocus, String reason) {
-      final oldFocus = item.coachNewFocus ?? _focusFor(p);
-      if (newFocus.isEmpty || newFocus == oldFocus) return false;
-      item.coachAdjusted = true;
-      item.coachAdjustmentSeen = false;
-      item.coachAdjustmentReason = reason;
-      item.coachAdjustedAt = now;
-      item.coachAdjustmentType = 'focus';
-      item.coachPreviousFocus = oldFocus;
-      item.coachNewFocus = newFocus;
-      item.details =
-          '${item.details.split(' · 🎯 Focus coach :').first} · 🎯 Focus coach : $newFocus';
-      _lastCoachChangedItemId = item.id;
-      _lastCoachReason = reason;
-      _lastCoachAdjustmentType = 'focus';
-      _lastCoachOldFocus = oldFocus;
-      _lastCoachNewFocus = newFocus;
-      return true;
-    }
-
-    // Le morceau associé à chaque séance future est évalué, puis le coach choisit
-    // le besoin le plus pertinent dans le planning restant, pas seulement le morceau
-    // qui vient d'être joué.
-    final candidates = <MapEntry<PlanItem, Project>>[];
-    for (final item in future) {
-      final p = projectById(item.projectId);
-      if (p == null || p.effectiveStatus == 'Répertoire d’entretien') continue;
-      candidates.add(MapEntry(item, p));
-    }
-
-    if (candidates.isEmpty) {
-      _lastCoachReason =
-          'J’ai réexaminé le planning restant : aucune séance d’un morceau actif ne nécessite actuellement d’adaptation.';
-      return false;
-    }
-
-    candidates.sort((a, b) =>
-        needScore(b.value).compareTo(needScore(a.value)));
-
-    final selected = candidates.first;
-    final candidate = selected.key;
-    final candidateProject = selected.value;
-    final selectedScore = needScore(candidateProject);
-    final candidateFeeling = lastFeelingFor(candidateProject.id);
-    final candidateMinutes = recentMinutes7d(candidateProject.id);
-    final candidateDays = daysSinceLastPractice(candidateProject);
-    final candidateCount = recentCount7d(candidateProject.id);
-    final candidateAdherence = plannedAdherence(candidateProject.id);
-
-    // Aucun changement de façade si le besoin global est trop faible : le coach
-    // a bien analysé le planning, mais confirme que sa structure reste pertinente.
-    if (selectedScore < 48) {
-      _lastCoachReason = candidateDays >= 999
-          ? 'J’ai réexaminé ${future.length} séance(s) restante(s). Le planning reste inchangé : aucune adaptation suffisamment utile ne se dégage encore.'
-          : 'J’ai réexaminé ${future.length} séance(s) restante(s). ${candidateProject.name} reste le prochain besoin identifié, mais sa charge ($candidateMinutes min sur 7 jours) est encore compatible avec le planning.';
-      return false;
-    }
-
-    // 1) Une séance difficile/peu réalisée sur un morceau qui a encore un créneau
-    //    futur : vraie réduction par bloc ou, à défaut, changement de contenu.
-    if (candidateProject.id == latestProject.id &&
-        (latestSession.coachFeeling == 'difficile' ||
-            _recentDifficultSessions(candidateProject.id) >= 2 ||
-            candidateAdherence < .78)) {
-      final focus = _focusFor(candidateProject);
-      final newDuration =
-          meaningfulDuration(candidate.duration, focus, false);
-      if (newDuration != null) {
-        final reason = latestSession.coachFeeling == 'difficile'
-            ? 'La séance sur ${latestProject.name} a été ressentie comme difficile. J’ai réexaminé tout le planning et réduit la prochaine charge d’un bloc complet pour laisser davantage de place à la consolidation.'
-            : 'Les dernières séances sur ${latestProject.name} sont régulièrement réalisées sous le temps prévu. J’ai réexaminé le planning et réduit la prochaine charge d’un bloc plutôt que de conserver une durée trop ambitieuse.';
-        return applyDuration(candidate, newDuration, reason);
-      }
-      final focusChange = nextFocus(candidateProject, latestSession);
-      if (focusChange != null) {
-        return applyFocus(
-          candidate,
-          candidateProject,
-          focusChange,
-          'La durée de ${candidateProject.name} est déjà adaptée. J’ai réexaminé le planning et choisi de conserver le créneau tout en ciblant ${focusChange}, plus utile après la dernière séance.',
-        );
+    if (latestSession?.projectId != null) {
+      final projectId = latestSession!.projectId!;
+      final sameProject = future.where((x) => x.projectId == projectId).toList();
+      final factor = factorForProject(projectId);
+      if (factor != 1.0 && sameProject.isNotEmpty) {
+        final item = sameProject.first;
+        final reason = factor < 1
+            ? 'Après la dernière séance, le coach réduit la prochaine charge.'
+            : 'Après la dernière séance, le coach augmente légèrement la prochaine charge.';
+        changed = applyAdjustment(item, factor, reason);
       }
     }
 
-    // 2) Un morceau différent, peu travaillé ou prioritaire peut recevoir un vrai
-    //    bloc supplémentaire. Cela rend le moteur capable d'agir sur la variété,
-    //    au lieu de modifier artificiellement la séance qui vient d'être jouée.
-    if (candidateProject.id != latestProject.id &&
-        (candidateProject.priority ||
-            candidateDays >= 4 ||
-            candidateCount == 0) &&
-        candidateAdherence >= .90) {
-      final currentFocus = _focusFor(candidateProject);
-      final newDuration =
-          meaningfulDuration(candidate.duration, currentFocus, true);
-      if (newDuration != null) {
-        return applyDuration(
-          candidate,
-          newDuration,
-          '${latestProject.name} vient d’être travaillé. Après réexamen de toute la semaine, ${candidateProject.name} ressort comme un besoin plus important (priorité : ${candidateProject.priority ? 'oui' : 'non'}, $candidateMinutes min sur 7 jours, ${candidateDays >= 999 ? 'jamais travaillé' : '$candidateDays j depuis la dernière séance'}). J’ajoute donc un bloc complet plutôt que de réduire artificiellement une autre séance.',
-        );
-      }
-
-      final weakFocus = candidateProject.weakestStageName;
-      final currentPlannedFocus = candidate.coachNewFocus ?? _focusFor(candidateProject);
-      if (weakFocus != currentPlannedFocus) {
-        return applyFocus(
-          candidate,
-          candidateProject,
-          weakFocus,
-          '${latestProject.name} vient d’être travaillé. Après réexamen de toute la semaine, je conserve la durée de ${candidateProject.name} mais j’oriente son prochain créneau vers ${weakFocus}, qui reste le point le plus fragile.',
-        );
+    if (!changed) {
+      for (final item in future) {
+        if (item.projectId == null) continue;
+        final factor = factorForProject(item.projectId);
+        if (factor == 1.0) continue;
+        final reason = factor < 1
+            ? 'Le coach allège cette séance à partir des dernières données.'
+            : 'Le coach augmente légèrement cette séance à partir des dernières données.';
+        if (applyAdjustment(item, factor, reason)) {
+          changed = true;
+          break;
+        }
       }
     }
 
-    // 3) Une répétition trop forte sur un morceau non prioritaire justifie un
-    //    changement de contenu, sans diminuer de quelques minutes.
-    if (candidateCount >= 3 &&
-        !candidateProject.priority &&
-        candidateProject.id != latestProject.id) {
-      final focusChange = candidateProject.weakestStageName;
-      final currentFocus = candidate.coachNewFocus ?? _focusFor(candidateProject);
-      if (focusChange != currentFocus) {
-        return applyFocus(
-          candidate,
-          candidateProject,
-          focusChange,
-          'J’ai réexaminé la charge récente : ${candidateProject.name} a déjà reçu $candidateMinutes min en $candidateCount contacts cette semaine. Je conserve le créneau mais varie le travail vers ${focusChange} pour maintenir la diversité.',
-        );
+    if (!changed && latestSession?.projectId != null && latestSession?.coachFeeling == 'difficile') {
+      final projectId = latestSession!.projectId!;
+      final matching = future.where((x) => x.projectId == projectId).toList();
+      final item = matching.isNotEmpty ? matching.first : future.first;
+      final adjusted = math.max(10, item.duration - 5);
+      if (adjusted != item.duration) {
+        final previous = item.coachPreviousDuration;
+        final lastAt = item.coachAdjustedAt;
+        final reversing = previous != null && (item.duration - previous) * (adjusted - item.duration) < 0;
+        final recent = lastAt != null && DateTime.now().difference(lastAt) < const Duration(hours: 48);
+        if (!(reversing && recent)) {
+          final oldDuration = item.duration;
+          item.duration = adjusted;
+          item.coachAdjusted = true;
+          item.coachAdjustmentSeen = false;
+          item.coachAdjustmentReason = 'Le coach allège de 5 min après une séance ressentie comme difficile.';
+          item.coachAdjustedAt = DateTime.now();
+          item.coachPreviousDuration = oldDuration;
+          _lastCoachChangedItemId = item.id;
+          _lastCoachOldDuration = oldDuration;
+          _lastCoachNewDuration = adjusted;
+          _lastCoachReason = item.coachAdjustmentReason;
+          changed = true;
+        }
       }
     }
 
-    // 4) Même si aucune transformation n'est déclenchée, le coach laisse une trace
-    //    explicite de son réexamen global.
-    final names = candidates.take(3).map((e) => e.value.name).join(', ');
-    _lastCoachReason =
-        'J’ai réexaminé l’ensemble des ${future.length} séance(s) restantes. Les besoins les plus élevés sont actuellement : $names. Aucune modification suffisamment utile ne justifie de changer le planning à ce stade.';
-    return false;
+    return changed;
   }
 
   Future<void> _showPlanVsRealized(Session s) async {
@@ -3978,7 +3545,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   }
 
   /// Retour coach de fin de séance. Le choix reste volontairement très rapide :
-  /// 3 boutons ; la conséquence est ensuite intégrée directement au planning.
+  /// 3 boutons, puis une recommandation concrète pour la prochaine séance.
   bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   void _syncCompletedPlanItemsForSession(Session s) {
@@ -4107,10 +3674,49 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     session.coachRecommendation = recommendation(feeling);
     await _persist();
 
-    // V140 / V154 : il n'existe plus de deuxième programme à valider ici.
-    // Le coach expliquera sa décision et ajustera directement les séances futures
-    // dans _adaptRemainingWeekToReality(), puis la décision sera inscrite au journal.
-    // Le planning reste donc l'unique source d'action pour la prochaine séance.
+    final labels = {'facile': '😊 Facile', 'correct': '😐 Correct', 'difficile': '😓 Difficile'};
+    final nextMinutes = feeling == 'difficile' ? 15 : 20;
+    final nextPlan = PlanItem(
+      id: newId(),
+      date: DateTime.now().add(const Duration(days: 1)),
+      duration: nextMinutes,
+      title: '${p.name} · ${p.effectiveWorkFocus}',
+      details: 'Coach · ${p.effectiveWorkFocus} · $nextMinutes min${p.goal.trim().isNotEmpty ? ' · Objectif : ${p.goal.trim()}' : ''}',
+      projectId: p.id,
+      // Le focus détaillé reste dans les mots-clés / données coach.
+      // La catégorie doit toujours appartenir à la liste des catégories de séance valides.
+      category: objectiveCategories.contains(p.effectiveWorkFocus)
+          ? p.effectiveWorkFocus
+          : 'Répertoire',
+      method: p.method,
+      motsCles: ['Coach', 'Prochaine séance', p.effectiveWorkFocus],
+    );
+    final action = await showDialog<String>(
+      context: navKey.currentContext!,
+      builder: (c) => AlertDialog(
+        title: const Text('🎯 Prochaine fois'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(labels[feeling]!, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          const Text('Le coach te recommande :', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text(recommendation(feeling), style: const TextStyle(height: 1.35)),
+          const SizedBox(height: 12),
+          Text('Séance proposée : demain · $nextMinutes min · ${p.effectiveWorkFocus}', style: const TextStyle(fontWeight: FontWeight.w700)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, 'later'), child: const Text('Plus tard')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(c, 'schedule'),
+            icon: const Icon(Icons.event_available_outlined),
+            label: const Text('Programmer'),
+          ),
+        ],
+      ),
+    );
+    if (action == 'schedule') {
+      await _scheduleCoachSession(nextPlan);
+    }
   }
 
   /// Annule/supprime une session.
@@ -5999,25 +5605,6 @@ class CoachHome extends StatelessWidget {
     return 'Une séance ciblée sur ${_focusFor(p).toLowerCase()} est aujourd’hui le meilleur usage de ton temps.';
   }
 
-  int _recentPracticeMinutes({int days = 7}) {
-    final now = DateTime.now();
-    return sessions
-        .where((s) {
-          final age = now.difference(s.date);
-          return !age.isNegative && age <= Duration(days: days);
-        })
-        .fold<int>(0, (sum, s) => sum + s.duration);
-  }
-
-  int _recentFocusCount(String projectId, String focus, {int days = 7}) {
-    final now = DateTime.now();
-    return sessions.where((s) {
-      if (s.projectId != projectId || s.coachFocus != focus) return false;
-      final age = now.difference(s.date);
-      return !age.isNegative && age <= Duration(days: days);
-    }).length;
-  }
-
   int _coachScore(PlanItem item, Project? p, DateTime now) {
     if (p == null) return 10;
     var score = 0;
@@ -6037,19 +5624,6 @@ class CoachHome extends StatelessWidget {
     if (feeling == 'difficile') score += 18;
     if (feeling == 'facile') score += 5;
     if (_recentDifficultSessions(p.id) >= 2) score += 18;
-
-    // V139 : la charge réellement absorbée et la variété récente comptent
-    // davantage dans le classement, sans annuler la priorité du morceau.
-    final recentMinutes = _recentPracticeMinutes(days: 7);
-    if (weeklyTarget > 0) {
-      final loadRatio = recentMinutes / weeklyTarget;
-      if (loadRatio >= 1.15 && !p.priority) score -= 8;
-      if (loadRatio < .55 && p.priority) score += 4;
-    }
-    final focus = _focusFor(p);
-    final repeatedFocus = _recentFocusCount(p.id, focus, days: 4);
-    if (repeatedFocus >= 2) score -= 6;
-    if (repeatedFocus == 0) score += 3;
     return score;
   }
 
@@ -6334,7 +5908,6 @@ class CoachHome extends StatelessWidget {
               child: IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed: item.completed ? null : () => onTogglePlan(item),
-                disabledColor: Colors.green.shade600,
                 icon: Icon(item.completed ? Icons.check_circle : Icons.circle_outlined),
                 color: item.completed ? Colors.green : categoryColor(item.category),
               ),
@@ -8332,28 +7905,45 @@ class _ProjectCoachDashboard extends StatelessWidget {
                   Text('🧠 ${_durationAdjustmentHint()}', style: TextStyle(fontSize: 10.2, color: scheme.onSurfaceVariant, height: 1.25)),
                 ],
                 const SizedBox(height: 8),
-                if (scheduledCoachSessions.isNotEmpty)
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (scheduledCoachSessions.isEmpty)
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final chosen = await showDatePicker(
+                        context: context,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 30)),
+                        initialDate: DateTime.now(),
+                        helpText: 'Choisir le jour de la prochaine séance',
+                      );
+                      if (chosen == null) return;
+                      final item = PlanItem(
+                        id: newId(),
+                        date: DateTime(chosen.year, chosen.month, chosen.day, 12),
+                        duration: recommendedMinutes,
+                        title: project.name,
+                        details: '$coachAction · $recommendedMinutes min${recommendedTempo != null ? ' · $recommendedTempo BPM' : ''} · $coachWhy',
+                        projectId: project.id,
+                        category: 'Répertoire',
+                        method: project.method,
+                        motsCles: ['Coach', 'Prochaine séance', recommendedFocus],
+                      );
+                      await onScheduleCoachSession(item);
+                    },
+                    icon: const Icon(Icons.add_task, size: 17),
+                    label: const Text('Ajouter au planning'),
+                  )
+                else ...[
+                  Row(children: [
                     Icon(Icons.check_circle, size: 18, color: scheme.primary),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Présente dans le planning — ${scheduledCoachSessions.first.date.day}/${scheduledCoachSessions.first.date.month} · ${scheduledCoachSessions.first.duration} min. Le coach ajuste directement le planning à partir de tes séances.',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.primary, height: 1.3),
+                        'Séance programmée — ${scheduledCoachSessions.first.date.day}/${scheduledCoachSessions.first.date.month} · ${scheduledCoachSessions.first.duration} min',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: scheme.primary),
                       ),
                     ),
-                  ])
-                else
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Icon(Icons.sync_alt_outlined, size: 18, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Le coach ne crée pas une deuxième séance ici : ses ajustements apparaissent directement dans le planning.',
-                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.3),
-                      ),
-                    ),
-                  ])
+                  ]),
+                ]
               ])),
             ]),
           ),
@@ -10673,7 +10263,7 @@ class ProgressDashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext c) {
-    final active = projects.toList();
+    final active = projects.where((p) => p.effectiveStatus != 'Répertoire d’entretien').toList();
     final avgProgress = projects.isEmpty
         ? 0.0
         : projects.fold<double>(0, (sum, p) => sum + p.progress) / projects.length;
@@ -10778,57 +10368,6 @@ class ProgressDashboardScreen extends StatelessWidget {
                   ])),
               ]);
             }),
-          ])),
-          const SizedBox(height: 16),
-          CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _sectionHeader(c, Icons.workspace_premium_outlined, 'Maîtrise des morceaux', subtitle: 'Progression + tempo + Run-through lorsqu’il est disponible.'),
-            const SizedBox(height: 12),
-            if (active.isEmpty)
-              Text('Aucun morceau actif à évaluer.', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))
-            else
-              ...([
-                for (final p in active)
-                  MapEntry<Project, double>(p, pieceMasteryScore(p, sessions.where((s) => s.projectId == p.id).toList())),
-              ]..sort((a, b) => a.value.compareTo(b.value)))
-                  .take(compact ? 4 : 6)
-                  .map((entry) {
-                    final p = entry.key;
-                    final score = entry.value;
-                    final tempoRatio = p.targetTempo > 0 && p.currentTempo > 0
-                        ? (p.currentTempo / p.targetTempo).clamp(0.0, 1.0)
-                        : null;
-                    final runs = sessions.where((s) => s.projectId == p.id && s.type == 'Run-through').toList();
-                    final completedRuns = runs.where((s) => s.runThroughCompleted == true).length;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 11),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => onOpenProject(p),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(children: [
-                              Text(p.emoji),
-                              const SizedBox(width: 7),
-                              Expanded(child: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w800))),
-                              Text('${score.round()} %', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
-                              const SizedBox(width: 4),
-                              Icon(Icons.chevron_right, size: 16, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                            ]),
-                            const SizedBox(height: 5),
-                            ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: (score / 100).clamp(0.0, 1.0), minHeight: 7)),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${masteryLabel(score)} · étapes ${(p.progress * 100).round()} %'
-                              '${tempoRatio != null ? ' · tempo ${(tempoRatio * 100).round()} %' : ''}'
-                              '${completedRuns > 0 ? ' · $completedRuns Run-through terminé${completedRuns > 1 ? 's' : ''}' : ''}',
-                              style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
-                            ),
-                          ]),
-                        ),
-                      ),
-                    );
-                  }),
           ])),
           const SizedBox(height: 16),
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
