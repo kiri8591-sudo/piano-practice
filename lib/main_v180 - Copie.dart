@@ -6,8 +6,7 @@
 // V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
 // V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
 // V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
-// V181 — contraste visuel léger des blocs/cards sur mobile, notamment Sessions, sans modifier la structure fonctionnelle.
-// V180.1 — Correction compilation : fermeture des dialogues mobiles + compatibilite InputDecorationTheme Flutter.
+// V180 — Fiches iPhone : édition des morceaux/sessions/planning plus proches d'une vraie interface mobile, sans changement fonctionnel.
 // V179 — Refonte mobile visible : accueil recentré, surfaces iPhone plus plates et navigation tactile allégée.
 // V177 — Look & feel iPhone : Morceaux et Sessions allégés, actions secondaires regroupées, contenu plus lisible.
 // V166 — conservation des sélections Filtrer / Trier de « Maîtrise des morceaux ».
@@ -36,7 +35,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '181.0';
+const String appVersion = '180.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -58,7 +57,7 @@ String _formatProjectDateTime(DateTime value) {
 
 bool _isPhoneLayout(BuildContext context) => MediaQuery.sizeOf(context).width < 600;
 
-InputDecorationThemeData _mobileFriendlyDialogInputs(BuildContext context) {
+InputDecorationTheme _mobileFriendlyDialogInputs(BuildContext context) {
   final base = Theme.of(context).inputDecorationTheme;
   final scheme = Theme.of(context).colorScheme;
   if (!_isPhoneLayout(context)) {
@@ -5184,7 +5183,7 @@ class CardBox extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: phone ? scheme.surfaceContainer : scheme.surface,
+        color: phone ? scheme.surfaceContainerLow : scheme.surface,
         borderRadius: BorderRadius.circular(cardRadius),
         border: phone ? null : Border.all(color: scheme.outlineVariant.withOpacity(.38)),
       ),
@@ -12512,23 +12511,8 @@ class _RoutineDialogState extends State<RoutineDialog> {
   @override
   Widget build(BuildContext c) {
     final editing = widget.existing != null;
-    final media = MediaQuery.of(c);
-    final phone = _isPhoneLayout(c);
-    final maxWidth = phone ? media.size.width - 16 : math.min(media.size.width - 32, 640.0);
-    final maxHeight = phone ? math.min(media.size.height * .90, 760.0) : math.min(media.size.height * .82, 680.0);
-    final flatTheme = Theme.of(c).copyWith(
-      inputDecorationTheme: _mobileFriendlyDialogInputs(c),
-    );
-    return Theme(
-      data: flatTheme,
-      child: AlertDialog(
-        insetPadding: EdgeInsets.symmetric(horizontal: phone ? 8 : 16, vertical: phone ? 10 : 20),
-        titlePadding: EdgeInsets.fromLTRB(phone ? 18 : 24, phone ? 16 : 22, phone ? 18 : 24, 8),
-        contentPadding: EdgeInsets.fromLTRB(phone ? 18 : 24, 8, phone ? 18 : 24, 8),
-        actionsPadding: EdgeInsets.fromLTRB(phone ? 12 : 18, 4, phone ? 12 : 18, phone ? 10 : 14),
-        actionsOverflowDirection: VerticalDirection.down,
-        actionsOverflowButtonSpacing: 8,
-        title: Text(editing ? 'Modifier l\'entrée' : 'Nouvelle entrée de routine'),
+    return AlertDialog(
+      title: Text(editing ? 'Modifier l\'entrée' : 'Nouvelle entrée de routine'),
       content: SizedBox(
         width: maxWidth,
         height: maxHeight,
@@ -12634,7 +12618,6 @@ class _RoutineDialogState extends State<RoutineDialog> {
           ],
         ),
       ),
-      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
         FilledButton(
@@ -12655,8 +12638,7 @@ class _RoutineDialogState extends State<RoutineDialog> {
                   ),
           child: const Text('Enregistrer'),
         ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -12793,7 +12775,6 @@ class _PlanDialogState extends State<PlanDialog> {
             ),
           ],
         ),
-      ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),

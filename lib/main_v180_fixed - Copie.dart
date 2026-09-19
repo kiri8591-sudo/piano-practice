@@ -6,7 +6,6 @@
 // V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
 // V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
 // V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
-// V181 — contraste visuel léger des blocs/cards sur mobile, notamment Sessions, sans modifier la structure fonctionnelle.
 // V180.1 — Correction compilation : fermeture des dialogues mobiles + compatibilite InputDecorationTheme Flutter.
 // V179 — Refonte mobile visible : accueil recentré, surfaces iPhone plus plates et navigation tactile allégée.
 // V177 — Look & feel iPhone : Morceaux et Sessions allégés, actions secondaires regroupées, contenu plus lisible.
@@ -36,7 +35,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '181.0';
+const String appVersion = '180.1';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -5184,7 +5183,7 @@ class CardBox extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: phone ? scheme.surfaceContainer : scheme.surface,
+        color: phone ? scheme.surfaceContainerLow : scheme.surface,
         borderRadius: BorderRadius.circular(cardRadius),
         border: phone ? null : Border.all(color: scheme.outlineVariant.withOpacity(.38)),
       ),
