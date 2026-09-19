@@ -6,7 +6,7 @@
 // V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
 // V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
 // V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
-// V179 — Refonte mobile visible : accueil recentré, surfaces iPhone plus plates et navigation tactile allégée.
+// V178 — Look & feel iPhone : planning hebdomadaire simplifié, actions regroupées et séances plus compactes sur mobile.
 // V177 — Look & feel iPhone : Morceaux et Sessions allégés, actions secondaires regroupées, contenu plus lisible.
 // V166 — conservation des sélections Filtrer / Trier de « Maîtrise des morceaux ».
 // V162 — prévu → réalisé : détail par séance + synthèse hebdomadaire fiable sur les séances échues.
@@ -34,7 +34,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '179.0';
+const String appVersion = '178.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -5033,13 +5033,13 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           ),
         ),
         navigationBarTheme: NavigationBarThemeData(
-          height: 68,
+          height: 76,
           elevation: 0,
           backgroundColor: const Color(0xFFF9FAFD),
-          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           indicatorColor: const Color(0xFFE6E2FF),
-          labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
+          labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
         ),
       ),
       darkTheme: ThemeData(
@@ -5097,34 +5097,28 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           ),
         ),
         navigationBarTheme: NavigationBarThemeData(
-          height: 68,
+          height: 76,
           elevation: 0,
           backgroundColor: const Color(0xFF17171C),
-          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           indicatorColor: const Color(0xFF3E3966),
-          labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
+          labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
         ),
       ),
       themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
       home: Scaffold(
         body: SafeArea(child: pages[tab]),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            color: darkMode ? const Color(0xFF17171C) : const Color(0xFFF9FAFD),
-            border: Border(top: BorderSide(color: darkMode ? Colors.white12 : const Color(0x14000000))),
-          ),
-          child: NavigationBar(
-            selectedIndex: tab,
-            onDestinationSelected: (i) => setState(() => tab = i),
-            destinations: const [
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: tab,
+          onDestinationSelected: (i) => setState(() => tab = i),
+          destinations: const [
             NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Accueil'),
             NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Sessions'),
             NavigationDestination(icon: Icon(Icons.folder_outlined), selectedIcon: Icon(Icons.folder), label: 'Morceaux'),
             NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Planning'),
             NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Méthodes'),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -5145,16 +5139,16 @@ class CardBox extends StatelessWidget {
     final scheme = Theme.of(c).colorScheme;
     final phone = MediaQuery.sizeOf(c).width < 600;
     final compactPhone = MediaQuery.sizeOf(c).width < 430;
-    final cardRadius = compactPhone ? 14.0 : (phone ? 16.0 : 20.0);
+    final cardRadius = compactPhone ? 16.0 : (phone ? 18.0 : 20.0);
     final basePadding = padding == const EdgeInsets.all(18)
-        ? EdgeInsets.all(compactPhone ? 13 : (phone ? 15 : 18))
+        ? EdgeInsets.all(compactPhone ? 14 : (phone ? 16 : 18))
         : padding;
 
     return Container(
       decoration: BoxDecoration(
-        color: phone ? scheme.surfaceContainerLow : scheme.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(cardRadius),
-        border: phone ? null : Border.all(color: scheme.outlineVariant.withOpacity(.38)),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(phone ? .30 : .38)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -6686,166 +6680,6 @@ class CoachHome extends StatelessWidget {
     return '🌙 Fais simple ce soir : un objectif précis, puis arrête-toi sur une bonne sensation.';
   }
 
-  Widget _buildPhoneHome(BuildContext c, {required DateTime now, required List<PlanItem> todayItems, required List<PlanItem> pending, required PlanItem? next, required Project? nextProject, required int todayTarget, required int todayDone, required double todayRatio, required double weeklyRatio, required List<_CoachPieceCandidate> coachPieces, required int badgeCount}) {
-    final scheme = Theme.of(c).colorScheme;
-    final completedCount = todayItems.where((x) => x.completed).length;
-    final todayRemaining = pending.fold(0, (a, x) => a + x.duration);
-    final nextFocus = nextProject == null ? null : _focusFor(nextProject);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-      children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_greeting(now, streak), style: Theme.of(c).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -.3)),
-            const SizedBox(height: 3),
-            Text(_formatDateTimeFr(now), style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
-          ])),
-          IconButton.filledTonal(onPressed: () => _showSettings(c), icon: const Icon(Icons.settings_outlined), tooltip: 'Réglages'),
-        ]),
-        const SizedBox(height: 6),
-        Row(children: [
-          Icon(Icons.local_fire_department_outlined, size: 15, color: scheme.primary),
-          const SizedBox(width: 5),
-          Text('$streak jour${streak > 1 ? 's' : ''} de pratique', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
-          const Spacer(),
-          Text('V$appVersion', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
-        ]),
-        const SizedBox(height: 16),
-
-        // Mission dominante : une seule action principale.
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [scheme.primaryContainer, scheme.primaryContainer.withOpacity(.62)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(width: 38, height: 38, alignment: Alignment.center, decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.10), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.auto_awesome_rounded, color: scheme.onPrimaryContainer, size: 20)),
-              const SizedBox(width: 10),
-              Expanded(child: Text('MISSION DU JOUR', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: scheme.onPrimaryContainer))),
-              if (todayItems.isNotEmpty) Text('$completedCount/${todayItems.length}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer)),
-            ]),
-            const SizedBox(height: 14),
-            if (next != null) ...[
-              Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer, height: 1.08)),
-              if (nextProject != null) ...[
-                const SizedBox(height: 5),
-                Text('${nextProject!.emoji} ${nextProject!.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onPrimaryContainer.withOpacity(.84))),
-              ],
-              if (next.details.trim().isNotEmpty) ...[
-                const SizedBox(height: 7),
-                Text(next.details, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, height: 1.3, color: scheme.onPrimaryContainer.withOpacity(.80))),
-              ],
-              const SizedBox(height: 11),
-              Wrap(spacing: 7, runSpacing: 6, children: [
-                Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 14, color: scheme.onPrimaryContainer), const SizedBox(width: 5), Text('${next.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))])),
-                if (nextFocus != null) Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Text('${workFocusEmoji(nextFocus)} $nextFocus', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))),
-              ]),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: scheme.onPrimaryContainer, foregroundColor: scheme.primaryContainer, minimumSize: const Size.fromHeight(48)), onPressed: () => onStart(next), icon: const Icon(Icons.play_arrow_rounded), label: const Text('Commencer'))),
-            ] else if (todayItems.isEmpty) ...[
-              Text('Aucune séance prévue', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer)),
-              const SizedBox(height: 5),
-              Text(_coachMessage(now, null), style: TextStyle(fontSize: 13, height: 1.3, color: scheme.onPrimaryContainer.withOpacity(.82))),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: scheme.onPrimaryContainer, foregroundColor: scheme.primaryContainer, minimumSize: const Size.fromHeight(48)), onPressed: onStart, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Session libre'))),
-            ] else ...[
-              Text('Programme terminé 🎉', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer)),
-              const SizedBox(height: 5),
-              Text('Tu peux t’arrêter ici ou faire quelques minutes en session libre.', style: TextStyle(fontSize: 13, height: 1.3, color: scheme.onPrimaryContainer.withOpacity(.82))),
-            ],
-          ]),
-        ),
-
-        const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: Text('Aujourd’hui', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
-          Text(todayRemaining > 0 ? '$todayRemaining min restantes' : '${todayDone} min réalisées', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
-        ]),
-        const SizedBox(height: 7),
-        Container(
-          decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: BorderRadius.circular(18)),
-          child: Column(children: [
-            ...todayItems.take(5).map((item) => Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              child: Row(children: [
-                IconButton(onPressed: () => onTogglePlan(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: Icon(item.completed ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded), color: item.completed ? Colors.green.shade600 : categoryColor(item.category), tooltip: item.completed ? 'Décocher' : 'Marquer comme fait'),
-                const SizedBox(width: 6),
-                Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => onTogglePlan(item), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
-                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-                ]))),
-                const SizedBox(width: 8),
-                Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
-                if (!item.completed) IconButton(onPressed: () => onStart(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: const Icon(Icons.play_circle_outline_rounded), tooltip: 'Démarrer'),
-              ]),
-            )),
-            if (todayItems.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('Aucune activité prévue.')),
-          ]),
-        ),
-
-        const SizedBox(height: 15),
-        Row(children: [
-          Expanded(child: Text('Le regard du coach', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
-          if (latestCoachDecision != null) TextButton(onPressed: onOpenCoachLog, child: const Text('Journal')),
-        ]),
-        const SizedBox(height: 7),
-        CardBox(padding: const EdgeInsets.all(14), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(width: 34, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(11)), child: Icon(Icons.psychology_outlined, size: 18, color: scheme.onPrimaryContainer)),
-          const SizedBox(width: 10),
-          Expanded(child: latestCoachDecision == null
-              ? Text('Après ta prochaine séance, le coach analysera ce qui a changé et ajustera les créneaux suivants si nécessaire.', style: TextStyle(fontSize: 12.5, height: 1.35, color: scheme.onSurfaceVariant))
-              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(latestCoachDecision!.message, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
-                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${latestCoachDecision!.reason}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, height: 1.3, color: scheme.onSurfaceVariant))],
-                ])),
-        ])),
-
-        const SizedBox(height: 15),
-        Row(children: [
-          Expanded(child: _stat(c, Icons.today_outlined, 'Aujourd’hui', '$todayDone / $todayTarget min', todayRatio)),
-          const SizedBox(width: 9),
-          Expanded(child: _stat(c, Icons.calendar_month_outlined, 'Semaine', '$minutes / $weeklyTarget min', weeklyRatio)),
-        ]),
-
-        if (coachPieces.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Row(children: [Expanded(child: Text('À faire avancer', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))), Text('Top ${coachPieces.length}', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700))]),
-          const SizedBox(height: 7),
-          ...coachPieces.take(3).map((item) => Padding(padding: const EdgeInsets.only(bottom: 7), child: CardBox(padding: const EdgeInsets.fromLTRB(12, 11, 12, 11), child: Row(children: [
-            Text(item.project.emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 9),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.project.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              progress(item.project.progress),
-              const SizedBox(height: 3),
-              Text('${(item.project.progress * 100).round()} % · ${_focusFor(item.project)}', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
-            ])),
-          ])))),
-        ],
-
-        const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _action('Bilan', Icons.insights_outlined, onOpenBilan)),
-          const SizedBox(width: 7),
-          Expanded(child: _action('Planning', Icons.calendar_month_outlined, onQuickPlan)),
-        ]),
-        const SizedBox(height: 7),
-        Row(children: [
-          Expanded(child: _action('Progression', Icons.trending_up_outlined, onOpenProgress)),
-          const SizedBox(width: 7),
-          Expanded(child: _action('Badges $badgeCount/${badges.length}', Icons.emoji_events_outlined, onOpenBadges)),
-        ]),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext c) {
     final now = this.now;
@@ -6867,22 +6701,6 @@ class CoachHome extends StatelessWidget {
 
     final phone = MediaQuery.sizeOf(c).width < 600;
     final horizontal = phone ? 16.0 : 20.0;
-    if (phone) {
-      return _buildPhoneHome(
-        c,
-        now: now,
-        todayItems: todayItems,
-        pending: pending,
-        next: next,
-        nextProject: nextProject,
-        todayTarget: todayTarget,
-        todayDone: todayDone,
-        todayRatio: todayRatio,
-        weeklyRatio: weeklyRatio,
-        coachPieces: coachPieces,
-        badgeCount: badgeCount,
-      );
-    }
     return ListView(padding: EdgeInsets.fromLTRB(horizontal, 14, horizontal, 28), children: [
       Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -7128,7 +6946,7 @@ class CoachHome extends StatelessWidget {
   }
 
   Widget _stat(BuildContext c, IconData icon, String label, String value, double ratio) => CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary), const SizedBox(width: 7), Text(label, style: const TextStyle(fontWeight: FontWeight.w700))]), const SizedBox(height: 8), Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)), const SizedBox(height: 7), progress(ratio)]));
-  Widget _action(String label, IconData icon, VoidCallback action) => FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)), onPressed: action, icon: Icon(icon, size: 17), label: Text(label, overflow: TextOverflow.ellipsis));
+  Widget _action(String label, IconData icon, VoidCallback action) => FilledButton.tonalIcon(onPressed: action, icon: Icon(icon, size: 17), label: Text(label, overflow: TextOverflow.ellipsis));
 
   void _showSettings(BuildContext c) {
     showDialog<void>(context: c, builder: (dc) => SimpleDialog(title: const Text('Réglages'), children: [
@@ -8260,7 +8078,7 @@ class _ProjectsState extends State<Projects> {
                               Row(children: [
                                 Expanded(child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: LinearProgressIndicator(value: p.progress, minHeight: phone ? 6 : 8),
+                                  child: LinearProgressIndicator(value: p.progress, minHeight: phone ? 7 : 8),
                                 )),
                                 const SizedBox(width: 10),
                                 Text('${(p.progress * 100).round()} %', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
@@ -8317,11 +8135,11 @@ class _ProjectsState extends State<Projects> {
 Widget _mobileFilterButton(BuildContext c, IconData icon, String label, {bool active = false}) {
   final scheme = Theme.of(c).colorScheme;
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
     decoration: BoxDecoration(
       color: active ? scheme.primaryContainer.withOpacity(.70) : scheme.surfaceContainerHighest.withOpacity(.52),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: active ? scheme.primary.withOpacity(.18) : scheme.outlineVariant.withOpacity(.22)),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: active ? scheme.primary.withOpacity(.22) : scheme.outlineVariant.withOpacity(.34)),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, size: 15, color: active ? scheme.primary : scheme.onSurfaceVariant),
@@ -8347,8 +8165,8 @@ Widget _countPill(BuildContext c, String value) {
 Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
   final scheme = Theme.of(c).colorScheme;
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-    decoration: BoxDecoration(color: scheme.surfaceContainerHighest.withOpacity(.58), borderRadius: BorderRadius.circular(16)),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: BoxDecoration(color: scheme.surfaceContainerHighest.withOpacity(.48), borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, size: 13, color: scheme.onSurfaceVariant),
       const SizedBox(width: 4),
@@ -10466,9 +10284,8 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                     _statTile(
                       c,
                       icon: Icons.timer_outlined,
-                      label: 'Temps réellement joué',
+                      label: 'Pratiqué cette semaine',
                       value: '${widget.minutes ~/ 60}h${(widget.minutes % 60).toString().padLeft(2, '0')} / ${widget.weeklyTarget ~/ 60}h${(widget.weeklyTarget % 60).toString().padLeft(2, '0')}',
-                      sub: phone ? 'Cette semaine' : null,
                     ),
                     const SizedBox(height: 10),
                     Text(
