@@ -33,7 +33,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '177.1';
+const String appVersion = '177.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -7356,7 +7356,7 @@ class _SessionsState extends State<Sessions> {
                 const SizedBox(height: 4),
                 Text(_wd(d.weekday), style: const TextStyle(fontSize: 9.5)),
               ])));
-            }))),
+            })),
           ])),
           const SizedBox(height: 8),
         ],
