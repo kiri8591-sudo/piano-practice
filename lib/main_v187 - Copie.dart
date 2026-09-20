@@ -6,7 +6,6 @@
 // V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
 // V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
 // V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
-// V188 — Planning iPhone : densité et lecture quotidienne affinées.
 // V187 — Contours des fiches iPhone légèrement renforcés pour mieux séparer les items, sans alourdir les surfaces.
 // V184 — Finition iPhone : en-têtes plus compacts et transitions iOS plus naturelles.
 // V183 — ergonomie iPhone : navigation et zones tactiles harmonisées, avec une barre basse plus lisible sans changer la navigation fonctionnelle.
@@ -41,7 +40,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '188.0';
+const String appVersion = '187.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -10441,24 +10440,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _phoneMetaPill(BuildContext c, IconData icon, String label, {bool muted = false}) {
-    final scheme = Theme.of(c).colorScheme;
-    final color = muted ? scheme.onSurfaceVariant : scheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.07),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: color.withOpacity(.14)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color)),
-      ]),
-    );
-  }
-
   Widget _plannedVsRealized(BuildContext c, PlanItem item) {
     final planned = item.plannedDuration > 0 ? item.plannedDuration : item.duration;
     final source = _sourceSession(item);
@@ -10708,7 +10689,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           DateTime(entry.key.year, entry.key.month, entry.key.day),
                           () => GlobalKey(),
                         ),
-                        padding: EdgeInsets.only(top: phone ? 8 : 11, bottom: phone ? 6 : 8),
+                        padding: const EdgeInsets.only(top: 11, bottom: 8),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                           Expanded(
                             child: Row(children: [
@@ -10716,7 +10697,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                 child: Text(
                                   '${weekday(entry.key.weekday)} ${entry.key.day}/${entry.key.month}',
                                   style: TextStyle(
-                                    fontSize: _isToday(entry.key) ? (phone ? 16.5 : 18) : (phone ? 14.5 : 15.5),
+                                    fontSize: _isToday(entry.key) ? 18 : 15.5,
                                     height: 1.05,
                                     letterSpacing: _isToday(entry.key) ? .15 : 0,
                                     fontWeight: FontWeight.w900,
@@ -10724,7 +10705,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 8),
                               if (_dayHasUnseenCoachAdjustment(entry.value)) ...[
                                 Semantics(
                                   label: 'Modification du coach non consultée',
@@ -10770,7 +10751,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Container(
                             width: double.infinity,
-                            padding: EdgeInsets.symmetric(horizontal: phone ? 11 : 14, vertical: phone ? 10 : 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
                               color: _isToday(entry.key)
                                   ? Theme.of(c).colorScheme.primary.withOpacity(.055)
@@ -10789,7 +10770,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                     : _isCoachRestDay(entry.key)
                                         ? Icons.hotel_outlined
                                         : Icons.event_available_outlined,
-                                size: phone ? 18 : 20,
+                                size: 20,
                                 color: widget.dailyCapacity[entry.key.weekday - 1] <= 0
                                     ? Colors.grey
                                     : Theme.of(c).colorScheme.primary,
@@ -10812,7 +10793,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           ),
                         ),
                       ...entry.value.map((x) => Padding(
-                            padding: EdgeInsets.only(bottom: phone ? 7 : 10),
+                            padding: const EdgeInsets.only(bottom: 10),
                             child: swipeToDelete(
                               key: ValueKey(x.id),
                               what: 'cette séance',
@@ -10841,12 +10822,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                         borderRadius: BorderRadius.circular(12),
                                         onTap: () => widget.onEdit(x),
                                         child: Padding(
-                                          padding: EdgeInsets.symmetric(vertical: phone ? 4 : 6),
+                                          padding: const EdgeInsets.symmetric(vertical: 6),
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Container(
-                                                padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 9, vertical: phone ? 3 : 4),
+                                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                                                 decoration: BoxDecoration(
                                                   borderRadius: BorderRadius.circular(20),
                                                   color: (x.completed ? Colors.grey : categoryColor(x.category)).withOpacity(.14),
@@ -10855,7 +10836,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                   Icon(categoryIcon(x.category), size: 13, color: x.completed ? Colors.grey : categoryColor(x.category)),
                                                   const SizedBox(width: 4),
                                                   Text(x.category ?? 'Non catégorisé', style: TextStyle(
-                                                    fontSize: phone ? 10.5 : 11.5,
+                                                    fontSize: 11.5,
                                                     fontWeight: FontWeight.w700,
                                                     color: x.completed ? Colors.grey : categoryColor(x.category),
                                                     decoration: x.completed ? TextDecoration.lineThrough : null,
@@ -10879,31 +10860,27 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                               _coachAdjustmentLabel(c, x),
                                               if (x.duration > 0 || x.method != null) ...[
                                                 const SizedBox(height: 6),
-                                                Wrap(spacing: 6, runSpacing: 5, children: [
+                                                Wrap(spacing: 6, runSpacing: 6, children: [
                                                   if (x.duration > 0)
-                                                    phone
-                                                        ? _phoneMetaPill(c, Icons.timer_outlined, '${x.duration} min', muted: x.completed)
-                                                        : Chip(
-                                                            visualDensity: VisualDensity.compact,
-                                                            avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
-                                                            label: Text('${x.duration} min', style: TextStyle(
-                                                              fontSize: 11,
-                                                              color: x.completed ? Colors.grey : null,
-                                                              decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                            )),
-                                                          ),
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text('${x.duration} min', style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
                                                   if (x.method != null)
-                                                    phone
-                                                        ? _phoneMetaPill(c, Icons.smartphone, x.method!, muted: x.completed)
-                                                        : Chip(
-                                                            visualDensity: VisualDensity.compact,
-                                                            avatar: Icon(Icons.smartphone, size: 14, color: x.completed ? Colors.grey : null),
-                                                            label: Text(x.method!, style: TextStyle(
-                                                              fontSize: 11,
-                                                              color: x.completed ? Colors.grey : null,
-                                                              decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                            )),
-                                                          ),
+                                                    Chip(
+                                                      visualDensity: VisualDensity.compact,
+                                                      avatar: Icon(Icons.smartphone, size: 14, color: x.completed ? Colors.grey : null),
+                                                      label: Text(x.method!, style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: x.completed ? Colors.grey : null,
+                                                        decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                      )),
+                                                    ),
                                                 ]),
                                               ],
                                               _plannedVsRealized(c, x),
