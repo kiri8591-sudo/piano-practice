@@ -1,4 +1,4 @@
-// V199 — Planning : ordre circulaire décroissant autour d'aujourd'hui (aujourd'hui → jours précédents → jours suivants en dernier).
+// V198 — Planning : le jour courant est toujours affiché en première position. Le bouton Aujourd'hui réinitialise simplement les filtres.
 // V197 — Planning tournant : l'ordre visuel tourne avec les jours écoulés, sans modifier les dates ni les données.
 // V175 — Coach : une stagnation détectée peut maintenant modifier réellement le focus du prochain créneau, tout en respectant un focus manuel.
 // V176 — Refonte visuelle globale : surfaces plus plates, hiérarchie mobile et accueil allégé pour iPhone.
@@ -46,7 +46,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '199.0';
+const String appVersion = '198.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -10484,9 +10484,8 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   late final AnimationController _coachPulseController;
   final ScrollController _weekScrollController = ScrollController();
   /// La semaine reste datée de lundi à dimanche dans les données, mais son affichage
-  /// tourne autour du jour courant dans un ordre décroissant : aujourd'hui, puis les
-  /// jours précédents, puis les jours suivants en dernier. Ainsi le dimanche affiche
-  /// dimanche → samedi → vendredi → ... → lundi.
+  /// tourne chaque jour pour présenter le jour courant en premier. Ainsi :
+  /// lundi → mardi → ... → dimanche, puis mardi → ... → dimanche → lundi, etc.
   List<MapEntry<DateTime, List<PlanItem>>> _rotateWeekEntriesToToday(
     List<MapEntry<DateTime, List<PlanItem>>> entries,
   ) {
@@ -10495,13 +10494,10 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final today = DateTime(now.year, now.month, now.day);
     final index = entries.indexWhere((e) =>
         e.key.year == today.year && e.key.month == today.month && e.key.day == today.day);
-    if (index < 0) return entries;
-    final previous = entries.sublist(0, index).reversed;
-    final following = entries.sublist(index + 1).reversed;
+    if (index <= 0) return entries;
     return [
-      entries[index],
-      ...previous,
-      ...following,
+      ...entries.sublist(index),
+      ...entries.sublist(0, index),
     ];
   }
 

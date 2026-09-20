@@ -1,5 +1,3 @@
-// V199 — Planning : ordre circulaire décroissant autour d'aujourd'hui (aujourd'hui → jours précédents → jours suivants en dernier).
-// V197 — Planning tournant : l'ordre visuel tourne avec les jours écoulés, sans modifier les dates ni les données.
 // V175 — Coach : une stagnation détectée peut maintenant modifier réellement le focus du prochain créneau, tout en respectant un focus manuel.
 // V176 — Refonte visuelle globale : surfaces plus plates, hiérarchie mobile et accueil allégé pour iPhone.
 // V175 — Coach : stagnation fiabilisée, avec comparaison uniquement sur les données de progression réellement renseignées et distinction avec une régression.
@@ -42,11 +40,12 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '199.0';
+const String appVersion = '196.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -10429,7 +10428,6 @@ class _ProjectDialogState extends State<ProjectDialog> {
 // Semaine / planning
 // ---------------------------------------------------------------------------
 
-// V197 — l'ordre visuel du planning tourne avec les jours écoulés, sans modifier les dates ni les données.
 class Week extends StatefulWidget {
   const Week({
     super.key,
@@ -10483,41 +10481,60 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   DateTime? filtreDate;
   late final AnimationController _coachPulseController;
   final ScrollController _weekScrollController = ScrollController();
-  /// La semaine reste datée de lundi à dimanche dans les données, mais son affichage
-  /// tourne autour du jour courant dans un ordre décroissant : aujourd'hui, puis les
-  /// jours précédents, puis les jours suivants en dernier. Ainsi le dimanche affiche
-  /// dimanche → samedi → vendredi → ... → lundi.
-  List<MapEntry<DateTime, List<PlanItem>>> _rotateWeekEntriesToToday(
-    List<MapEntry<DateTime, List<PlanItem>>> entries,
-  ) {
-    if (entries.isEmpty) return entries;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final index = entries.indexWhere((e) =>
-        e.key.year == today.year && e.key.month == today.month && e.key.day == today.day);
-    if (index < 0) return entries;
-    final previous = entries.sublist(0, index).reversed;
-    final following = entries.sublist(index + 1).reversed;
-    return [
-      entries[index],
-      ...previous,
-      ...following,
-    ];
+  final Map<DateTime, GlobalKey> _dayKeys = {};
+  bool _todayPositioned = false;
+  int _todayScrollAttempts = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _coachPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+      lowerBound: .45,
+      upperBound: 1.0,
+    )..repeat(reverse: true);
   }
 
-  void _goToToday() {
-    // Le jour courant est déjà le premier jour affiché grâce à la rotation
-    // automatique. Le défilement sert uniquement à revenir en haut de la liste
-    // si l'utilisateur était plus bas dans le planning.
-    setState(() {
-      filtreDate = null;
-      filtreMotCle = '';
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_weekScrollController.hasClients) return;
-      _weekScrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 280),
+  void _positionOnToday() {
+    if (_todayPositioned || filtreDate != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _todayPositioned || filtreDate != null) return;
+      if (!_weekScrollController.hasClients) {
+        if (_todayScrollAttempts < 12) {
+          _todayScrollAttempts++;
+          Future<void>.delayed(const Duration(milliseconds: 80), _positionOnToday);
+        }
+        return;
+      }
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final contextForDay = _dayKeys[today]?.currentContext;
+      if (contextForDay == null) {
+        if (_todayScrollAttempts < 12) {
+          _todayScrollAttempts++;
+          Future<void>.delayed(const Duration(milliseconds: 80), _positionOnToday);
+        }
+        return;
+      }
+
+      final renderObject = contextForDay.findRenderObject();
+      final position = _weekScrollController.position;
+      double target = position.pixels;
+      if (renderObject != null) {
+        final viewport = RenderAbstractViewport.of(renderObject);
+        target = viewport.getOffsetToReveal(renderObject, .08).offset;
+      }
+
+      // Sur le dernier jour (souvent le dimanche), le contenu peut être trop court
+      // pour placer le jour en haut : on va explicitement jusqu'à la limite disponible.
+      target = target.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
+      _todayScrollAttempts = 0;
+      _todayPositioned = true;
+      await _weekScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 450),
         curve: Curves.easeOutCubic,
       );
     });
@@ -10533,7 +10550,9 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   @override
   void didUpdateWidget(covariant Week oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // L'ordre affiché est recalculé automatiquement à chaque build selon la date du jour.
+    _todayPositioned = false;
+    _todayScrollAttempts = 0;
+    _positionOnToday();
   }
   String filtreMotCle = '';
 
@@ -10810,8 +10829,8 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       return d.isBefore(todayKey);
     }).toList();
     // Priorité à une séance d'aujourd'hui, puis à la prochaine date future.
-    // Les séances en retard passent ensuite. L'ordre visuel des journées est séparé
-    // de cette logique : la semaine est simplement tournée pour afficher aujourd'hui en premier.
+    // Les séances en retard ne passent devant que s'il n'y a plus rien aujourd'hui
+    // ni à venir. Cela rend le repère PROCHAINE cohérent notamment le dimanche.
     final nextPending = pendingToday.isNotEmpty
         ? pendingToday
         : pendingFuture.isNotEmpty
@@ -10825,7 +10844,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
           title: const Text('Plan de la semaine'),
           actions: [
             if (!phone) ...[
-              IconButton(onPressed: () => _goToToday(), icon: const Icon(Icons.today_outlined), tooltip: "Aller à aujourd'hui"),
+              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aller à aujourd'hui"),
               IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
               IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
               IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
@@ -10833,7 +10852,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
             ] else ...[
-              IconButton(onPressed: () => _goToToday(), icon: const Icon(Icons.today_outlined), tooltip: "Aujourd'hui"),
+              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aujourd'hui"),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
               PopupMenuButton<String>(
                 tooltip: 'Actions du planning',
@@ -10999,9 +11018,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                     }
                   }
                   final entries = grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-                  final displayEntries = filterActive ? entries : _rotateWeekEntriesToToday(entries);
-                  return displayEntries.expand((entry) => [
+                  return entries.expand((entry) => [
                       Padding(
+                        key: _dayKeys.putIfAbsent(
+                          DateTime(entry.key.year, entry.key.month, entry.key.day),
+                          () => GlobalKey(),
+                        ),
                         padding: EdgeInsets.only(top: phone ? 8 : 11, bottom: phone ? 6 : 8),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                           Expanded(
