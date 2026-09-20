@@ -36,7 +36,6 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String appVersion = '184.0';
@@ -5017,7 +5016,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B50D6), brightness: Brightness.light),
         pageTransitionsTheme: PageTransitionsTheme(
-          builders: {TargetPlatform.iOS: CupertinoPageTransitionsBuilder()},
+          builders: {TargetPlatform.iOS: const CupertinoPageTransitionsBuilder()},
         ),
         brightness: Brightness.light,
         visualDensity: VisualDensity.standard,
@@ -5097,7 +5096,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF8B82FF), brightness: Brightness.dark),
         pageTransitionsTheme: PageTransitionsTheme(
-          builders: {TargetPlatform.iOS: CupertinoPageTransitionsBuilder()},
+          builders: {TargetPlatform.iOS: const CupertinoPageTransitionsBuilder()},
         ),
         brightness: Brightness.dark,
         visualDensity: VisualDensity.standard,
