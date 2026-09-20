@@ -43,8 +43,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '195.0';
+// V194 — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
+const String appVersion = '194.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -10482,7 +10482,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   final ScrollController _weekScrollController = ScrollController();
   final Map<DateTime, GlobalKey> _dayKeys = {};
   bool _todayPositioned = false;
-  int _todayScrollAttempts = 0;
 
   @override
   void initState() {
@@ -10502,17 +10501,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) {
-        // Les clés sont créées pendant le build : sur certains appareils/Web,
-        // une première frame peut arriver avant que le contexte de la journée
-        // soit disponible. On réessaie sur quelques frames, sans boucle infinie.
-        if (_todayScrollAttempts < 6) {
-          _todayScrollAttempts++;
-          _positionOnToday();
-        }
-        return;
-      }
-      _todayScrollAttempts = 0;
+      if (contextForDay == null) return;
       _todayPositioned = true;
       await Scrollable.ensureVisible(
         contextForDay,
@@ -10534,7 +10523,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   void didUpdateWidget(covariant Week oldWidget) {
     super.didUpdateWidget(oldWidget);
     _todayPositioned = false;
-    _todayScrollAttempts = 0;
     _positionOnToday();
   }
   String filtreMotCle = '';
@@ -10800,14 +10788,9 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final filterActive = filtreDate != null || filtreMotCle.trim().isNotEmpty;
     final today = DateTime.now();
     final todayKey = DateTime(today.year, today.month, today.day);
-    final nextPending = [...widget.items]..removeWhere((x) => x.completed);
-    nextPending.sort((a, b) {
-      final da = DateTime(a.date.year, a.date.month, a.date.day);
-      final db = DateTime(b.date.year, b.date.month, b.date.day);
-      final byDate = da.compareTo(db);
-      if (byDate != 0) return byDate;
-      return a.date.compareTo(b.date);
-    });
+    final nextPending = [...widget.items]
+      ..removeWhere((x) => x.completed || DateTime(x.date.year, x.date.month, x.date.day).isBefore(todayKey));
+    nextPending.sort((a, b) => a.date.compareTo(b.date));
     final nextPendingId = nextPending.isEmpty ? null : nextPending.first.id;
 
     return Column(
@@ -10816,7 +10799,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
           title: const Text('Plan de la semaine'),
           actions: [
             if (!phone) ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aller à aujourd'hui"),
               IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
               IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
               IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
@@ -10824,7 +10806,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
             ] else ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aujourd'hui"),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
               PopupMenuButton<String>(
                 tooltip: 'Actions du planning',
@@ -11174,20 +11155,16 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                     decoration: x.completed ? TextDecoration.lineThrough : null,
                                                   )),
                                                 ),
-                                                if (x.id == nextPendingId) ...[
+                                                if (phone && x.id == nextPendingId) ...[
                                                   const SizedBox(width: 7),
                                                   Container(
-                                                    padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 7, vertical: phone ? 4 : 3),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                                                     decoration: BoxDecoration(
-                                                      color: Theme.of(c).colorScheme.primary.withOpacity(.12),
+                                                      color: Theme.of(c).colorScheme.primary.withOpacity(.10),
                                                       borderRadius: BorderRadius.circular(9),
-                                                      border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
+                                                      border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.20)),
                                                     ),
-                                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                                      Icon(Icons.play_arrow_rounded, size: phone ? 12 : 11, color: Theme.of(c).colorScheme.primary),
-                                                      const SizedBox(width: 3),
-                                                      Text('PROCHAINE', style: TextStyle(fontSize: phone ? 8.5 : 8, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
-                                                    ]),
+                                                    child: Text('PROCHAINE', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
                                                   ),
                                                 ],
                                               ]),

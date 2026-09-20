@@ -43,8 +43,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '195.0';
+const String appVersion = '193.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -10482,7 +10481,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   final ScrollController _weekScrollController = ScrollController();
   final Map<DateTime, GlobalKey> _dayKeys = {};
   bool _todayPositioned = false;
-  int _todayScrollAttempts = 0;
 
   @override
   void initState() {
@@ -10502,17 +10500,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) {
-        // Les clés sont créées pendant le build : sur certains appareils/Web,
-        // une première frame peut arriver avant que le contexte de la journée
-        // soit disponible. On réessaie sur quelques frames, sans boucle infinie.
-        if (_todayScrollAttempts < 6) {
-          _todayScrollAttempts++;
-          _positionOnToday();
-        }
-        return;
-      }
-      _todayScrollAttempts = 0;
+      if (contextForDay == null) return;
       _todayPositioned = true;
       await Scrollable.ensureVisible(
         contextForDay,
@@ -10534,7 +10522,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   void didUpdateWidget(covariant Week oldWidget) {
     super.didUpdateWidget(oldWidget);
     _todayPositioned = false;
-    _todayScrollAttempts = 0;
     _positionOnToday();
   }
   String filtreMotCle = '';
@@ -10798,17 +10785,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final sorted = [...filtered]..sort((a, b) => a.date.compareTo(b.date));
     final cats = {...widget.recommended.keys, ...widget.planned.keys}.toList()..sort();
     final filterActive = filtreDate != null || filtreMotCle.trim().isNotEmpty;
-    final today = DateTime.now();
-    final todayKey = DateTime(today.year, today.month, today.day);
-    final nextPending = [...widget.items]..removeWhere((x) => x.completed);
-    nextPending.sort((a, b) {
-      final da = DateTime(a.date.year, a.date.month, a.date.day);
-      final db = DateTime(b.date.year, b.date.month, b.date.day);
-      final byDate = da.compareTo(db);
-      if (byDate != 0) return byDate;
-      return a.date.compareTo(b.date);
-    });
-    final nextPendingId = nextPending.isEmpty ? null : nextPending.first.id;
 
     return Column(
       children: [
@@ -10816,7 +10792,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
           title: const Text('Plan de la semaine'),
           actions: [
             if (!phone) ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aller à aujourd'hui"),
               IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
               IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
               IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
@@ -10824,7 +10799,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
             ] else ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aujourd'hui"),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
               PopupMenuButton<String>(
                 tooltip: 'Actions du planning',
@@ -11012,16 +10986,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 7),
-                              if (entry.value.isNotEmpty)
-                                Text(
-                                  '${entry.value.length} séance${entry.value.length > 1 ? 's' : ''} · ${entry.value.fold<int>(0, (sum, x) => sum + x.duration)} min',
-                                  style: TextStyle(
-                                    fontSize: phone ? 10.5 : 11.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(c).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
                               const SizedBox(width: 6),
                               if (_dayHasUnseenCoachAdjustment(entry.value)) ...[
                                 Semantics(
@@ -11052,17 +11016,13 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           ),
                           if (_isToday(entry.key))
                             Container(
-                              padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 9, vertical: phone ? 4 : 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                               decoration: BoxDecoration(
                                 color: Theme.of(c).colorScheme.primary.withOpacity(.12),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
                               ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Container(width: 6, height: 6, decoration: BoxDecoration(color: Theme.of(c).colorScheme.primary, shape: BoxShape.circle)),
-                                const SizedBox(width: 5),
-                                Text("AUJOURD'HUI", style: TextStyle(fontSize: phone ? 9.5 : 10, fontWeight: FontWeight.w900, letterSpacing: .3, color: Theme.of(c).colorScheme.primary)),
-                              ]),
+                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
                             ),
                         ]),
                       ),
@@ -11165,32 +11125,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                 ]),
                                               ),
                                               const SizedBox(height: 6),
-                                              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                                                Expanded(
-                                                  child: Text(x.title, style: TextStyle(
-                                                    fontSize: phone ? 15.5 : 15,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: x.completed ? Colors.grey : null,
-                                                    decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                  )),
-                                                ),
-                                                if (x.id == nextPendingId) ...[
-                                                  const SizedBox(width: 7),
-                                                  Container(
-                                                    padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 7, vertical: phone ? 4 : 3),
-                                                    decoration: BoxDecoration(
-                                                      color: Theme.of(c).colorScheme.primary.withOpacity(.12),
-                                                      borderRadius: BorderRadius.circular(9),
-                                                      border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
-                                                    ),
-                                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                                      Icon(Icons.play_arrow_rounded, size: phone ? 12 : 11, color: Theme.of(c).colorScheme.primary),
-                                                      const SizedBox(width: 3),
-                                                      Text('PROCHAINE', style: TextStyle(fontSize: phone ? 8.5 : 8, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
-                                                    ]),
-                                                  ),
-                                                ],
-                                              ]),
+                                              Text(x.title, style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: x.completed ? Colors.grey : null,
+                                                decoration: x.completed ? TextDecoration.lineThrough : null,
+                                              )),
                                               if (x.details.isNotEmpty) ...[
                                                 const SizedBox(height: 2),
                                                 Text(x.details, style: TextStyle(
@@ -11230,17 +11170,16 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                               ],
                                               _plannedVsRealized(c, x),
                                             if (!x.completed) ...[
-                                              const SizedBox(height: 8),
+                                              const SizedBox(height: 6),
                                               Align(
                                                 alignment: Alignment.centerLeft,
                                                 child: FilledButton.tonalIcon(
                                                   onPressed: () => widget.onStartTimer(x),
                                                   icon: const Icon(Icons.play_arrow, size: 18),
-                                                  label: Text(phone && x.id == nextPendingId ? 'Commencer' : 'Démarrer'),
+                                                  label: const Text('Démarrer'),
                                                   style: FilledButton.styleFrom(
                                                     visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.symmetric(horizontal: phone ? 13 : 10, vertical: phone ? 9 : 8),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10),
                                                   ),
                                                 ),
                                               ),

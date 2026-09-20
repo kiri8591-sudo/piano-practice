@@ -15,7 +15,6 @@
 // V180.1 — Correction compilation : fermeture des dialogues mobiles + compatibilite InputDecorationTheme Flutter.
 // V179 — Refonte mobile visible : accueil recentré, surfaces iPhone plus plates et navigation tactile allégée.
 // V177 — Look & feel iPhone : Morceaux et Sessions allégés, actions secondaires regroupées, contenu plus lisible.
-// V193 — fiche session iPhone : résumé, évaluation tactile et hiérarchie renforcée.
 // V166 — conservation des sélections Filtrer / Trier de « Maîtrise des morceaux ».
 // V162 — prévu → réalisé : détail par séance + synthèse hebdomadaire fiable sur les séances échues.
 // V161 — analyse globale du planning après chaque séance : le coach examine tous les créneaux restants avant de décider.
@@ -43,8 +42,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '195.0';
+const String appVersion = '192.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -7973,137 +7971,6 @@ class _SessionDialogState extends State<SessionDialog> {
         ),
       );
 
-  Widget _sessionSummary(BuildContext c, int? plannedMinutes, bool phone) {
-    final scheme = Theme.of(c).colorScheme;
-    final p = project;
-    if (p == null && plannedMinutes == null && widget.existing == null) return const SizedBox.shrink();
-    final sessionDate = widget.existing?.date;
-    return Container(
-      width: double.infinity,
-      margin: EdgeInsets.only(top: phone ? 8 : 4, bottom: phone ? 6 : 2),
-      padding: EdgeInsets.all(phone ? 14 : 12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withOpacity(.42),
-        borderRadius: BorderRadius.circular(phone ? 16 : 14),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(.52)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: phone ? 42 : 38,
-              height: phone ? 42 : 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer.withOpacity(.72),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(p?.emoji ?? '🎹', style: TextStyle(fontSize: phone ? 22 : 20)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  p?.name ?? 'Session sans morceau',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: phone ? 16 : 15, fontWeight: FontWeight.w800, height: 1.15),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  editingDateLabel(sessionDate, widget.existing == null ? DateTime.now() : null),
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                ),
-              ]),
-            ),
-          ]),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: [
-              _sessionInfoPill(c, '⏱ ${duration} min'),
-              _sessionInfoPill(c, '🎯 $type'),
-              if (plannedMinutes != null) _sessionInfoPill(c, 'Prévu $plannedMinutes min', primary: true),
-              if (method != null && method!.trim().isNotEmpty) _sessionInfoPill(c, '📘 $method'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sessionInfoPill(BuildContext c, String label, {bool primary = false}) {
-    final scheme = Theme.of(c).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: primary ? scheme.primaryContainer.withOpacity(.60) : scheme.surfaceContainerHighest.withOpacity(.70),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: (primary ? scheme.primary : scheme.outlineVariant).withOpacity(.38)),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 11.5, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
-      ),
-    );
-  }
-
-  String editingDateLabel(DateTime? existingDate, DateTime? fallbackDate) {
-    final d = existingDate ?? fallbackDate;
-    if (d == null) return 'Date non définie';
-    final local = d.toLocal();
-    final dd = local.day.toString().padLeft(2, '0');
-    final mm = local.month.toString().padLeft(2, '0');
-    final hh = local.hour.toString().padLeft(2, '0');
-    final min = local.minute.toString().padLeft(2, '0');
-    return '$dd/$mm/${local.year} · $hh:$min';
-  }
-
-  Widget _ratingControl(BuildContext c, bool phone) {
-    if (!phone) {
-      return DropdownButtonFormField<int>(
-        isExpanded: true,
-        value: rating,
-        decoration: const InputDecoration(labelText: 'Note de séance'),
-        items: List.generate(5, (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1)))),
-        onChanged: (v) => setState(() => rating = v ?? rating),
-      );
-    }
-    final scheme = Theme.of(c).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withOpacity(.36),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(.58)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Note de séance', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text('$rating / 5', style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
-            ]),
-          ),
-          for (int i = 1; i <= 5; i++)
-            IconButton(
-              tooltip: '$i / 5',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 40),
-              onPressed: () => setState(() => rating = i),
-              icon: Icon(i <= rating ? Icons.star_rounded : Icons.star_outline_rounded, size: 27, color: i <= rating ? Colors.amber.shade700 : scheme.outline),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _coachSection(BuildContext c, int? plannedMinutes) {
     final hasCoach = widget.initialCoachFocus != null ||
         widget.initialCoachRecommendation != null ||
@@ -8118,9 +7985,8 @@ class _SessionDialogState extends State<SessionDialog> {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
         decoration: BoxDecoration(
-          color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.46),
+          color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.55),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Theme.of(c).colorScheme.outlineVariant.withOpacity(.45)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -8207,7 +8073,6 @@ class _SessionDialogState extends State<SessionDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _sessionSummary(c, plannedMinutes, phone),
                 _sectionHeader(c, 'SÉANCE', Icons.music_note_outlined),
                 DropdownButtonFormField<Project?>(
                   isExpanded: true,
@@ -8261,7 +8126,16 @@ class _SessionDialogState extends State<SessionDialog> {
                 ),
                 _dialogFieldGap(c, phone: 12),
                 _sectionHeader(c, 'ÉVALUATION', Icons.star_outline),
-                _ratingControl(c, phone),
+                DropdownButtonFormField<int>(
+                  isExpanded: true,
+                  value: rating,
+                  decoration: const InputDecoration(labelText: 'Note de séance'),
+                  items: List.generate(
+                    5,
+                    (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1))),
+                  ),
+                  onChanged: (v) => setState(() => rating = v ?? rating),
+                ),
               ],
             ),
           ),
@@ -10482,7 +10356,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   final ScrollController _weekScrollController = ScrollController();
   final Map<DateTime, GlobalKey> _dayKeys = {};
   bool _todayPositioned = false;
-  int _todayScrollAttempts = 0;
 
   @override
   void initState() {
@@ -10502,17 +10375,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final contextForDay = _dayKeys[today]?.currentContext;
-      if (contextForDay == null) {
-        // Les clés sont créées pendant le build : sur certains appareils/Web,
-        // une première frame peut arriver avant que le contexte de la journée
-        // soit disponible. On réessaie sur quelques frames, sans boucle infinie.
-        if (_todayScrollAttempts < 6) {
-          _todayScrollAttempts++;
-          _positionOnToday();
-        }
-        return;
-      }
-      _todayScrollAttempts = 0;
+      if (contextForDay == null) return;
       _todayPositioned = true;
       await Scrollable.ensureVisible(
         contextForDay,
@@ -10534,7 +10397,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   void didUpdateWidget(covariant Week oldWidget) {
     super.didUpdateWidget(oldWidget);
     _todayPositioned = false;
-    _todayScrollAttempts = 0;
     _positionOnToday();
   }
   String filtreMotCle = '';
@@ -10798,17 +10660,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final sorted = [...filtered]..sort((a, b) => a.date.compareTo(b.date));
     final cats = {...widget.recommended.keys, ...widget.planned.keys}.toList()..sort();
     final filterActive = filtreDate != null || filtreMotCle.trim().isNotEmpty;
-    final today = DateTime.now();
-    final todayKey = DateTime(today.year, today.month, today.day);
-    final nextPending = [...widget.items]..removeWhere((x) => x.completed);
-    nextPending.sort((a, b) {
-      final da = DateTime(a.date.year, a.date.month, a.date.day);
-      final db = DateTime(b.date.year, b.date.month, b.date.day);
-      final byDate = da.compareTo(db);
-      if (byDate != 0) return byDate;
-      return a.date.compareTo(b.date);
-    });
-    final nextPendingId = nextPending.isEmpty ? null : nextPending.first.id;
 
     return Column(
       children: [
@@ -10816,7 +10667,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
           title: const Text('Plan de la semaine'),
           actions: [
             if (!phone) ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aller à aujourd'hui"),
               IconButton(onPressed: widget.onEditCapacity, icon: const Icon(Icons.tune), tooltip: 'Disponibilité par jour'),
               IconButton(onPressed: widget.onOpenRoutine, icon: const Icon(Icons.repeat), tooltip: 'Ma routine'),
               IconButton(onPressed: widget.onPropose, icon: const Icon(Icons.auto_awesome), tooltip: 'Proposer un planning'),
@@ -10824,7 +10674,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
               IconButton(onPressed: widget.onClear, icon: const Icon(Icons.playlist_remove), tooltip: 'Effacer le planning'),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
             ] else ...[
-              IconButton(onPressed: () { filtreDate = null; _todayPositioned = false; _todayScrollAttempts = 0; setState(() {}); WidgetsBinding.instance.addPostFrameCallback((_) => _positionOnToday()); }, icon: const Icon(Icons.today_outlined), tooltip: "Aujourd'hui"),
               IconButton(onPressed: widget.onAdd, icon: const Icon(Icons.add), tooltip: 'Ajouter une séance'),
               PopupMenuButton<String>(
                 tooltip: 'Actions du planning',
@@ -11012,16 +10861,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 7),
-                              if (entry.value.isNotEmpty)
-                                Text(
-                                  '${entry.value.length} séance${entry.value.length > 1 ? 's' : ''} · ${entry.value.fold<int>(0, (sum, x) => sum + x.duration)} min',
-                                  style: TextStyle(
-                                    fontSize: phone ? 10.5 : 11.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(c).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
                               const SizedBox(width: 6),
                               if (_dayHasUnseenCoachAdjustment(entry.value)) ...[
                                 Semantics(
@@ -11052,17 +10891,13 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                           ),
                           if (_isToday(entry.key))
                             Container(
-                              padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 9, vertical: phone ? 4 : 5),
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                               decoration: BoxDecoration(
                                 color: Theme.of(c).colorScheme.primary.withOpacity(.12),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
                               ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Container(width: 6, height: 6, decoration: BoxDecoration(color: Theme.of(c).colorScheme.primary, shape: BoxShape.circle)),
-                                const SizedBox(width: 5),
-                                Text("AUJOURD'HUI", style: TextStyle(fontSize: phone ? 9.5 : 10, fontWeight: FontWeight.w900, letterSpacing: .3, color: Theme.of(c).colorScheme.primary)),
-                              ]),
+                              child: Text("AUJOURD'HUI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
                             ),
                         ]),
                       ),
@@ -11165,32 +11000,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                 ]),
                                               ),
                                               const SizedBox(height: 6),
-                                              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                                                Expanded(
-                                                  child: Text(x.title, style: TextStyle(
-                                                    fontSize: phone ? 15.5 : 15,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: x.completed ? Colors.grey : null,
-                                                    decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                  )),
-                                                ),
-                                                if (x.id == nextPendingId) ...[
-                                                  const SizedBox(width: 7),
-                                                  Container(
-                                                    padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 7, vertical: phone ? 4 : 3),
-                                                    decoration: BoxDecoration(
-                                                      color: Theme.of(c).colorScheme.primary.withOpacity(.12),
-                                                      borderRadius: BorderRadius.circular(9),
-                                                      border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.24)),
-                                                    ),
-                                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                                      Icon(Icons.play_arrow_rounded, size: phone ? 12 : 11, color: Theme.of(c).colorScheme.primary),
-                                                      const SizedBox(width: 3),
-                                                      Text('PROCHAINE', style: TextStyle(fontSize: phone ? 8.5 : 8, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
-                                                    ]),
-                                                  ),
-                                                ],
-                                              ]),
+                                              Text(x.title, style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: x.completed ? Colors.grey : null,
+                                                decoration: x.completed ? TextDecoration.lineThrough : null,
+                                              )),
                                               if (x.details.isNotEmpty) ...[
                                                 const SizedBox(height: 2),
                                                 Text(x.details, style: TextStyle(
@@ -11230,17 +11045,16 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                               ],
                                               _plannedVsRealized(c, x),
                                             if (!x.completed) ...[
-                                              const SizedBox(height: 8),
+                                              const SizedBox(height: 6),
                                               Align(
                                                 alignment: Alignment.centerLeft,
                                                 child: FilledButton.tonalIcon(
                                                   onPressed: () => widget.onStartTimer(x),
                                                   icon: const Icon(Icons.play_arrow, size: 18),
-                                                  label: Text(phone && x.id == nextPendingId ? 'Commencer' : 'Démarrer'),
+                                                  label: const Text('Démarrer'),
                                                   style: FilledButton.styleFrom(
                                                     visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.symmetric(horizontal: phone ? 13 : 10, vertical: phone ? 9 : 8),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10),
                                                   ),
                                                 ),
                                               ),
