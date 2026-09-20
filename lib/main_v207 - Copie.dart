@@ -1,4 +1,3 @@
-// V208 — Bilan hebdomadaire : synthèse coach + lecture mobile plus claire.
 // V207 — Maîtrise iPhone : indicateurs d’état plus lisibles et métriques compactées.
 // V206 — Planning + Coach : prochaine séance mise en avant et hiérarchie iPhone renforcée.
 // V205 — Sessions : lecture mobile renforcée, prévu → réalisé, état du Run-through et séance du jour.
@@ -54,7 +53,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-const String appVersion = '208.0';
+const String appVersion = '207.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -11886,139 +11885,49 @@ class _BilanScreenState extends State<BilanScreen> {
         : item.date.isAfter(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
             ? Theme.of(c).colorScheme.onSurfaceVariant
             : Colors.orange.shade700;
-    final phone = MediaQuery.sizeOf(c).width < 600;
-    final child = phone
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                SizedBox(
-                  width: 58,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                    Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                  ]),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(item.projectName, style: const TextStyle(fontWeight: FontWeight.w700))),
-                const SizedBox(width: 8),
-                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: accent)),
-              ]),
-              const SizedBox(height: 5),
-              Row(children: [
-                Expanded(child: Text('Prévu : $planned', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant))),
-                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-              ]),
-              if (item.coachAdjusted) ...[
-                const SizedBox(height: 3),
-                Text(
-                  item.coachAdjustmentType == 'focus' ? '🧠 Focus ajusté par le coach' : '🧠 Durée ajustée par le coach',
-                  style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ],
-          )
-        : Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 54,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                  Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                ]),
-              ),
-              const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(item.projectName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 3),
-                Text('Prévu : $planned', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                if (item.coachAdjusted) Text(
-                  item.coachAdjustmentType == 'focus' ? '🧠 Focus ajusté par le coach' : '🧠 Durée ajustée par le coach',
-                  style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
-                ),
-              ])),
-              const SizedBox(width: 8),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: accent)),
-                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-              ]),
-            ],
-          );
-
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: phone ? 11 : 10, vertical: phone ? 10 : 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.45),
         borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(color: accent.withOpacity(.65), width: phone ? 3 : 2)),
       ),
-      child: child,
-    );
-  }
-
-  Widget _weeklyCoachSummary(BuildContext c, WeeklyBilan bilan) {
-    final phone = MediaQuery.sizeOf(c).width < 600;
-    final due = bilan.duePlannedMinutes;
-    final realized = bilan.realizedPlannedMinutes;
-    final adherence = due > 0 ? realized / due : null;
-    final topPiece = bilan.pieces.isEmpty ? null : bilan.pieces.reduce((a, b) => a.value >= b.value ? a : b);
-
-    String message;
-    IconData icon;
-    Color accent;
-    if (bilan.totalMinutes == 0) {
-      icon = Icons.lightbulb_outline;
-      accent = Theme.of(c).colorScheme.primary;
-      message = 'La semaine vient de commencer. Le plus important est simplement de lancer une première séance et de garder le fil.';
-    } else if (adherence != null && adherence < .75) {
-      icon = Icons.track_changes_outlined;
-      accent = Colors.orange.shade700;
-      message = 'Le rythme réel est en dessous du planning prévu. Le coach privilégie la continuité plutôt que de chercher à rattraper tout l’écart en une seule fois.';
-    } else if (bilan.daysPracticed >= 5) {
-      icon = Icons.check_circle_outline;
-      accent = Colors.green.shade700;
-      message = 'La régularité est bien installée. Le coach peut maintenant utiliser les prochains créneaux pour affiner les points faibles et consolider les morceaux.';
-    } else if (bilan.pieces.length == 1) {
-      icon = Icons.music_note_outlined;
-      accent = Theme.of(c).colorScheme.primary;
-      message = 'Un seul morceau a été travaillé cette semaine. Les prochains créneaux peuvent apporter davantage de variété sans perdre le fil du morceau principal.';
-    } else {
-      icon = Icons.auto_awesome_outlined;
-      accent = Theme.of(c).colorScheme.primary;
-      message = 'La semaine est engagée. Le coach peut s’appuyer sur les séances déjà réalisées pour ajuster les prochains créneaux.';
-    }
-
-    return Container(
-      padding: EdgeInsets.all(phone ? 14 : 16),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(.07),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accent.withOpacity(.18)),
-      ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Container(
-              width: 34, height: 34, alignment: Alignment.center,
-              decoration: BoxDecoration(color: accent.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, size: 18, color: accent),
+          SizedBox(
+            width: 54,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(child: Text('À retenir cette semaine', style: TextStyle(fontSize: phone ? 14 : 15, fontWeight: FontWeight.w800))),
-          ]),
-          const SizedBox(height: 10),
-          Text(message, style: TextStyle(fontSize: phone ? 12 : 12.5, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-          if (topPiece != null) ...[
-            const SizedBox(height: 10),
-            Row(children: [
-              Text(topPiece.key.emoji, style: const TextStyle(fontSize: 18)),
-              const SizedBox(width: 7),
-              Expanded(child: Text('Morceau le plus travaillé : ${topPiece.key.name}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              Text('${topPiece.value} min', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accent)),
-            ]),
-          ],
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.projectName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text('Prévu : $planned', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                if (item.coachAdjusted)
+                  Text(
+                    item.coachAdjustmentType == 'focus' ? '🧠 Focus ajusté par le coach' : '🧠 Durée ajustée par le coach',
+                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: accent)),
+              if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+            ],
+          ),
         ],
       ),
     );
@@ -12031,14 +11940,7 @@ class _BilanScreenState extends State<BilanScreen> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Row(
-          children: [
-            Expanded(child: Text('${start.day}/${start.month} → ${end.day}/${end.month}', style: const TextStyle(color: Colors.grey))),
-            Text('${bilan.daysPracticed}/7 jours pratiqués', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _weeklyCoachSummary(c, bilan),
+        Text('${start.day}/${start.month} → ${end.day}/${end.month}', style: const TextStyle(color: Colors.grey)),
         const SizedBox(height: 16),
         CardBox(
           child: Row(
