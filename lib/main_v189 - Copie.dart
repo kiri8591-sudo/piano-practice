@@ -6,7 +6,7 @@
 // V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
 // V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
 // V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
-// V190 — Espacement des champs des fiches/formulaires iPhone pour éviter les cases collées ou visuellement superposées.
+// V189 — Listes iPhone : hiérarchie plus nette des morceaux et sessions, sans alourdir les cartes.
 // V188 — Planning iPhone : densité et lecture quotidienne affinées.
 // V187 — Contours des fiches iPhone légèrement renforcés pour mieux séparer les items, sans alourdir les surfaces.
 // V184 — Finition iPhone : en-têtes plus compacts et transitions iOS plus naturelles.
@@ -42,7 +42,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String appVersion = '190.0';
+const String appVersion = '189.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -63,10 +63,6 @@ String _formatProjectDateTime(DateTime value) {
 }
 
 bool _isPhoneLayout(BuildContext context) => MediaQuery.sizeOf(context).width < 600;
-
-// V190 — espace vertical entre champs des fiches/formulaires sur iPhone.
-Widget _dialogFieldGap(BuildContext context, {double phone = 10, double desktop = 5}) =>
-    SizedBox(height: _isPhoneLayout(context) ? phone : desktop);
 
 InputDecorationThemeData _mobileFriendlyDialogInputs(BuildContext context) {
   final base = Theme.of(context).inputDecorationTheme;
@@ -8061,7 +8057,7 @@ class _SessionDialogState extends State<SessionDialog> {
                   items: projectItems(widget.projects),
                   onChanged: (v) => setState(() => project = v),
                 ),
-                _dialogFieldGap(c),
+                const SizedBox(height: 5),
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   value: type,
@@ -8071,7 +8067,7 @@ class _SessionDialogState extends State<SessionDialog> {
                       .toList(),
                   onChanged: (v) => setState(() => type = v ?? type),
                 ),
-                _dialogFieldGap(c),
+                const SizedBox(height: 5),
                 DropdownButtonFormField<String?>(
                   isExpanded: true,
                   value: method,
@@ -8082,7 +8078,7 @@ class _SessionDialogState extends State<SessionDialog> {
                   ],
                   onChanged: (v) => setState(() => method = v),
                 ),
-                _dialogFieldGap(c),
+                const SizedBox(height: 5),
                 TextField(
                   controller: durationCtrl,
                   keyboardType: TextInputType.number,
@@ -8103,7 +8099,7 @@ class _SessionDialogState extends State<SessionDialog> {
                     alignLabelWithHint: true,
                   ),
                 ),
-                _dialogFieldGap(c, phone: 12),
+
                 _sectionHeader(c, 'ÉVALUATION', Icons.star_outline),
                 DropdownButtonFormField<int>(
                   isExpanded: true,
@@ -9774,9 +9770,8 @@ class _ProjectDialogState extends State<ProjectDialog> {
               decoration: const InputDecoration(labelText: 'Nom'),
               onChanged: (v) => setState(() => name = v),
             ),
-            _dialogFieldGap(c),
             TextField(controller: goalCtrl, decoration: const InputDecoration(labelText: 'Objectif final')),
-            _dialogFieldGap(c),
+            const SizedBox(height: 4),
             DropdownButtonFormField<String>(
               value: emoji,
               decoration: const InputDecoration(labelText: 'Icône du morceau'),
@@ -9792,7 +9787,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
               ],
               onChanged: (v) => setState(() => emoji = v ?? '🎵'),
             ),
-            _dialogFieldGap(c, phone: 12),
+            const SizedBox(height: 8),
             _detailSectionHeader(c, 'AVANCEMENT', icon: Icons.trending_up_outlined),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -9867,13 +9862,10 @@ class _ProjectDialogState extends State<ProjectDialog> {
             ),
             const SizedBox(height: 8),
             _progressSlider('📖  Lecture / mains séparées', reading, (v) => setState(() => reading = v)),
-            _dialogFieldGap(c, phone: 8),
             _progressSlider('🤝  Mains ensemble', handsTogether, (v) => setState(() => handsTogether = v)),
-            _dialogFieldGap(c, phone: 8),
             _progressSlider('🧠  Mémorisation', memory, (v) => setState(() => memory = v)),
-            _dialogFieldGap(c, phone: 8),
             _progressSlider('🎭  Interprétation', interpretation, (v) => setState(() => interpretation = v)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             const Divider(height: 24),
             Row(children: [
               Icon(Icons.speed_outlined, size: 20, color: Theme.of(c).colorScheme.primary),
@@ -9886,7 +9878,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
               const SizedBox(width: 10),
               Expanded(child: TextField(controller: targetTempoCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tempo cible', suffixText: 'BPM'))),
             ]),
-            _dialogFieldGap(c),
+            const SizedBox(height: 10),
             TextField(controller: measuresCtrl, decoration: const InputDecoration(labelText: 'Mesures à travailler', hintText: 'ex. 25–48', prefixIcon: Icon(Icons.format_list_numbered))),
             if (widget.existing != null && (currentTempo > 0 || targetTempo > 0)) ...[
               const SizedBox(height: 4),
@@ -9912,7 +9904,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                 ),
               ),
             ],
-            _dialogFieldGap(c, phone: 12),
+            const SizedBox(height: 8),
             _detailSectionHeader(c, 'STATUT', icon: Icons.flag_outlined),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
@@ -12859,16 +12851,13 @@ class _PlanDialogState extends State<PlanDialog> {
               decoration: const InputDecoration(labelText: 'Travail prévu'),
               onChanged: (v) => setState(() => title = v),
             ),
-            _dialogFieldGap(c),
             TextField(controller: detailsCtrl, decoration: const InputDecoration(labelText: 'Détails')),
-            _dialogFieldGap(c),
             TextField(
               controller: durationCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Durée (minutes)'),
               onChanged: (v) => setState(() => duration = int.tryParse(v) ?? duration),
             ),
-            _dialogFieldGap(c),
             DropdownButtonFormField<String?>(
               value: category,
               decoration: const InputDecoration(labelText: 'Catégorie'),
@@ -12878,7 +12867,6 @@ class _PlanDialogState extends State<PlanDialog> {
               ],
               onChanged: (v) => setState(() => category = v),
             ),
-            _dialogFieldGap(c),
             DropdownButtonFormField<String?>(
               value: method,
               decoration: const InputDecoration(labelText: 'Application / méthode'),
@@ -12888,14 +12876,12 @@ class _PlanDialogState extends State<PlanDialog> {
               ],
               onChanged: (v) => setState(() => method = v),
             ),
-            _dialogFieldGap(c),
             DropdownButtonFormField<Project?>(
               value: project,
               decoration: const InputDecoration(labelText: 'Morceau'),
               items: projectItems(widget.projects),
               onChanged: (v) => setState(() => project = v),
             ),
-            _dialogFieldGap(c),
             TextField(
               controller: tagsCtrl,
               decoration: const InputDecoration(
