@@ -1,8 +1,3 @@
-// V239 — correction CoachHome : ajout du helper _coachShortReason utilisé par l’Accueil.
-// V239 — harmonisation finale des statuts du Planning : même lecture visuelle pour réalisée, en retard, annulée, reportée et ajustée par le coach.
-// V240 — audit des métriques prévu → réalisé / maîtrise : calculs centralisés, indicateurs de cohérence et tri plus stable.
-// V241 — nettoyage : suppression des helpers devenus inutiles ou sans appel, sans changement fonctionnel.
-// V242 — consolidation : stabilisation finale avant nouvelles fonctionnalités ; moteur et données conservés.
 // V226 — lecture Coach : la raison d'une journée légère est visible directement dans Accueil et Planning.
 // V230 — Coach : utilise la cause de la sous-réalisation pour éviter les mauvaises réactions sur la charge, notamment après des retraits volontaires.
 // V229 — Coach : distingue sous-réalisation par manque de temps, retraits volontaires du planning et cause indéterminée, sans surinterpréter l'absence de séances.
@@ -87,7 +82,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '242.0';
+const String appVersion = '238.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -3892,6 +3887,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     return '${firstSentence.substring(0, 187).trimRight()}…';
   }
 
+  String _coachDecisionTargetLabel(CoachDecision d) {
+    final target = d.adjustedPlanDate;
+    if (target == null) return 'Date de la séance ajustée : non disponible';
+    return 'Séance concernée : ${_coachPlanDateLabel(target)}';
+  }
+
   void _recordCoachDecision(Session session, bool changed) {
     final existing = coachDecisionLog.where((d) => d.sessionId == session.id).toList();
     if (existing.isNotEmpty) return;
@@ -5524,6 +5525,23 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
   }
 
+  Map<String, int> _functionalAuditSummary() {
+    final projectIds = projects.map((p) => p.id).toList();
+    final sessionIds = sessions.map((s) => s.id).toList();
+    final planIds = plan.map((p) => p.id).toList();
+    final linkedPlans = plan.where((x) => x.sourceSessionId != null).length;
+    final brokenLinks = plan.where((x) => x.sourceSessionId != null && !sessionIds.contains(x.sourceSessionId)).length;
+    final orphanCoachDecisions = coachDecisionLog.where((d) => d.isActive && d.sessionId != null && !sessionIds.contains(d.sessionId)).length;
+    return {
+      'morceaux_doublons': projectIds.length - projectIds.toSet().length,
+      'sessions_doublons': sessionIds.length - sessionIds.toSet().length,
+      'planning_doublons': planIds.length - planIds.toSet().length,
+      'liens_planning_sessions': linkedPlans,
+      'liens_planning_casses': brokenLinks,
+      'analyses_coach_orphelines': orphanCoachDecisions,
+    };
+  }
+
   Future<void> _showCoachFeedback(Session session) async {
     final projectId = session.projectId;
     if (projectId == null) return;
@@ -6707,18 +6725,6 @@ class WeeklyBilan {
   final int bestDayMinutes;
   final int daysPracticed;
   final double? avgRating;
-
-  /// Taux prévu → réalisé uniquement sur les séances devenues exigibles.
-  double? get dueRealizationRate =>
-      duePlannedMinutes > 0 ? realizedPlannedMinutes / duePlannedMinutes : null;
-
-  /// Écart réel par rapport au planning échu, en minutes.
-  int get dueDeltaMinutes => realizedPlannedMinutes - duePlannedMinutes;
-
-  /// Taux de couverture du planning de la semaine entière, information distincte
-  /// du taux d'adhérence des seules séances échues.
-  double? get weeklyPlanningCoverage =>
-      plannedMinutes > 0 ? totalMinutes / plannedMinutes : null;
 }
 
 class AppBadge {
@@ -7642,47 +7648,6 @@ class CoachHome extends StatelessWidget {
     return item.title.trim().isEmpty ? 'Séance' : item.title.trim();
   }
 
-  String _coachShortReason(String? reason) {
-    final raw = reason?.trim() ?? '';
-    if (raw.isEmpty) return 'Aucune raison complémentaire disponible.';
-    final lower = raw.toLowerCase();
-    if (lower.contains('ressentie comme difficile') ||
-        (lower.contains('séance') && lower.contains('difficile') && lower.contains('consolidation'))) {
-      return 'Dernière séance difficile : la prochaine reprise est allégée pour consolider.';
-    }
-    if (lower.contains('régulièrement réalisées sous le temps prévu')) {
-      return 'Les dernières séances sont souvent plus courtes que prévu : la charge est réduite d’un bloc.';
-    }
-    if (lower.contains('quasi stable') || lower.contains('stagnation')) {
-      return 'La progression stagne : le Coach varie le travail pour relancer le morceau.';
-    }
-    if (lower.contains('séance en retard')) {
-      return 'Une séance est en retard : la priorité revient progressivement, sans rattrapage brutal.';
-    }
-    if (lower.contains('pas assez de séances comparables')) {
-      return 'Le morceau est prioritaire, mais l’historique est encore insuffisant pour augmenter sa durée.';
-    }
-    if (lower.contains('représente déjà') && lower.contains('planning équilibré')) {
-      return 'Ce morceau occupe déjà une place importante : le Coach préserve l’équilibre de la semaine.';
-    }
-    if (lower.contains('maintenir la diversité')) {
-      return 'Le morceau a déjà beaucoup été travaillé : le prochain créneau varie le contenu.';
-    }
-    if (lower.contains('reste le prochain besoin identifié') && lower.contains('compatible avec le planning')) {
-      return 'Le morceau reste un besoin, mais sa charge actuelle est encore compatible avec le planning.';
-    }
-    if (lower.contains('aucune adaptation suffisamment utile')) {
-      return 'Le Coach a analysé la semaine et n’a pas trouvé de changement suffisamment utile à faire.';
-    }
-    if (lower.contains('aucune séance future à ajuster')) {
-      return 'Il ne reste aucune séance future que le Coach puisse utilement ajuster cette semaine.';
-    }
-    final firstSentence = raw.split(RegExp(r'(?<=[.!?])\s+')).first.trim();
-    if (firstSentence.length <= 190) return firstSentence;
-    return '${firstSentence.substring(0, 187).trimRight()}…';
-  }
-
-
   DateTime? _lastSession(String projectId) {
     DateTime? last;
     for (final s in sessions) {
@@ -7850,6 +7815,13 @@ class CoachHome extends StatelessWidget {
 
     final pool = alternatives.isNotEmpty ? alternatives : result;
     return pool.take(3).toList();
+  }
+
+  int _recommendedMinutesForHome(Project p) {
+    final last = _lastProjectSession(p.id);
+    final feeling = last?.coachFeeling;
+    var minutes = feeling == 'difficile' || _recentDifficultSessions(p.id) >= 2 ? 15 : (feeling == 'facile' ? 25 : 20);
+    return minutes.clamp(10, 25).toInt();
   }
 
   String _decisionDateLabel(CoachDecision d) {
@@ -8027,6 +7999,57 @@ class CoachHome extends StatelessWidget {
     final list = sessions.where((s) => s.projectId == projectId && s.plannedDuration != null).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
     return list.take(3).toList();
+  }
+
+  double? _plannedDurationAdherence(Project p) {
+    final recent = _recentPlannedSessions(p.id).where((s) => s.plannedDuration! > 0).toList();
+    if (recent.isEmpty) return null;
+    final ratios = recent.map((s) => s.duration / s.plannedDuration!).toList();
+    return ratios.fold<double>(0, (a, b) => a + b) / ratios.length;
+  }
+
+  String _durationAdjustmentHint(Project p) {
+    final adherence = _plannedDurationAdherence(p);
+    if (adherence == null) return '';
+    if (adherence < .80) return 'Les dernières séances ont été plus courtes que prévu : le coach allège légèrement la prochaine séance.';
+    if (adherence > 1.20 && _lastFeeling(p.id) != 'difficile') return 'Tu dépasses régulièrement le temps prévu sans signal de difficulté : le coach peut augmenter légèrement la charge.';
+    return '';
+  }
+
+  int _recommendedMinutes(Project p) {
+    final feeling = _lastFeeling(p.id);
+    var minutes = feeling == 'difficile' || _recentDifficultSessions(p.id) >= 2 ? 15 : (feeling == 'facile' ? 25 : 20);
+    final adherence = _plannedDurationAdherence(p);
+    if (adherence != null) {
+      if (adherence < .80) {
+        minutes -= 5;
+      } else if (adherence > 1.20 && feeling != 'difficile') {
+        minutes += 5;
+      }
+    }
+    // V117 : les habitudes réelles priment sur une durée théorique fixe.
+    if (adherence != null && adherence >= .92 && feeling != 'difficile') minutes += 2;
+    if (adherence != null && adherence <= .72) minutes -= 2;
+    return minutes.clamp(10, 30).toInt();
+  }
+
+  String _recommendedFocus(Project p) => _focusFor(p);
+
+  int? _recommendedTempo(Project p) {
+    if (p.currentTempo <= 0) return null;
+    final feeling = _lastFeeling(p.id);
+    var tempo = p.currentTempo;
+    if (_recentDifficultSessions(p.id) >= 2 || feeling == 'difficile') {
+      tempo = math.max(1, tempo - 5);
+    } else {
+      final recent = _recentPlannedSessions(p.id).where((s) => s.plannedTempo != null && s.newTempo != null).toList();
+      if (recent.isNotEmpty) {
+        final averageDelta = recent.fold<double>(0, (a, s) => a + (s.newTempo! - s.plannedTempo!)) / recent.length;
+        if (averageDelta >= 3 && feeling == 'facile') tempo += 3;
+        if (averageDelta <= -5 && feeling != 'facile') tempo = math.max(1, tempo - 3);
+      }
+    }
+    return tempo;
   }
 
   int? _tempoFromPlanDetails(String details) {
@@ -8665,6 +8688,16 @@ class _SessionsState extends State<Sessions> {
     return s.runThroughCompleted! ? '✅ Terminé' : '⏹ Interrompu';
   }
 
+  Widget _feelingChip(BuildContext c, Session s) {
+    final label = _feelingLabel(s.coachFeeling);
+    if (label.isEmpty) return const SizedBox.shrink();
+    return Chip(
+      visualDensity: VisualDensity.compact,
+      avatar: const Icon(Icons.psychology_outlined, size: 14),
+      label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
   Widget _weeklyChart(BuildContext c, Map<DateTime, int> byDay) {
     final today = _day(DateTime.now());
     final days = List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
@@ -8871,6 +8904,20 @@ class _SessionsState extends State<Sessions> {
         ],
       ),
     );
+  }
+
+  String _planLifecycleLabel(PlanItem item) {
+    if (item.completed) return 'Réalisée';
+    final now = DateTime.now();
+    final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
+    final today = DateTime(now.year, now.month, now.day);
+    return item.isPending && itemDay.isBefore(today) ? 'Non réalisée' : '';
+  }
+
+  Color? _planLifecycleColor(BuildContext c, PlanItem item) {
+    if (_planLifecycleLabel(item) == 'Non réalisée') return Theme.of(c).colorScheme.error;
+    if (item.completed) return Colors.green.shade700;
+    return null;
   }
 
   @override
@@ -11997,10 +12044,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   String _dayKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   String _planLifecycleLabel(PlanItem item) {
-    // V239 : tous les états utilisent la même terminologie courte dans le planning.
     if (item.completed) return 'Réalisée';
-    if (item.isCancelled) return 'Annulée';
-    if (item.isPostponed) return 'Reportée';
     final now = DateTime.now();
     final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
     final today = DateTime(now.year, now.month, now.day);
@@ -12011,26 +12055,16 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   }
 
   Color? _planLifecycleColor(BuildContext c, PlanItem item) {
-    if (item.completed) return Colors.green.shade700;
-    if (item.isCancelled) return Theme.of(c).colorScheme.error;
-    if (item.isPostponed) return Theme.of(c).colorScheme.primary;
     final label = _planLifecycleLabel(item);
+    if (label.isEmpty) return item.completed ? Colors.green.shade700 : null;
     if (label.startsWith('Non réalisée')) {
       final now = DateTime.now();
       final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
       final lateDays = DateTime(now.year, now.month, now.day).difference(itemDay).inDays;
       return lateDays >= 3 ? Theme.of(c).colorScheme.error : Colors.orange.shade700;
     }
+    if (item.completed) return Colors.green.shade700;
     return null;
-  }
-
-  IconData _planLifecycleIcon(PlanItem item) {
-    if (item.completed) return Icons.check_circle_outline;
-    if (item.isCancelled) return Icons.event_busy_outlined;
-    if (item.isPostponed) return Icons.event_repeat_outlined;
-    final label = _planLifecycleLabel(item);
-    if (label.startsWith('Non réalisée')) return Icons.warning_amber_rounded;
-    return Icons.schedule_outlined;
   }
 
   bool _isCoachRestDay(DateTime d) => widget.coachRestDayKeys.contains(_dayKey(d));
@@ -12778,25 +12812,18 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                               ),
                                               if (_planLifecycleLabel(x).isNotEmpty) ...[
                                                 const SizedBox(height: 5),
-                                                Builder(builder: (context) {
-                                                  final lifecycleColor = _planLifecycleColor(context, x) ?? Theme.of(context).colorScheme.onSurfaceVariant;
-                                                  return Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: lifecycleColor.withOpacity(.08),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      border: Border.all(color: lifecycleColor.withOpacity(.16)),
-                                                    ),
-                                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                                      Icon(_planLifecycleIcon(x), size: 12, color: lifecycleColor),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        _planLifecycleLabel(x),
-                                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: lifecycleColor),
-                                                      ),
-                                                    ]),
-                                                  );
-                                                }),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: (_planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant).withOpacity(.08),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(color: (_planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant).withOpacity(.16)),
+                                                  ),
+                                                  child: Text(
+                                                    _planLifecycleLabel(x),
+                                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant),
+                                                  ),
+                                                ),
                                               ],
                                               const SizedBox(height: 6),
                                               Builder(builder: (context) {
@@ -13312,7 +13339,9 @@ class _BilanScreenState extends State<BilanScreen> {
 
   Widget _weeklyCoachSummary(BuildContext c, WeeklyBilan bilan) {
     final phone = MediaQuery.sizeOf(c).width < 600;
-    final adherence = bilan.dueRealizationRate;
+    final due = bilan.duePlannedMinutes;
+    final realized = bilan.realizedPlannedMinutes;
+    final adherence = due > 0 ? realized / due : null;
     final topPiece = bilan.pieces.isEmpty ? null : bilan.pieces.reduce((a, b) => a.value >= b.value ? a : b);
 
     String message;
@@ -13458,8 +13487,8 @@ class _BilanScreenState extends State<BilanScreen> {
             if (bilan.duePlannedMinutes > 0) ...[
               const SizedBox(height: 12),
               Builder(builder: (_) {
-                final ratio = bilan.dueRealizationRate!;
-                final delta = bilan.dueDeltaMinutes;
+                final ratio = bilan.realizedPlannedMinutes / bilan.duePlannedMinutes;
+                final delta = bilan.realizedPlannedMinutes - bilan.duePlannedMinutes;
                 final pct = (ratio * 100).round();
                 final color = ratio >= .9 && ratio <= 1.2
                     ? Colors.green.shade700
@@ -14132,13 +14161,7 @@ class ProgressDashboardScreen extends StatelessWidget {
                 }
               }
 
-              entries.sort((a, b) {
-                final primary = compare(a, b);
-                if (primary != 0) return primary;
-                final pa = a['project'] as Project;
-                final pb = b['project'] as Project;
-                return pa.name.toLowerCase().compareTo(pb.name.toLowerCase());
-              });
+              entries.sort(compare);
 
               Widget _masteryBadge(BuildContext context, IconData icon, String label, {bool primary = false, bool warning = false, bool success = false}) {
                 final scheme = Theme.of(context).colorScheme;
@@ -14251,8 +14274,6 @@ class ProgressDashboardScreen extends StatelessWidget {
                           ? 'Aucune séance sur 14 j'
                           : '${(regularity * 100).round()} % · ${days < 0 ? 'jamais travaillé' : 'dernière il y a $days j'}';
                       final recentProgress = hasRecentProgress(p);
-                      final missingTempo = p.targetTempo > 0 && tempoValue == null;
-                      final missingRun = runValue == null;
                       final stagnant = isStagnant(p);
                       final masteryAccent = stagnant
                           ? Colors.orange.shade700
@@ -14328,17 +14349,6 @@ class ProgressDashboardScreen extends StatelessWidget {
                                     if (stagnant) _masteryBadge(c, Icons.pause_circle_outline, 'Stagnant', warning: true),
                                     if (!stagnant && recentProgress) _masteryBadge(c, Icons.trending_up, 'En progression', success: true),
                                     if (days >= 0) _masteryBadge(c, Icons.history, days == 0 ? 'Aujourd’hui' : 'Il y a $days j'),
-                                  ],
-                                ),
-                              ],
-                              if (missingTempo || missingRun) ...[
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 5,
-                                  children: [
-                                    if (missingTempo) _masteryBadge(c, Icons.speed_outlined, 'Tempo non mesuré'),
-                                    if (missingRun) _masteryBadge(c, Icons.play_circle_outline, 'Run-through non mesuré'),
                                   ],
                                 ),
                               ],
