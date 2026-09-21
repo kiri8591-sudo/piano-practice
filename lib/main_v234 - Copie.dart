@@ -16,7 +16,6 @@
 // V218 — Coach fiabilisé : ajustements de durée/focus uniquement lorsqu'ils sont pédagogiquement significatifs, avec preuve suffisante et anti-oscillation.
 // V217 — correction compilation CoachHome : détection responsive locale du layout iPhone.
 // V231 — distinction des séances non réalisées, annulées volontairement et reportées, sans polluer le journal coach.
-// V235 — Maîtrise des morceaux : métriques en cartes distinctes et meilleure lisibilité iPhone
 // V234 — priorité progressive des séances en retard + séparation visuelle renforcée de « Maîtrise des morceaux »
 // V233 — lecture plus fine des séances non réalisées : ancienneté et poids du signal utilisés avec prudence par le coach.
 // V232 — correction de compilation : helpers _day et cycle de vie du planning disponibles dans leurs widgets utilisateurs.
@@ -80,7 +79,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '235.0';
+const String appVersion = '234.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -13860,31 +13859,20 @@ class ProgressDashboardScreen extends StatelessWidget {
     final compact = mediaWidth < 600;
     Widget progress(double v) => ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: v, minHeight: 7));
     Widget metric(String label, double? value, String valueText) {
-      final scheme = Theme.of(c).colorScheme;
-      return Container(
-        width: double.infinity,
-        constraints: BoxConstraints(minHeight: compact ? 70 : 64),
-        padding: EdgeInsets.fromLTRB(compact ? 10 : 9, compact ? 9 : 8, compact ? 10 : 9, compact ? 10 : 9),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withOpacity(compact ? .68 : .54),
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: scheme.outlineVariant.withOpacity(.62)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 10.5 : 9.8, height: 1.15, fontWeight: FontWeight.w900, color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 5),
-            Text(valueText, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 15.5 : 14, height: 1.05, fontWeight: FontWeight.w900, color: scheme.onSurface)),
-            if (value != null) ...[
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(value: value.clamp(0.0, 1.0).toDouble(), minHeight: compact ? 6 : 5),
-              ),
-            ],
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 2),
+          Text(valueText, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+          if (value != null) ...[
+            const SizedBox(height: 3),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(value: value.clamp(0.0, 1.0).toDouble(), minHeight: 5),
+            ),
           ],
-        ),
+        ],
       );
     }
 
@@ -14228,8 +14216,8 @@ class ProgressDashboardScreen extends StatelessWidget {
                             child: Container(
                               decoration: BoxDecoration(
                                 color: masterySurface,
-                                borderRadius: BorderRadius.circular(compact ? 16 : 14),
-                                border: Border.all(color: masteryAccent.withOpacity(compact ? .34 : .25), width: compact ? 1.1 : .85),
+                                borderRadius: BorderRadius.circular(compact ? 15 : 13),
+                                border: Border.all(color: masteryAccent.withOpacity(compact ? .28 : .22), width: compact ? 1.0 : .8),
                               ),
                               padding: EdgeInsets.fromLTRB(compact ? 13 : 12, compact ? 12 : 11, compact ? 13 : 12, compact ? 13 : 12),
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -14277,13 +14265,13 @@ class ProgressDashboardScreen extends StatelessWidget {
                                 Column(children: [
                                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Expanded(child: metric('PROGRESSION', stageScore, '${(stageScore * 100).round()} %')),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 12),
                                     Expanded(child: metric('TEMPO', tempoValue, tempoValue == null ? '—' : '${(tempoValue * 100).round()} %')),
                                   ]),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 12),
                                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Expanded(child: metric('RUN-THROUGH', runValue, runValue == null ? '—' : '${(runValue * 100).round()} %')),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 12),
                                     Expanded(child: metric('RÉGULARITÉ', regularity, regularityText)),
                                   ]),
                                 ])
@@ -14297,12 +14285,8 @@ class ProgressDashboardScreen extends StatelessWidget {
                                   const SizedBox(width: 10),
                                   Expanded(child: metric('RÉGULARITÉ', regularity, regularityText)),
                                 ]),
-                              const SizedBox(height: 10),
-                              Container(
-                                height: 1,
-                                color: Theme.of(c).colorScheme.outlineVariant.withOpacity(.46),
-                              ),
-                              const SizedBox(height: 9),
+                              const SizedBox(height: 8),
+                              const SizedBox(height: 2),
                               Container(
                                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
                                 decoration: BoxDecoration(

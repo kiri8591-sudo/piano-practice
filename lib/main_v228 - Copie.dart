@@ -1,6 +1,4 @@
 // V226 — lecture Coach : la raison d'une journée légère est visible directement dans Accueil et Planning.
-// V230 — Coach : utilise la cause de la sous-réalisation pour éviter les mauvaises réactions sur la charge, notamment après des retraits volontaires.
-// V229 — Coach : distingue sous-réalisation par manque de temps, retraits volontaires du planning et cause indéterminée, sans surinterpréter l'absence de séances.
 // V228 — Coach : utilise la lecture hebdomadaire (prévu/réalisé/adhérence) comme signal modéré pour les adaptations, sans créer un second programme.
 // V227 — Accueil : synthèse hebdomadaire légère (prévu, réalisé, adhérence, équilibre) sans créer un second programme.
 // V225 — Coach : distingue récupération et journée légère par équilibre global, sans remplir artificiellement la semaine.
@@ -15,11 +13,6 @@
 // V219 — Scénarios Coach fiabilisés : décisions plus prudentes selon séance facile/difficile, stagnation, manque d'historique et ajustements récents.
 // V218 — Coach fiabilisé : ajustements de durée/focus uniquement lorsqu'ils sont pédagogiquement significatifs, avec preuve suffisante et anti-oscillation.
 // V217 — correction compilation CoachHome : détection responsive locale du layout iPhone.
-// V231 — distinction des séances non réalisées, annulées volontairement et reportées, sans polluer le journal coach.
-// V235 — Maîtrise des morceaux : métriques en cartes distinctes et meilleure lisibilité iPhone
-// V234 — priorité progressive des séances en retard + séparation visuelle renforcée de « Maîtrise des morceaux »
-// V233 — lecture plus fine des séances non réalisées : ancienneté et poids du signal utilisés avec prudence par le coach.
-// V232 — correction de compilation : helpers _day et cycle de vie du planning disponibles dans leurs widgets utilisateurs.
 // V213 — cohérence d'affichage : le nom du morceau est utilisé comme titre principal partout où un planning est présenté.
 // V212.1 — Cohérence planning : le nom du morceau reste le titre principal partout où une séance lui est liée ; recherche et actions utilisent aussi ce nom.
 // V208 — Bilan hebdomadaire : synthèse coach + lecture mobile plus claire.
@@ -80,7 +73,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '235.0';
+const String appVersion = '228.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -848,46 +841,6 @@ class CoachDecision {
       );
 }
 
-class PlanRemovalRecord {
-  PlanRemovalRecord({
-    required this.id,
-    required this.projectId,
-    required this.title,
-    required this.scheduledDate,
-    required this.plannedMinutes,
-    required this.removedAt,
-    this.reason = 'user_removed',
-  });
-
-  final String id;
-  final String? projectId;
-  final String title;
-  final DateTime scheduledDate;
-  final int plannedMinutes;
-  final DateTime removedAt;
-  final String reason;
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'projectId': projectId,
-        'title': title,
-        'scheduledDate': scheduledDate.toIso8601String(),
-        'plannedMinutes': plannedMinutes,
-        'removedAt': removedAt.toIso8601String(),
-        'reason': reason,
-      };
-
-  factory PlanRemovalRecord.fromJson(Map<String, dynamic> j) => PlanRemovalRecord(
-        id: j['id'] as String? ?? newId(),
-        projectId: j['projectId'] as String?,
-        title: j['title'] as String? ?? 'Séance',
-        scheduledDate: DateTime.tryParse(j['scheduledDate']?.toString() ?? '') ?? DateTime.now(),
-        plannedMinutes: math.max(0, (j['plannedMinutes'] as num?)?.toInt() ?? 0),
-        removedAt: DateTime.tryParse(j['removedAt']?.toString() ?? '') ?? DateTime.now(),
-        reason: j['reason'] as String? ?? 'user_removed',
-      );
-}
-
 class PlanItem {
   PlanItem({
     required this.id,
@@ -910,9 +863,7 @@ class PlanItem {
     this.coachAdjustmentType,
     this.coachPreviousFocus,
     this.coachNewFocus,
-    String lifecycleStatus = 'pending',
-  }) : lifecycleStatus = ['pending', 'cancelled', 'postponed'].contains(lifecycleStatus) ? lifecycleStatus : 'pending',
-       motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
+  }) : motsCles = motsCles ?? [], plannedDuration = plannedDuration ?? duration;
   final String id;
   DateTime date;
   int duration;
@@ -933,12 +884,6 @@ class PlanItem {
   String? coachAdjustmentType; // duration / focus
   String? coachPreviousFocus;
   String? coachNewFocus;
-  /// Statut de vie du créneau : pending, cancelled ou postponed.
-  String lifecycleStatus;
-
-  bool get isPending => lifecycleStatus == 'pending';
-  bool get isCancelled => lifecycleStatus == 'cancelled';
-  bool get isPostponed => lifecycleStatus == 'postponed';
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -961,7 +906,6 @@ class PlanItem {
         'coachAdjustmentType': coachAdjustmentType,
         'coachPreviousFocus': coachPreviousFocus,
         'coachNewFocus': coachNewFocus,
-        'lifecycleStatus': lifecycleStatus,
       };
 
   factory PlanItem.fromJson(Map<String, dynamic> j) {
@@ -995,7 +939,6 @@ class PlanItem {
       coachAdjustmentType: j['coachAdjustmentType'] as String?,
       coachPreviousFocus: j['coachPreviousFocus'] as String?,
       coachNewFocus: j['coachNewFocus'] as String?,
-      lifecycleStatus: j['lifecycleStatus'] as String? ?? 'pending',
     );
   }
 
@@ -1168,8 +1111,6 @@ class PianoPracticeApp extends StatefulWidget {
 }
 
 class _PianoPracticeAppState extends State<PianoPracticeApp> {
-  // Helper local utilisé par les calculs de semaine et de séances échues.
-  DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
   // V71/V72 : nombre de séances récentes ressenties comme difficiles pour un morceau.
   // Placé dans l'état principal car le moteur de planning y accède directement.
   // Dernier ressenti enregistré pour un morceau, utilisé par le moteur
@@ -1229,10 +1170,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// d'une journée indisponible ou simplement non planifiée.
   Set<String> coachRestDayKeys = {};
   List<CoachDecision> coachDecisionLog = [];
-  /// Traces légères des séances de planning explicitement retirées par l'utilisateur.
-  /// Elles servent uniquement à interpréter les semaines sous-réalisées sans les confondre
-  /// avec un manque de temps. Les suppressions dues à une régénération automatique ne sont pas enregistrées.
-  List<PlanRemovalRecord> planRemovalLog = [];
   // V166/V167 : choix Filtrer / Trier de « Maîtrise des morceaux ».
   // Conservés dans l'état principal de l'app pour survivre aux reconstructions
   // et à la réouverture du tableau de progression.
@@ -1878,7 +1815,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
       sessions = [];
       plan = [];
-      planRemovalLog = [];
       challenges = [];
       bestStreakEver = 0;
       seenBadgeIds = [];
@@ -2009,10 +1945,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       sessions = (jsonDecode(prefs.getString('sessions') ?? '[]') as List).map((e) => Session.fromJson(e)).toList();
       plan = (jsonDecode(prefs.getString('plan') ?? '[]') as List).map((e) => PlanItem.fromJson(e)).toList();
       coachDecisionLog = (jsonDecode(prefs.getString('coachDecisionLog') ?? '[]') as List).map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-      planRemovalLog = (jsonDecode(prefs.getString('planRemovalLog') ?? '[]') as List).map((e) => PlanRemovalRecord.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-      final cleanupNow = DateTime.now();
-      planRemovalLog.removeWhere((r) => cleanupNow.difference(r.removedAt).inDays > 90);
-      if (planRemovalLog.length > 120) planRemovalLog = planRemovalLog.take(120).toList();
       routine =
           (jsonDecode(prefs.getString('routine') ?? '[]') as List).map((e) => RoutineItem.fromJson(e)).toList();
       challenges =
@@ -2124,7 +2056,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     await prefs.setString('sessions', jsonEncode(sessions.map((e) => e.toJson()).toList()));
     await prefs.setString('plan', jsonEncode(plan.map((e) => e.toJson()).toList()));
     await prefs.setString('coachDecisionLog', jsonEncode(coachDecisionLog.map((e) => e.toJson()).toList()));
-    await prefs.setString('planRemovalLog', jsonEncode(planRemovalLog.map((e) => e.toJson()).toList()));
     await prefs.setString('routine', jsonEncode(routine.map((e) => e.toJson()).toList()));
     await prefs.setString('challenges', jsonEncode(challenges.map((e) => e.toJson()).toList()));
   }
@@ -2153,6 +2084,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
   String _dayKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+
   /// Telecharge un fichier .json contenant toutes les donnees de l'application (sauvegarde).
   void exportData() {
     final backupNow = DateTime.now();
@@ -2177,7 +2109,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'sessions': sessions.map((e) => e.toJson()).toList(),
       'plan': plan.map((e) => e.toJson()).toList(),
       'coachDecisionLog': coachDecisionLog.map((e) => e.toJson()).toList(),
-      'planRemovalLog': planRemovalLog.map((e) => e.toJson()).toList(),
       'routine': routine.map((e) => e.toJson()).toList(),
       'challenges': challenges.map((e) => e.toJson()).toList(),
       'exportedAt': backupNow.toIso8601String(),
@@ -2315,9 +2246,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               .toList();
           coachDecisionLog = ((data['coachDecisionLog'] as List?) ?? [])
               .map((e) => CoachDecision.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList();
-          planRemovalLog = ((data['planRemovalLog'] as List?) ?? [])
-              .map((e) => PlanRemovalRecord.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList();
           routine = ((data['routine'] as List?) ?? [])
               .map((e) => RoutineItem.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -2766,15 +2694,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     if (ok != true) return;
 
     setState(() {
-      // Effacement demandé explicitement par l'utilisateur : on garde une trace
-      // légère des créneaux retirés pour que le coach puisse distinguer cette
-      // décision volontaire d'un manque de temps.
-      final removed = plan
-          .where((x) => !x.completed && !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd))
-          .toList();
-      for (final x in removed) {
-        _recordPlanRemoval(x, reason: 'user_cleared_week');
-      }
       // Effacement de toute la semaine courante : lundi -> dimanche.
       // Les séances déjà terminées restent conservées.
       plan.removeWhere((x) => !x.completed && !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd));
@@ -4325,94 +4244,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         : dueRealizedMinutes / duePlannedMinutes;
     final planningPace = duePlannedMinutes / expectedToDate;
 
-    // V229 : sous-réalisation = trois cas distincts.
-    // - time : plusieurs journées réellement peu utilisées alors que des séances étaient dues ;
-    // - removed : des créneaux ont été explicitement retirés par l'utilisateur ;
-    // - mixed : les deux signaux sont présents ;
-    // - unknown : sous-réalisation réelle, mais sans preuve suffisante sur sa cause.
-    final weekRemovals = planRemovalLog.where((r) =>
-        !r.scheduledDate.isBefore(weekStart) &&
-        r.scheduledDate.isBefore(weekEnd) &&
-        !r.removedAt.isBefore(weekStart) &&
-        !r.removedAt.isAfter(now)).toList();
-    final manuallyRemovedMinutes = weekRemovals.fold<int>(0, (sum, r) => sum + r.plannedMinutes);
-    final manuallyRemovedCount = weekRemovals.length;
-    final manuallyRemovedDays = weekRemovals
-        .map((r) => DateTime(r.scheduledDate.year, r.scheduledDate.month, r.scheduledDate.day))
-        .toSet();
-    final cancelledMinutes = weekRemovals.where((r) => r.reason == 'user_cancelled').fold<int>(0, (sum, r) => sum + r.plannedMinutes);
-    final removedMinutes = weekRemovals.where((r) => r.reason == 'user_removed' || r.reason == 'user_cleared_week').fold<int>(0, (sum, r) => sum + r.plannedMinutes);
-    final postponedMinutes = weekRemovals.where((r) => r.reason == 'user_postponed').fold<int>(0, (sum, r) => sum + r.plannedMinutes);
-    final notDoneItems = plan.where((x) =>
-        x.isPending &&
-        !x.completed &&
-        !x.date.isBefore(weekStart) &&
-        x.date.isBefore(weekEnd) &&
-        _day(x.date).isBefore(today)).toList();
-    final notDoneMinutes = notDoneItems.fold<int>(0, (sum, x) => sum + (x.plannedDuration > 0 ? x.plannedDuration : x.duration));
-    final notDoneAges = notDoneItems
-        .map((x) => today.difference(_day(x.date)).inDays)
-        .where((days) => days > 0)
-        .toList();
-    final oldestNotDoneDays = notDoneAges.isEmpty ? 0 : notDoneAges.reduce((a, b) => a > b ? a : b);
-
-    var lowUseDays = 0;
-    var dueDaysWithPlan = 0;
-    for (var i = 0; i < elapsedDays && i < 7; i++) {
-      final d = weekStart.add(Duration(days: i));
-      if (d.isAfter(today)) continue;
-      final dayKey = DateTime(d.year, d.month, d.day);
-      final dueForDay = weekItems.where((x) => !x.date.isAfter(dayKey)).where((x) {
-        final xd = DateTime(x.date.year, x.date.month, x.date.day);
-        return _sameDay(xd, dayKey);
-      }).fold<int>(0, (sum, x) => sum + (x.plannedDuration > 0 ? x.plannedDuration : x.duration));
-      final removedForDay = weekRemovals
-          .where((r) => _sameDay(DateTime(r.scheduledDate.year, r.scheduledDate.month, r.scheduledDate.day), dayKey))
-          .fold<int>(0, (sum, r) => sum + r.plannedMinutes);
-      final dayPlanned = dueForDay + removedForDay;
-      if (dayPlanned < 20) continue;
-      dueDaysWithPlan++;
-      final dayActual = sessions.where((s) => _sameDay(DateTime(s.date.year, s.date.month, s.date.day), dayKey) && !s.date.isAfter(now))
-          .fold<int>(0, (sum, s) => sum + s.duration);
-      final capacity = dailyCapacity[dayKey.weekday - 1];
-      final utilization = capacity <= 0 ? 1.0 : dayActual / capacity;
-      if (utilization < .55 && !manuallyRemovedDays.contains(dayKey)) lowUseDays++;
-    }
-
-    final lowTimeEvidence = lowUseDays >= 2 && dueDaysWithPlan >= 2;
-    final removedEvidence = manuallyRemovedCount >= 1 && manuallyRemovedMinutes >= 20;
-    final cancellationEvidence = cancelledMinutes >= 20;
-    final removalEvidence = removedMinutes >= 20;
-    final postponementEvidence = postponedMinutes >= 20;
-    // Une seule séance récente manquée ne suffit pas à classer la semaine comme
-    // réellement sous-réalisée. Il faut au moins deux séances, 40 minutes,
-    // ou un retard qui commence à devenir significatif (>= 3 jours).
-    final notDoneEvidence =
-        notDoneItems.length >= 2 ||
-        notDoneMinutes >= 40 ||
-        (oldestNotDoneDays >= 3 && notDoneMinutes >= 30);
-    final causeCount = <String>{
-      if (lowTimeEvidence) 'time',
-      if (removalEvidence) 'removed',
-      if (cancellationEvidence) 'cancelled',
-      if (postponementEvidence) 'postponed',
-      if (notDoneEvidence) 'not_done',
-    }.length;
-    String weeklyRealityCause = 'none';
-    if (causeCount >= 2) {
-      weeklyRealityCause = 'mixed';
-    } else if (cancellationEvidence) {
-      weeklyRealityCause = 'cancelled';
-    } else if (postponementEvidence) {
-      weeklyRealityCause = 'postponed';
-    } else if (notDoneEvidence) {
-      weeklyRealityCause = 'not_done';
-    } else if (lowTimeEvidence) {
-      weeklyRealityCause = 'time';
-    } else if (duePlannedMinutes > 0 && dueAdherence < .75) {
-      weeklyRealityCause = 'unknown';
-    }
-
     String weeklyRealitySignal;
     if (duePlannedMinutes < 45) {
       weeklyRealitySignal = 'insufficient';
@@ -4429,30 +4260,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     String weeklyRealityLabel() {
       switch (weeklyRealitySignal) {
         case 'under':
-          switch (weeklyRealityCause) {
-            case 'time':
-              return 'la semaine est en retrait et plusieurs journées ont été peu utilisées : cela peut traduire un manque de temps';
-            case 'cancelled':
-              return 'la semaine est en retrait, mais des séances ont été explicitement annulées';
-            case 'postponed':
-              return 'la semaine est en retrait, mais des séances ont été volontairement reportées';
-            case 'not_done':
-              if (notDoneItems.length >= 2) {
-                return 'la semaine est en retrait avec plusieurs séances passées encore non réalisées';
-              }
-              if (oldestNotDoneDays >= 3) {
-                return 'la semaine est en retrait avec une séance restée non réalisée depuis plusieurs jours';
-              }
-              return 'la semaine est en retrait avec une séance passée encore non réalisée';
-            case 'removed':
-              return 'la semaine est en retrait, mais plusieurs créneaux ont été explicitement retirés du planning';
-            case 'mixed':
-              return 'la semaine est en retrait pour plusieurs raisons : temps disponible, annulations, reports ou séances non réalisées';
-            case 'unknown':
-              return 'la semaine est en retrait, sans élément suffisant pour en déterminer la cause';
-            default:
-              return 'la semaine est actuellement sous le rythme prévu';
-          }
+          return 'la semaine est actuellement sous le rythme prévu';
         case 'over':
           return 'la semaine est actuellement un peu trop chargée par rapport au rythme prévu';
         case 'balanced':
@@ -4584,28 +4392,11 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       return today.difference(lastDay).inDays;
     }
 
-    // V234 : une séance réellement en retard peut reprendre progressivement sa priorité.
-    // Un seul retard ne doit pas provoquer un rattrapage brutal : l'ancienneté augmente
-    // le besoin par paliers et reste plafonnée. Les séances annulées/reportées ne passent
-    // jamais par ce mécanisme, car elles ont un statut volontaire.
-    int overduePendingDaysFor(String projectId) {
-      var maxDays = 0;
-      for (final x in plan) {
-        if (x.projectId != projectId || x.completed || !x.isPending) continue;
-        final d = _day(x.date);
-        if (!d.isBefore(today)) continue;
-        final days = today.difference(d).inDays;
-        if (days > maxDays) maxDays = days;
-      }
-      return maxDays;
-    }
-
     // Un score de besoin global : plus il est haut, plus le morceau mérite une
     // adaptation du planning restant. La priorité du morceau reste dominante,
     // mais la charge récente et la variété peuvent faire émerger un autre morceau.
     double needScore(Project p) {
       final days = daysSinceLastPractice(p);
-      final overdueDays = overduePendingDaysFor(p.id);
       final minutes = recentMinutes7d(p.id);
       final count = recentCount7d(p.id);
       final feeling = lastFeelingFor(p.id);
@@ -4613,12 +4404,11 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       var score = 0.0;
 
       // La lecture hebdomadaire influence le choix, sans devenir un nouveau
-      // système de planification. Une semaine sous-réalisée pour manque de temps
-      // ou cause inconnue freine les ajouts ; un retrait volontaire, lui, ne doit
-      // pas pénaliser artificiellement les morceaux encore à travailler.
-      final underBecauseOfTime = weeklyRealitySignal == 'under' &&
-          (weeklyRealityCause == 'time' || weeklyRealityCause == 'unknown' || weeklyRealityCause == 'mixed' || weeklyRealityCause == 'not_done');
-      if (underBecauseOfTime && p.id != latestProject.id && !p.priority) {
+      // système de planification. Une semaine sous-réalisée freine les ajouts
+      // de charge ; une semaine surchargée fait remonter légèrement les morceaux
+      // qui occupent encore beaucoup de temps futur afin de trouver une cible
+      // naturelle pour un éventuel allègement.
+      if (weeklyRealitySignal == 'under' && p.id != latestProject.id && !p.priority) {
         score -= 10;
       }
       if (weeklyRealitySignal == 'over') {
@@ -4626,13 +4416,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
 
       if (p.priority) score += 100;
-      // Un retard passé reprend progressivement de la place dans la file :
-      // +8 à J+1, +16 à J+2, puis +6 par jour supplémentaire, plafonné à +32.
-      // Une pièce déjà prioritaire conserve sa priorité sans surenchère.
-      if (overdueDays > 0) {
-        final overdueScore = math.min(32.0, 8.0 + math.max(0, overdueDays - 1) * 6.0);
-        score += overdueScore;
-      }
       if (days >= 999) {
         score += 28;
       } else {
@@ -4862,12 +4645,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     // a bien analysé le planning, mais confirme que sa structure reste pertinente.
     if (selectedScore < 48) {
       final weeklyMessage = weeklyRealityLabel();
-      final selectedOverdueDays = overduePendingDaysFor(candidateProject.id);
-      _lastCoachReason = selectedOverdueDays > 0
-          ? 'J’ai réexaminé ${future.length} séance(s) restante(s). ${candidateProject.name} a une séance en retard de $selectedOverdueDays j : je lui redonne progressivement de la priorité, sans créer de rattrapage brutal ; $weeklyMessage.'
-          : candidateDays >= 999
-              ? 'J’ai réexaminé ${future.length} séance(s) restante(s). Le planning reste inchangé : aucune adaptation suffisamment utile ne se dégage encore ; $weeklyMessage.'
-              : 'J’ai réexaminé ${future.length} séance(s) restante(s). ${candidateProject.name} reste le prochain besoin identifié, mais sa charge ($candidateMinutes min sur 7 jours) est encore compatible avec le planning ; $weeklyMessage.';
+      _lastCoachReason = candidateDays >= 999
+          ? 'J’ai réexaminé ${future.length} séance(s) restante(s). Le planning reste inchangé : aucune adaptation suffisamment utile ne se dégage encore ; $weeklyMessage.'
+          : 'J’ai réexaminé ${future.length} séance(s) restante(s). ${candidateProject.name} reste le prochain besoin identifié, mais sa charge ($candidateMinutes min sur 7 jours) est encore compatible avec le planning ; $weeklyMessage.';
       return false;
     }
 
@@ -4948,17 +4728,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final canIncreaseWeeklyLoad =
         !candidateOverconcentrated ||
         (candidateProject.priority && candidateFutureCount <= 2 && candidateFutureDays >= 2);
-    // V230 : une semaine sous-réalisée n'a pas la même signification selon sa cause.
-    // Des créneaux retirés volontairement ne constituent pas un manque de temps :
-    // ils ne doivent donc pas bloquer à eux seuls un renforcement justifié d'un autre morceau.
-    final underDueToTime = weeklyRealitySignal == 'under' &&
-        (weeklyRealityCause == 'time' || weeklyRealityCause == 'unknown' || weeklyRealityCause == 'mixed');
-    final underDueToVoluntaryRemoval = weeklyRealitySignal == 'under' &&
-        (weeklyRealityCause == 'removed' || weeklyRealityCause == 'cancelled' || weeklyRealityCause == 'postponed');
     final weeklyIncreaseAllowed =
-        !underDueToTime &&
-        !(weeklyRealitySignal == 'over' && !candidateProject.priority) &&
-        (weeklyRealitySignal != 'under' || underDueToVoluntaryRemoval);
+        weeklyRealitySignal != 'under' &&
+        !(weeklyRealitySignal == 'over' && !candidateProject.priority);
 
     if (candidateProject.id != latestProject.id &&
         (candidateProject.priority ||
@@ -5021,32 +4793,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
     }
 
-    // V230 : lorsqu'une semaine est sous-réalisée à cause de créneaux volontairement
-    // retirés, le Coach ne doit pas prendre ce signal pour un manque de temps. Si une
-    // augmentation n'est finalement pas faite, il peut néanmoins expliquer que le
-    // retrait volontaire a été neutralisé comme signal négatif.
-    if (weeklyRealitySignal == 'under' &&
-        (weeklyRealityCause == 'removed' || weeklyRealityCause == 'cancelled' || weeklyRealityCause == 'postponed') &&
-        candidateProject.id != latestProject.id && !candidateProject.priority &&
-        candidateEvidence < 2) {
-      _lastCoachReason =
-          'La semaine paraît en retrait surtout à cause de créneaux volontairement retirés, annulés ou reportés (${manuallyRemovedCount} trace(s)). Je n’en déduis donc pas un manque de temps et je conserve le planning sans réduction automatique.';
-      return false;
-    }
-
-    // V230 : lorsqu'une semaine est sous-réalisée à cause de créneaux volontairement
-    // retirés, le Coach ne doit pas prendre ce signal pour un manque de temps. Si une
-    // augmentation n'est finalement pas faite, il peut néanmoins expliquer que le
-    // retrait volontaire a été neutralisé comme signal négatif.
-    if (weeklyRealitySignal == 'under' &&
-        (weeklyRealityCause == 'removed' || weeklyRealityCause == 'cancelled' || weeklyRealityCause == 'postponed') &&
-        candidateProject.id != latestProject.id && !candidateProject.priority &&
-        candidateEvidence < 2) {
-      _lastCoachReason =
-          'La semaine paraît en retrait surtout à cause de créneaux volontairement retirés, annulés ou reportés (${manuallyRemovedCount} trace(s)). Je n’en déduis donc pas un manque de temps et je conserve le planning sans réduction automatique.';
-      return false;
-    }
-
     // V220 : lorsqu'une hausse aurait été envisageable mais que la pièce
     // occupe déjà une part excessive du temps restant, on privilégie la couverture
     // de la semaine plutôt qu'une nouvelle augmentation automatique.
@@ -5059,23 +4805,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     // 5) Même si aucune transformation n'est déclenchée, le coach laisse une trace
     //    explicite de son réexamen global.
     final names = candidates.take(3).map((e) => e.value.name).join(', ');
-    final weeklyContext = weeklyRealitySignal == 'under'
-        ? (weeklyRealityCause == 'removed' || weeklyRealityCause == 'cancelled')
-            ? ' La semaine est en retrait principalement à cause de créneaux volontairement retirés ou annulés ; je ne l’interprète pas comme un manque de temps.'
-            : weeklyRealityCause == 'postponed'
-                ? ' La semaine est en retrait en partie parce que certaines séances ont été reportées ; je ne l’interprète pas comme un manque de temps.'
-            : weeklyRealityCause == 'not_done'
-                ? ' La semaine est en retrait avec des séances passées non réalisées ; je reste prudent sur les ajouts.'
-            : weeklyRealityCause == 'time'
-                ? ' La semaine est en retrait avec plusieurs journées peu utilisées ; je reste prudent avant d’ajouter de la charge.'
-                : weeklyRealityCause == 'mixed'
-                    ? ' La semaine combine plusieurs signaux (temps disponible, retraits, annulations, reports ou séances non réalisées) ; je reste donc prudent sur les ajouts.'
-                    : weeklyRealityCause == 'unknown'
-                        ? ' La semaine est en retrait, mais sa cause n’est pas suffisamment établie ; je reste prudent.'
-                        : ''
-        : '';
     _lastCoachReason =
-        'J’ai réexaminé l’ensemble des ${future.length} séance(s) restantes. Les besoins les plus élevés sont actuellement : $names.$weeklyContext Aucune modification suffisamment utile ne justifie de changer le planning à ce stade.';
+        'J’ai réexaminé l’ensemble des ${future.length} séance(s) restantes. Les besoins les plus élevés sont actuellement : $names. Aucune modification suffisamment utile ne justifie de changer le planning à ce stade.';
     return false;
   }
 
@@ -5800,86 +5531,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     _persist();
   }
 
-  void _recordPlanRemoval(PlanItem x, {String reason = 'user_removed', DateTime? scheduledDateOverride}) {
-    final now = DateTime.now();
-    final plannedMinutes = x.plannedDuration > 0 ? x.plannedDuration : x.duration;
-    if (plannedMinutes <= 0) return;
-    planRemovalLog.removeWhere((r) => r.id == x.id && r.reason == reason);
-    planRemovalLog.insert(
-      0,
-      PlanRemovalRecord(
-        id: x.id,
-        projectId: x.projectId,
-        title: x.title,
-        scheduledDate: scheduledDateOverride ?? x.date,
-        plannedMinutes: plannedMinutes,
-        removedAt: now,
-        reason: reason,
-      ),
-    );
-    planRemovalLog.removeWhere((r) => now.difference(r.removedAt).inDays > 90);
-    if (planRemovalLog.length > 120) {
-      planRemovalLog = planRemovalLog.take(120).toList();
-    }
-  }
-
   void deletePlan(PlanItem x) {
-    setState(() {
-      if (!x.completed) {
-        x.lifecycleStatus = 'cancelled';
-        _recordPlanRemoval(x, reason: 'user_removed');
-      }
-      plan.removeWhere((y) => y.id == x.id);
-    });
+    setState(() => plan.removeWhere((y) => y.id == x.id));
     _persist();
-  }
-
-  Future<void> cancelPlan(PlanItem x) async {
-    if (x.completed) return;
-    final ok = await showDialog<bool>(
-      context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: const Text('Annuler cette séance ?'),
-        content: Text('« ${_displayPlanTitle(x)} » sera retirée du planning comme séance annulée volontairement. Elle ne sera pas interprétée comme un manque de temps.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Conserver')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Annuler la séance')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() {
-      x.lifecycleStatus = 'cancelled';
-      _recordPlanRemoval(x, reason: 'user_cancelled');
-      plan.removeWhere((y) => y.id == x.id);
-    });
-    await _persist();
-  }
-
-  Future<void> postponePlan(PlanItem x) async {
-    if (x.completed) return;
-    final now = DateTime.now();
-    final firstDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
-    final lastDate = firstDate.add(const Duration(days: 21));
-    final initial = x.date.isBefore(firstDate) ? firstDate : (x.date.isAfter(lastDate) ? lastDate : x.date);
-    final picked = await showDatePicker(
-      context: navKey.currentContext!,
-      initialDate: DateTime(initial.year, initial.month, initial.day),
-      firstDate: firstDate,
-      lastDate: lastDate,
-      helpText: 'Reporter la séance',
-      cancelText: 'Conserver',
-      confirmText: 'Reporter',
-    );
-    if (picked == null) return;
-    final oldDate = x.date;
-    setState(() {
-      x.lifecycleStatus = 'postponed';
-      _recordPlanRemoval(x, reason: 'user_postponed', scheduledDateOverride: oldDate);
-      x.date = DateTime(picked.year, picked.month, picked.day);
-      x.lifecycleStatus = 'pending';
-    });
-    await _persist();
   }
 
   /// Decocher reste un simple bascule. Cocher (marquer termine) demande la duree
@@ -6038,8 +5692,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onAdd: () => addOrEditPlan(),
         onEdit: addOrEditPlan,
         onDelete: deletePlan,
-        onCancel: cancelPlan,
-        onPostpone: postponePlan,
         onToggle: togglePlanCompleted,
         onPropose: proposeWeeklyPlan,
         onClear: clearWeeklyPlan,
@@ -8858,20 +8510,6 @@ class _SessionsState extends State<Sessions> {
         ],
       ),
     );
-  }
-
-  String _planLifecycleLabel(PlanItem item) {
-    if (item.completed) return 'Réalisée';
-    final now = DateTime.now();
-    final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
-    final today = DateTime(now.year, now.month, now.day);
-    return item.isPending && itemDay.isBefore(today) ? 'Non réalisée' : '';
-  }
-
-  Color? _planLifecycleColor(BuildContext c, PlanItem item) {
-    if (_planLifecycleLabel(item) == 'Non réalisée') return Theme.of(c).colorScheme.error;
-    if (item.completed) return Colors.green.shade700;
-    return null;
   }
 
   @override
@@ -11860,8 +11498,6 @@ class Week extends StatefulWidget {
     required this.onAdd,
     required this.onEdit,
     required this.onDelete,
-    required this.onCancel,
-    required this.onPostpone,
     required this.onToggle,
     required this.onPropose,
     required this.onClear,
@@ -11883,8 +11519,6 @@ class Week extends StatefulWidget {
   final VoidCallback onAdd;
   final void Function(PlanItem) onEdit;
   final void Function(PlanItem) onDelete;
-  final Future<void> Function(PlanItem) onCancel;
-  final Future<void> Function(PlanItem) onPostpone;
   final void Function(PlanItem) onToggle;
   final VoidCallback onPropose;
   final VoidCallback onClear;
@@ -11996,30 +11630,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   }
 
   String _dayKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  String _planLifecycleLabel(PlanItem item) {
-    if (item.completed) return 'Réalisée';
-    final now = DateTime.now();
-    final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
-    final today = DateTime(now.year, now.month, now.day);
-    if (!item.isPending || !itemDay.isBefore(today)) return '';
-    final lateDays = today.difference(itemDay).inDays;
-    if (lateDays <= 1) return 'Non réalisée · 1 j';
-    return 'Non réalisée · $lateDays j de retard';
-  }
-
-  Color? _planLifecycleColor(BuildContext c, PlanItem item) {
-    final label = _planLifecycleLabel(item);
-    if (label.isEmpty) return item.completed ? Colors.green.shade700 : null;
-    if (label.startsWith('Non réalisée')) {
-      final now = DateTime.now();
-      final itemDay = DateTime(item.date.year, item.date.month, item.date.day);
-      final lateDays = DateTime(now.year, now.month, now.day).difference(itemDay).inDays;
-      return lateDays >= 3 ? Theme.of(c).colorScheme.error : Colors.orange.shade700;
-    }
-    if (item.completed) return Colors.green.shade700;
-    return null;
-  }
 
   bool _isCoachRestDay(DateTime d) => widget.coachRestDayKeys.contains(_dayKey(d));
 
@@ -12764,21 +12374,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                   )),
                                                 ]),
                                               ),
-                                              if (_planLifecycleLabel(x).isNotEmpty) ...[
-                                                const SizedBox(height: 5),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                                  decoration: BoxDecoration(
-                                                    color: (_planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant).withOpacity(.08),
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    border: Border.all(color: (_planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant).withOpacity(.16)),
-                                                  ),
-                                                  child: Text(
-                                                    _planLifecycleLabel(x),
-                                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _planLifecycleColor(c, x) ?? Theme.of(c).colorScheme.onSurfaceVariant),
-                                                  ),
-                                                ),
-                                              ],
                                               const SizedBox(height: 6),
                                               Builder(builder: (context) {
                                                 final project = widget.projectById(x.projectId);
@@ -12918,53 +12513,27 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                       ),
                                       ),
                                     ),
-                                    if (!phone) ...[
-                                      if (!x.completed)
-                                        PopupMenuButton<String>(
-                                          tooltip: 'Actions de la séance',
-                                          onSelected: (value) async {
-                                            if (value == 'postpone') {
-                                              await widget.onPostpone(x);
-                                            } else if (value == 'cancel') {
-                                              await widget.onCancel(x);
-                                            } else if (value == 'delete' && await confirmDelete(c, 'cette séance')) {
-                                              widget.onDelete(x);
-                                            }
-                                          },
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'postpone', child: Text('Reporter…')),
-                                            PopupMenuItem(value: 'cancel', child: Text('Annuler la séance')),
-                                            PopupMenuItem(value: 'delete', child: Text('Supprimer')),
-                                          ],
-                                        )
-                                      else
-                                        IconButton(
-                                          icon: const Icon(Icons.delete_outline, size: 20),
-                                          tooltip: 'Supprimer',
-                                          onPressed: () async {
-                                            if (await confirmDelete(c, 'cette séance')) widget.onDelete(x);
-                                          },
-                                        )
-                                    ]
+                                    if (!phone)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, size: 20),
+                                        tooltip: 'Supprimer',
+                                        onPressed: () async {
+                                          if (await confirmDelete(c, 'cette séance')) widget.onDelete(x);
+                                        },
+                                      )
                                     else
                                       PopupMenuButton<String>(
                                         tooltip: 'Actions de la séance',
                                         onSelected: (value) async {
                                           if (value == 'edit') {
                                             widget.onEdit(x);
-                                          } else if (value == 'postpone') {
-                                            await widget.onPostpone(x);
-                                          } else if (value == 'cancel') {
-                                            await widget.onCancel(x);
                                           } else if (value == 'delete' && await confirmDelete(c, 'cette séance')) {
                                             widget.onDelete(x);
                                           }
                                         },
-                                        itemBuilder: (_) => [
-                                          const PopupMenuItem(value: 'edit', child: Text('Modifier')),
-                                          if (!x.completed) const PopupMenuItem(value: 'postpone', child: Text('Reporter…')),
-                                          if (!x.completed) const PopupMenuItem(value: 'cancel', child: Text('Annuler la séance')),
-                                          const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'edit', child: Text('Modifier')),
+                                          PopupMenuItem(value: 'delete', child: Text('Supprimer')),
                                         ],
                                       ),
                                   ],
@@ -13860,31 +13429,20 @@ class ProgressDashboardScreen extends StatelessWidget {
     final compact = mediaWidth < 600;
     Widget progress(double v) => ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: v, minHeight: 7));
     Widget metric(String label, double? value, String valueText) {
-      final scheme = Theme.of(c).colorScheme;
-      return Container(
-        width: double.infinity,
-        constraints: BoxConstraints(minHeight: compact ? 70 : 64),
-        padding: EdgeInsets.fromLTRB(compact ? 10 : 9, compact ? 9 : 8, compact ? 10 : 9, compact ? 10 : 9),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withOpacity(compact ? .68 : .54),
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: scheme.outlineVariant.withOpacity(.62)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 10.5 : 9.8, height: 1.15, fontWeight: FontWeight.w900, color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 5),
-            Text(valueText, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 15.5 : 14, height: 1.05, fontWeight: FontWeight.w900, color: scheme.onSurface)),
-            if (value != null) ...[
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(value: value.clamp(0.0, 1.0).toDouble(), minHeight: compact ? 6 : 5),
-              ),
-            ],
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 2),
+          Text(valueText, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+          if (value != null) ...[
+            const SizedBox(height: 3),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(value: value.clamp(0.0, 1.0).toDouble(), minHeight: 5),
+            ),
           ],
-        ),
+        ],
       );
     }
 
@@ -14208,31 +13766,14 @@ class ProgressDashboardScreen extends StatelessWidget {
                           : '${(regularity * 100).round()} % · ${days < 0 ? 'jamais travaillé' : 'dernière il y a $days j'}';
                       final recentProgress = hasRecentProgress(p);
                       final stagnant = isStagnant(p);
-                      final masteryAccent = stagnant
-                          ? Colors.orange.shade700
-                          : p.priority
-                              ? Theme.of(c).colorScheme.primary
-                              : Theme.of(c).colorScheme.outlineVariant;
-                      final masterySurface = compact
-                          ? Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.42)
-                          : Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.30);
                       return Padding(
-                        padding: EdgeInsets.only(bottom: compact ? 10 : 12),
-                        child: Material(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(compact ? 15 : 13),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(compact ? 15 : 13),
-                            onTap: () => onOpenProject(p),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: masterySurface,
-                                borderRadius: BorderRadius.circular(compact ? 16 : 14),
-                                border: Border.all(color: masteryAccent.withOpacity(compact ? .34 : .25), width: compact ? 1.1 : .85),
-                              ),
-                              padding: EdgeInsets.fromLTRB(compact ? 13 : 12, compact ? 12 : 11, compact ? 13 : 12, compact ? 13 : 12),
-                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => onOpenProject(p),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Row(children: [
                                 Text(p.emoji),
                                 const SizedBox(width: 7),
@@ -14244,15 +13785,6 @@ class ProgressDashboardScreen extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Icon(Icons.chevron_right, size: 16, color: Theme.of(c).colorScheme.onSurfaceVariant),
                               ]),
-                              const SizedBox(height: 8),
-                              Container(
-                                height: 3,
-                                width: compact ? 54 : 46,
-                                decoration: BoxDecoration(
-                                  color: masteryAccent.withOpacity(.72),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                              ),
                               if (compact) ...[
                                 const SizedBox(height: 6),
                                 Wrap(
@@ -14277,13 +13809,13 @@ class ProgressDashboardScreen extends StatelessWidget {
                                 Column(children: [
                                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Expanded(child: metric('PROGRESSION', stageScore, '${(stageScore * 100).round()} %')),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 12),
                                     Expanded(child: metric('TEMPO', tempoValue, tempoValue == null ? '—' : '${(tempoValue * 100).round()} %')),
                                   ]),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 12),
                                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Expanded(child: metric('RUN-THROUGH', runValue, runValue == null ? '—' : '${(runValue * 100).round()} %')),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 12),
                                     Expanded(child: metric('RÉGULARITÉ', regularity, regularityText)),
                                   ]),
                                 ])
@@ -14297,12 +13829,8 @@ class ProgressDashboardScreen extends StatelessWidget {
                                   const SizedBox(width: 10),
                                   Expanded(child: metric('RÉGULARITÉ', regularity, regularityText)),
                                 ]),
-                              const SizedBox(height: 10),
-                              Container(
-                                height: 1,
-                                color: Theme.of(c).colorScheme.outlineVariant.withOpacity(.46),
-                              ),
-                              const SizedBox(height: 9),
+                              const SizedBox(height: 8),
+                              const SizedBox(height: 2),
                               Container(
                                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
                                 decoration: BoxDecoration(
@@ -14326,8 +13854,7 @@ class ProgressDashboardScreen extends StatelessWidget {
                             ]),
                           ),
                         ),
-                      ),
-                    );
+                      );
                     }),
                 ],
               );
