@@ -1,4 +1,3 @@
-// V217 — correction compilation : le layout téléphone utilise un indicateur local explicite dans _buildPhoneHome.
 // V216 — finition iPhone : titres de mission cohérents, textes longs moins tronqués et métadonnées plus lisibles sur petits écrans.
 // V215 — audit de cohérence des titres de planning : le détail des ajustements coach applique la même règle d'affichage que Home, CoachHome et Planning.
 // V213 — cohérence d'affichage : le nom du morceau est utilisé comme titre principal partout où un planning est présenté.
@@ -61,7 +60,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '217.0';
+const String appVersion = '216.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -7003,7 +7002,6 @@ class CoachHome extends StatelessWidget {
   }
 
   Widget _buildPhoneHome(BuildContext c, {required DateTime now, required List<PlanItem> todayItems, required List<PlanItem> pending, required PlanItem? next, required Project? nextProject, required int todayTarget, required int todayDone, required double todayRatio, required double weeklyRatio, required List<_CoachPieceCandidate> coachPieces, required int badgeCount}) {
-    final phone = _isPhoneLayout(c);
     final scheme = Theme.of(c).colorScheme;
     final completedCount = todayItems.where((x) => x.completed).length;
     final todayRemaining = pending.fold(0, (a, x) => a + x.duration);

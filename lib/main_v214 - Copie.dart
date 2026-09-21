@@ -1,6 +1,4 @@
-// V217 — correction compilation : le layout téléphone utilise un indicateur local explicite dans _buildPhoneHome.
-// V216 — finition iPhone : titres de mission cohérents, textes longs moins tronqués et métadonnées plus lisibles sur petits écrans.
-// V215 — audit de cohérence des titres de planning : le détail des ajustements coach applique la même règle d'affichage que Home, CoachHome et Planning.
+// V214 — correction compilation : _displayPlanTitle est défini dans Home et CoachHome pour les affichages du planning.
 // V213 — cohérence d'affichage : le nom du morceau est utilisé comme titre principal partout où un planning est présenté.
 // V212.1 — Cohérence planning : le nom du morceau reste le titre principal partout où une séance lui est liée ; recherche et actions utilisent aussi ce nom.
 // V208 — Bilan hebdomadaire : synthèse coach + lecture mobile plus claire.
@@ -61,7 +59,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '217.0';
+const String appVersion = '214.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -5685,7 +5683,7 @@ Widget _statTile(BuildContext c, {
       ),
       const SizedBox(width: 11),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 12, fontWeight: MediaQuery.sizeOf(c).width < 600 ? FontWeight.w700 : FontWeight.w500, color: scheme.onSurface)),
+        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         const SizedBox(height: 2),
         Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         if (sub != null) ...[
@@ -7003,13 +7001,10 @@ class CoachHome extends StatelessWidget {
   }
 
   Widget _buildPhoneHome(BuildContext c, {required DateTime now, required List<PlanItem> todayItems, required List<PlanItem> pending, required PlanItem? next, required Project? nextProject, required int todayTarget, required int todayDone, required double todayRatio, required double weeklyRatio, required List<_CoachPieceCandidate> coachPieces, required int badgeCount}) {
-    final phone = _isPhoneLayout(c);
     final scheme = Theme.of(c).colorScheme;
     final completedCount = todayItems.where((x) => x.completed).length;
     final todayRemaining = pending.fold(0, (a, x) => a + x.duration);
     final nextFocus = nextProject == null ? null : _focusFor(nextProject);
-    final nextDisplayTitle = next == null ? null : _displayPlanTitle(next);
-    final nextWorkType = next == null ? null : (next.category?.trim().isNotEmpty == true ? next.category!.trim() : null);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
@@ -7061,10 +7056,10 @@ class CoachHome extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             if (next != null) ...[
-              Text(nextDisplayTitle ?? 'Séance', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer, height: 1.08)),
-              if (nextWorkType != null) ...[
+              Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer, height: 1.08)),
+              if (nextProject != null) ...[
                 const SizedBox(height: 5),
-                Text(nextProject == null ? nextWorkType : '${nextProject!.emoji} $nextWorkType', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.2, color: scheme.onPrimaryContainer.withOpacity(.84))),
+                Text('${nextProject!.emoji} ${nextProject!.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onPrimaryContainer.withOpacity(.84))),
               ],
               if (next.details.trim().isNotEmpty) ...[
                 const SizedBox(height: 7),
@@ -7118,7 +7113,7 @@ class CoachHome extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => onTogglePlan(item), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(_displayPlanTitle(item), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
-                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.25, color: scheme.onSurfaceVariant)),
+                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
                 ]))),
                 const SizedBox(width: 8),
                 Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
@@ -7143,8 +7138,8 @@ class CoachHome extends StatelessWidget {
           Expanded(child: latestCoachDecision == null
               ? Text('Après ta prochaine séance, le coach analysera ce qui a changé et ajustera les créneaux suivants si nécessaire.', style: TextStyle(fontSize: 12.5, height: 1.35, color: scheme.onSurfaceVariant))
               : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(latestCoachDecision!.message, softWrap: true, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
-                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${latestCoachDecision!.reason}', softWrap: true, style: TextStyle(fontSize: 11.5, height: 1.3, color: scheme.onSurfaceVariant))],
+                  Text(latestCoachDecision!.message, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
+                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${latestCoachDecision!.reason}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, height: 1.3, color: scheme.onSurfaceVariant))],
                 ])),
         ])),
 
@@ -7163,7 +7158,7 @@ class CoachHome extends StatelessWidget {
             Text(item.project.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 9),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.project.name, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, height: 1.2)),
+              Text(item.project.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               progress(item.project.progress),
               const SizedBox(height: 3),
@@ -7204,8 +7199,6 @@ class CoachHome extends StatelessWidget {
     final weeklyRatio = weeklyTarget == 0 ? 0.0 : (minutes / weeklyTarget).clamp(0.0, 1.0).toDouble();
     final next = _bestPending(pending, now);
     final nextProject = next == null ? null : projectById(next.projectId);
-    final nextDisplayTitle = next == null ? null : _displayPlanTitle(next);
-    final nextWorkType = next == null ? null : (next.category?.trim().isNotEmpty == true ? next.category!.trim() : null);
     final coachPieces = _coachCandidates();
     final badgeCount = badges.where((b) => b.earned).length;
 
@@ -7266,8 +7259,8 @@ class CoachHome extends StatelessWidget {
         ]),
         const SizedBox(height: 14),
         if (next != null) ...[
-          Text(nextDisplayTitle ?? 'Séance', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, height: 1.08)),
-          if (nextWorkType != null) ...[const SizedBox(height: 5), Text(nextProject == null ? nextWorkType : '${nextProject!.emoji} $nextWorkType', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.2, color: Theme.of(c).colorScheme.onSurfaceVariant))],
+          Text(next.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          if (nextProject != null) ...[const SizedBox(height: 5), Text('${nextProject!.emoji} ${nextProject!.name}', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))],
           if (next.details.isNotEmpty) ...[const SizedBox(height: 6), Text(next.details, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))],
           if (nextProject != null) ...[
             const SizedBox(height: 12),
@@ -8340,7 +8333,6 @@ class _SessionDialogState extends State<SessionDialog> {
 
   Widget _sessionInfoPill(BuildContext c, String label, {bool primary = false}) {
     final scheme = Theme.of(c).colorScheme;
-    final phone = _isPhoneLayout(c);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
@@ -8350,10 +8342,9 @@ class _SessionDialogState extends State<SessionDialog> {
       ),
       child: Text(
         label,
-        maxLines: phone ? 2 : 1,
-        overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis,
-        softWrap: true,
-        style: TextStyle(fontSize: 11.5, height: 1.2, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11.5, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
       ),
     );
   }
@@ -8940,7 +8931,6 @@ Widget _countPill(BuildContext c, String value) {
 
 Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
   final scheme = Theme.of(c).colorScheme;
-  final phone = _isPhoneLayout(c);
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     decoration: BoxDecoration(color: scheme.surfaceContainerHighest.withOpacity(.62), borderRadius: BorderRadius.circular(15)),
@@ -8948,8 +8938,8 @@ Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
       Icon(icon, size: 13, color: scheme.onSurfaceVariant),
       const SizedBox(width: 4),
       ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: phone ? 178 : 155),
-        child: Text(label, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, softWrap: true, style: TextStyle(fontSize: 10.5, height: 1.2, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+        constraints: const BoxConstraints(maxWidth: 155),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
       ),
     ]),
   );
@@ -11002,7 +10992,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
         ? '${item.plannedDuration} min → ${item.duration} min'
         : '${item.duration} min';
     final piece = widget.projectById(item.projectId);
-    final pieceName = _displayPlanTitle(item);
+    final pieceName = piece?.name ?? item.title;
     final dateLabel = _coachPlanDateLabel(item.date);
 
     if (!item.coachAdjustmentSeen) {
@@ -13229,7 +13219,7 @@ class ProgressDashboardScreen extends StatelessWidget {
   }
 
   Widget _progressMetric(BuildContext c, String label, double value, String text) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(label, style: TextStyle(fontSize: MediaQuery.sizeOf(c).width < 600 ? 12.5 : 12, color: Theme.of(c).colorScheme.onSurface, fontWeight: FontWeight.w800)),
+    Text(label, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
     const SizedBox(height: 7),
     Text(text, style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
     const SizedBox(height: 7),

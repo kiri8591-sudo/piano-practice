@@ -1,8 +1,3 @@
-// V217 — correction compilation : le layout téléphone utilise un indicateur local explicite dans _buildPhoneHome.
-// V216 — finition iPhone : titres de mission cohérents, textes longs moins tronqués et métadonnées plus lisibles sur petits écrans.
-// V215 — audit de cohérence des titres de planning : le détail des ajustements coach applique la même règle d'affichage que Home, CoachHome et Planning.
-// V213 — cohérence d'affichage : le nom du morceau est utilisé comme titre principal partout où un planning est présenté.
-// V212.1 — Cohérence planning : le nom du morceau reste le titre principal partout où une séance lui est liée ; recherche et actions utilisent aussi ce nom.
 // V208 — Bilan hebdomadaire : synthèse coach + lecture mobile plus claire.
 // V207 — Maîtrise iPhone : indicateurs d’état plus lisibles et métriques compactées.
 // V206 — Planning + Coach : prochaine séance mise en avant et hiérarchie iPhone renforcée.
@@ -59,9 +54,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
-// V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '217.0';
+const String appVersion = '209.1';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -3424,12 +3418,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     return '${weekdays[local.weekday - 1]} ${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
   }
 
-  String _displayPlanTitle(PlanItem item) {
-    final projectName = projectById(item.projectId)?.name.trim();
-    if (projectName != null && projectName.isNotEmpty) return projectName;
-    return item.title.trim().isEmpty ? 'Séance' : item.title.trim();
-  }
-
   String _coachDateTimeLabel(DateTime? value) {
     if (value == null) return 'date non disponible';
     final local = value.toLocal();
@@ -3464,11 +3452,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       changed: changed,
       title: changed ? 'Planning ajusté' : 'Analyse du coach',
       message: changed
-          ? _lastCoachAdjustmentType == 'duration' && _lastCoachOldDuration != null && _lastCoachNewDuration != null
-              ? 'J’ai analysé ta séance sur ${analyzedName ?? 'morceau non renseigné'} et modifié la durée de la séance de ${adjustedName ?? 'morceau du planning'}${adjustedDate == null ? '' : ' prévue le ${_coachPlanDateLabel(adjustedDate)}'} : ${_lastCoachOldDuration} → ${_lastCoachNewDuration} min.'
-              : _lastCoachAdjustmentType == 'focus' && _lastCoachOldFocus != null && _lastCoachNewFocus != null
-                  ? 'J’ai analysé ta séance sur ${analyzedName ?? 'morceau non renseigné'} et modifié le focus de la séance de ${adjustedName ?? 'morceau du planning'}${adjustedDate == null ? '' : ' prévue le ${_coachPlanDateLabel(adjustedDate)}'} : ${_lastCoachOldFocus} → ${_lastCoachNewFocus}.'
-                  : 'J’ai analysé ta séance sur ${analyzedName ?? 'morceau non renseigné'} et ajusté ${adjustedName ?? 'le morceau du planning'}${adjustedDate == null ? '' : ' le ${_coachPlanDateLabel(adjustedDate)}'}. '
+          ? 'J’ai analysé ta séance sur ${analyzedName ?? 'morceau non renseigné'} et ajusté le planning à venir : ${adjustedName ?? 'morceau du planning'}${adjustedDate == null ? '' : ' le ${_coachPlanDateLabel(adjustedDate)}'}${_lastCoachAdjustmentType == 'duration' && _lastCoachOldDuration != null && _lastCoachNewDuration != null ? ', ${_lastCoachOldDuration} → ${_lastCoachNewDuration} min' : _lastCoachAdjustmentType == 'focus' && _lastCoachOldFocus != null && _lastCoachNewFocus != null ? ', focus ${_lastCoachOldFocus} → ${_lastCoachNewFocus}' : ''}.'
           : 'J’ai analysé ta séance sur ${analyzedName ?? 'ce morceau'}. Rien ne justifie de changer le planning.',
       oldDuration: changed ? _lastCoachOldDuration : null,
       newDuration: changed ? _lastCoachNewDuration : null,
@@ -4439,7 +4423,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               const Divider(height: 1),
               ...todaysItems.map((x) => SimpleDialogOption(
                     onPressed: () => Navigator.pop(c, x),
-                    child: Text(_displayPlanTitle(x)),
+                    child: Text(x.title),
                   )),
             ],
           ),
@@ -5027,7 +5011,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final result = await showDialog<Object>(
       context: navKey.currentContext!,
       builder: (c) => AlertDialog(
-        title: Text('Terminé : ${projectById(x.projectId)?.name ?? x.title}'),
+        title: Text('Terminé : ${x.title}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -5685,7 +5669,7 @@ Widget _statTile(BuildContext c, {
       ),
       const SizedBox(width: 11),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 12, fontWeight: MediaQuery.sizeOf(c).width < 600 ? FontWeight.w700 : FontWeight.w500, color: scheme.onSurface)),
+        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         const SizedBox(height: 2),
         Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         if (sub != null) ...[
@@ -5973,12 +5957,6 @@ class Home extends StatelessWidget {
   final Project? Function(String?) projectById;
   final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
-
-  String _displayPlanTitle(PlanItem item) {
-    final projectName = projectById(item.projectId)?.name.trim();
-    if (projectName != null && projectName.isNotEmpty) return projectName;
-    return item.title.trim().isEmpty ? 'Séance' : item.title.trim();
-  }
 
   void _showBackupMenu(BuildContext c) {
     showDialog<void>(
@@ -6418,7 +6396,7 @@ class Home extends StatelessWidget {
                                       )),
                                     ),
                                   ),
-                                Text(_displayPlanTitle(item), style: TextStyle(
+                                Text(item.title, style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: item.completed ? Colors.grey : null,
                                   decoration: item.completed ? TextDecoration.lineThrough : null,
@@ -6569,12 +6547,6 @@ class CoachHome extends StatelessWidget {
   final VoidCallback onOpenCoachLog;
 
   DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  String _displayPlanTitle(PlanItem item) {
-    final projectName = projectById(item.projectId)?.name.trim();
-    if (projectName != null && projectName.isNotEmpty) return projectName;
-    return item.title.trim().isEmpty ? 'Séance' : item.title.trim();
-  }
 
   DateTime? _lastSession(String projectId) {
     DateTime? last;
@@ -7003,13 +6975,10 @@ class CoachHome extends StatelessWidget {
   }
 
   Widget _buildPhoneHome(BuildContext c, {required DateTime now, required List<PlanItem> todayItems, required List<PlanItem> pending, required PlanItem? next, required Project? nextProject, required int todayTarget, required int todayDone, required double todayRatio, required double weeklyRatio, required List<_CoachPieceCandidate> coachPieces, required int badgeCount}) {
-    final phone = _isPhoneLayout(c);
     final scheme = Theme.of(c).colorScheme;
     final completedCount = todayItems.where((x) => x.completed).length;
     final todayRemaining = pending.fold(0, (a, x) => a + x.duration);
     final nextFocus = nextProject == null ? null : _focusFor(nextProject);
-    final nextDisplayTitle = next == null ? null : _displayPlanTitle(next);
-    final nextWorkType = next == null ? null : (next.category?.trim().isNotEmpty == true ? next.category!.trim() : null);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
@@ -7061,10 +7030,10 @@ class CoachHome extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             if (next != null) ...[
-              Text(nextDisplayTitle ?? 'Séance', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer, height: 1.08)),
-              if (nextWorkType != null) ...[
+              Text(next.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer, height: 1.08)),
+              if (nextProject != null) ...[
                 const SizedBox(height: 5),
-                Text(nextProject == null ? nextWorkType : '${nextProject!.emoji} $nextWorkType', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.2, color: scheme.onPrimaryContainer.withOpacity(.84))),
+                Text('${nextProject!.emoji} ${nextProject!.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: scheme.onPrimaryContainer.withOpacity(.84))),
               ],
               if (next.details.trim().isNotEmpty) ...[
                 const SizedBox(height: 7),
@@ -7117,8 +7086,8 @@ class CoachHome extends StatelessWidget {
                 IconButton(onPressed: () => onTogglePlan(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: Icon(item.completed ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded), color: item.completed ? Colors.green.shade600 : categoryColor(item.category), tooltip: item.completed ? 'Décocher' : 'Marquer comme fait'),
                 const SizedBox(width: 6),
                 Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => onTogglePlan(item), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_displayPlanTitle(item), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
-                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.25, color: scheme.onSurfaceVariant)),
+                  Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
+                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
                 ]))),
                 const SizedBox(width: 8),
                 Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
@@ -7143,8 +7112,8 @@ class CoachHome extends StatelessWidget {
           Expanded(child: latestCoachDecision == null
               ? Text('Après ta prochaine séance, le coach analysera ce qui a changé et ajustera les créneaux suivants si nécessaire.', style: TextStyle(fontSize: 12.5, height: 1.35, color: scheme.onSurfaceVariant))
               : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(latestCoachDecision!.message, softWrap: true, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
-                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${latestCoachDecision!.reason}', softWrap: true, style: TextStyle(fontSize: 11.5, height: 1.3, color: scheme.onSurfaceVariant))],
+                  Text(latestCoachDecision!.message, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
+                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${latestCoachDecision!.reason}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, height: 1.3, color: scheme.onSurfaceVariant))],
                 ])),
         ])),
 
@@ -7163,7 +7132,7 @@ class CoachHome extends StatelessWidget {
             Text(item.project.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 9),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.project.name, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, height: 1.2)),
+              Text(item.project.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               progress(item.project.progress),
               const SizedBox(height: 3),
@@ -7204,8 +7173,6 @@ class CoachHome extends StatelessWidget {
     final weeklyRatio = weeklyTarget == 0 ? 0.0 : (minutes / weeklyTarget).clamp(0.0, 1.0).toDouble();
     final next = _bestPending(pending, now);
     final nextProject = next == null ? null : projectById(next.projectId);
-    final nextDisplayTitle = next == null ? null : _displayPlanTitle(next);
-    final nextWorkType = next == null ? null : (next.category?.trim().isNotEmpty == true ? next.category!.trim() : null);
     final coachPieces = _coachCandidates();
     final badgeCount = badges.where((b) => b.earned).length;
 
@@ -7266,8 +7233,8 @@ class CoachHome extends StatelessWidget {
         ]),
         const SizedBox(height: 14),
         if (next != null) ...[
-          Text(nextDisplayTitle ?? 'Séance', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, height: 1.08)),
-          if (nextWorkType != null) ...[const SizedBox(height: 5), Text(nextProject == null ? nextWorkType : '${nextProject!.emoji} $nextWorkType', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.2, color: Theme.of(c).colorScheme.onSurfaceVariant))],
+          Text(next.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          if (nextProject != null) ...[const SizedBox(height: 5), Text('${nextProject!.emoji} ${nextProject!.name}', style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))],
           if (next.details.isNotEmpty) ...[const SizedBox(height: 6), Text(next.details, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))],
           if (nextProject != null) ...[
             const SizedBox(height: 12),
@@ -7374,7 +7341,7 @@ class CoachHome extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_displayPlanTitle(item), style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
+                  Text(item.title, style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
                   if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                 ]),
               ),
@@ -8340,7 +8307,6 @@ class _SessionDialogState extends State<SessionDialog> {
 
   Widget _sessionInfoPill(BuildContext c, String label, {bool primary = false}) {
     final scheme = Theme.of(c).colorScheme;
-    final phone = _isPhoneLayout(c);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
@@ -8350,10 +8316,9 @@ class _SessionDialogState extends State<SessionDialog> {
       ),
       child: Text(
         label,
-        maxLines: phone ? 2 : 1,
-        overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis,
-        softWrap: true,
-        style: TextStyle(fontSize: 11.5, height: 1.2, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11.5, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
       ),
     );
   }
@@ -8940,7 +8905,6 @@ Widget _countPill(BuildContext c, String value) {
 
 Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
   final scheme = Theme.of(c).colorScheme;
-  final phone = _isPhoneLayout(c);
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     decoration: BoxDecoration(color: scheme.surfaceContainerHighest.withOpacity(.62), borderRadius: BorderRadius.circular(15)),
@@ -8948,8 +8912,8 @@ Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
       Icon(icon, size: 13, color: scheme.onSurfaceVariant),
       const SizedBox(width: 4),
       ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: phone ? 178 : 155),
-        child: Text(label, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, softWrap: true, style: TextStyle(fontSize: 10.5, height: 1.2, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+        constraints: const BoxConstraints(maxWidth: 155),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
       ),
     ]),
   );
@@ -10923,18 +10887,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
   }
   String filtreMotCle = '';
 
-  String _coachPlanDateLabel(DateTime value) {
-    const weekdays = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
-    final local = value.toLocal();
-    return '${weekdays[local.weekday - 1]} ${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
-  }
-
-  String _displayPlanTitle(PlanItem item) {
-    final projectName = widget.projectById(item.projectId)?.name.trim();
-    if (projectName != null && projectName.isNotEmpty) return projectName;
-    return item.title.trim().isEmpty ? 'Séance' : item.title.trim();
-  }
-
   static String weekday(int n) => ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][n - 1];
 
   Session? _sourceSession(PlanItem item) {
@@ -11001,9 +10953,6 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final detail = delta.abs() >= 1
         ? '${item.plannedDuration} min → ${item.duration} min'
         : '${item.duration} min';
-    final piece = widget.projectById(item.projectId);
-    final pieceName = _displayPlanTitle(item);
-    final dateLabel = _coachPlanDateLabel(item.date);
 
     if (!item.coachAdjustmentSeen) {
       item.coachAdjustmentSeen = true;
@@ -11023,13 +10972,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('🎹 $pieceName', style: const TextStyle(fontWeight: FontWeight.w800)),
-            if (item.title.trim().isNotEmpty && item.title.trim() != pieceName.trim()) ...[
-              const SizedBox(height: 3),
-              Text(item.title, style: TextStyle(fontSize: 12, color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
-            ],
-            const SizedBox(height: 4),
-            Text('Séance du $dateLabel', style: TextStyle(fontSize: 12, color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
+            Text(item.title, style: const TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
             Text(detail, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Theme.of(dialogContext).colorScheme.primary)),
             const SizedBox(height: 8),
@@ -11096,9 +11039,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
     final unseen = _hasUnseenCoachAdjustment(item);
     final text = delta < 0
         ? 'Coach : ${item.duration} min au lieu de ${item.plannedDuration} min · séance allégée'
-        : delta > 0
-            ? 'Coach : ${item.duration} min au lieu de ${item.plannedDuration} min · séance renforcée'
-            : 'Coach : ${item.duration} min';
+        : 'Coach : ${item.duration} min au lieu de ${item.plannedDuration} min · séance renforcée';
     return Padding(
       padding: const EdgeInsets.only(top: 7),
       child: InkWell(
@@ -11182,7 +11123,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             ],
           ),
           const SizedBox(height: 9),
-          Text(_displayPlanTitle(item), style: TextStyle(fontSize: phoneSafe(c) ? 16 : 17, fontWeight: FontWeight.w900, color: scheme.onSurface)),
+          Text(item.title, style: TextStyle(fontSize: phoneSafe(c) ? 16 : 17, fontWeight: FontWeight.w900, color: scheme.onSurface)),
           const SizedBox(height: 5),
           Wrap(spacing: 6, runSpacing: 5, children: [
             if (item.duration > 0) _phoneMetaPill(c, Icons.timer_outlined, '${item.duration} min'),
@@ -11259,9 +11200,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       }
       if (filtreMotCle.trim().isEmpty) return true;
       final q = filtreMotCle.toLowerCase().trim();
-      final pieceName = widget.projectById(x.projectId)?.name.toLowerCase() ?? '';
       return x.motsCles.any((t) => t.toLowerCase().contains(q)) ||
-          pieceName.contains(q) ||
           x.title.toLowerCase().contains(q) ||
           x.details.toLowerCase().contains(q) ||
           (x.category?.toLowerCase().contains(q) ?? false) ||
@@ -11647,25 +11586,16 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                 ]),
                                               ),
                                               const SizedBox(height: 6),
-                                              Builder(builder: (context) {
-                                                final project = widget.projectById(x.projectId);
-                                                final pieceName = project?.name?.trim();
-                                                final hasPieceName = pieceName != null && pieceName.isNotEmpty;
-                                                final displayTitle = _displayPlanTitle(x);
-                                                final showWorkTitle = hasPieceName && x.title.trim().isNotEmpty && x.title.trim() != displayTitle;
-                                                return Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                                                      Expanded(
-                                                        child: Text(displayTitle, style: TextStyle(
-                                                          fontSize: phone ? 15.5 : 15,
-                                                          fontWeight: FontWeight.w700,
-                                                          color: x.completed ? Colors.grey : null,
-                                                          decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                        )),
-                                                      ),
-                                                      if (x.id == nextPendingId) ...[
+                                              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                                                Expanded(
+                                                  child: Text(x.title, style: TextStyle(
+                                                    fontSize: phone ? 15.5 : 15,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: x.completed ? Colors.grey : null,
+                                                    decoration: x.completed ? TextDecoration.lineThrough : null,
+                                                  )),
+                                                ),
+                                                if (x.id == nextPendingId) ...[
                                                   const SizedBox(width: 7),
                                                   Container(
                                                     padding: EdgeInsets.symmetric(horizontal: phone ? 8 : 7, vertical: phone ? 4 : 3),
@@ -11680,39 +11610,8 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                       Text('PROCHAINE', style: TextStyle(fontSize: phone ? 8.5 : 8, fontWeight: FontWeight.w900, letterSpacing: .35, color: Theme.of(c).colorScheme.primary)),
                                                     ]),
                                                   ),
-                                                      ],
-                                                    ]),
-                                                    if (showWorkTitle) ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        x.title,
-                                                        style: TextStyle(
-                                                          fontSize: phone ? 11.5 : 11.5,
-                                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                          fontWeight: FontWeight.w600,
-                                                          decoration: x.completed ? TextDecoration.lineThrough : null,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                );
-                                              }),
-                                              if (phone && x.coachAdjusted) ...[
-                                                const SizedBox(height: 3),
-                                                Builder(builder: (context) {
-                                                  final project = widget.projectById(x.projectId);
-                                                  final name = project?.name;
-                                                  if (name == null || name.trim().isEmpty) return const SizedBox.shrink();
-                                                  return Text(
-                                                    '🎹 $name',
-                                                    style: TextStyle(
-                                                      fontSize: 11.5,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                    ),
-                                                  );
-                                                }),
-                                              ],
+                                                ],
+                                              ]),
                                               if (x.details.isNotEmpty) ...[
                                                 const SizedBox(height: 2),
                                                 Text(x.details, style: TextStyle(
@@ -13229,7 +13128,7 @@ class ProgressDashboardScreen extends StatelessWidget {
   }
 
   Widget _progressMetric(BuildContext c, String label, double value, String text) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(label, style: TextStyle(fontSize: MediaQuery.sizeOf(c).width < 600 ? 12.5 : 12, color: Theme.of(c).colorScheme.onSurface, fontWeight: FontWeight.w800)),
+    Text(label, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
     const SizedBox(height: 7),
     Text(text, style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
     const SizedBox(height: 7),
