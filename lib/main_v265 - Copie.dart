@@ -1,8 +1,100 @@
-// V268 — Version finale 1.0
-// Nettoyage final intégré : suppression d'un helper devenu sans appel,
-// consolidation des métadonnées de version et aucune nouvelle règle métier.
-// V266 — garde-fous finaux Coach + correction de portée candidateProject.
-
+// V263 — correction de compilation : SizedBox dynamique dans Maîtrise des morceaux.
+// V261 — version de validation : aucune modification fonctionnelle ; V260 conservée comme socle.
+// V259 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V258 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V257 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V256 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V255 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V254 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V253 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V252 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V251 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V250 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V249 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V248 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V247 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V246 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V245 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V244 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V243 — étape de la trajectoire finale : stabilisation / finition / consolidation.
+// V239 — correction CoachHome : ajout du helper _coachShortReason utilisé par l’Accueil.
+// V239 — harmonisation finale des statuts du Planning : même lecture visuelle pour réalisée, en retard, annulée, reportée et ajustée par le coach.
+// V240 — audit des métriques prévu → réalisé / maîtrise : calculs centralisés, indicateurs de cohérence et tri plus stable.
+// V241 — nettoyage : suppression des helpers devenus inutiles ou sans appel, sans changement fonctionnel.
+// V242 — consolidation : stabilisation finale avant nouvelles fonctionnalités ; moteur et données conservés.
+// V226 — lecture Coach : la raison d'une journée légère est visible directement dans Accueil et Planning.
+// V230 — Coach : utilise la cause de la sous-réalisation pour éviter les mauvaises réactions sur la charge, notamment après des retraits volontaires.
+// V229 — Coach : distingue sous-réalisation par manque de temps, retraits volontaires du planning et cause indéterminée, sans surinterpréter l'absence de séances.
+// V228 — Coach : utilise la lecture hebdomadaire (prévu/réalisé/adhérence) comme signal modéré pour les adaptations, sans créer un second programme.
+// V227 — Accueil : synthèse hebdomadaire légère (prévu, réalisé, adhérence, équilibre) sans créer un second programme.
+// V225 — Coach : distingue récupération et journée légère par équilibre global, sans remplir artificiellement la semaine.
+// V224 — Coach lissage multi-jours : évite les journées lourdes consécutives en modulant le budget des morceaux, sans modifier la capacité utilisateur.
+// V223 — Coach récupération : réserve volontaire d'une journée légère lorsque la charge récente ou plusieurs ressentis difficiles le justifient, sans changer les capacités utilisateur.
+// V222 — ordre quotidien coach : alternance du premier focus de la journée, routine conservée en tête et Run-through placé en fin de séquence.
+// V221 — répartition qualitative : alternance par morceau/focus, entretien réellement orienté révision et meilleure diversité des créneaux.
+// V217 — correction compilation : le layout téléphone utilise un indicateur local explicite dans _buildPhoneHome.
+// V216 — finition iPhone : titres de mission cohérents, textes longs moins tronqués et métadonnées plus lisibles sur petits écrans.
+// V215 — audit de cohérence des titres de planning : le détail des ajustements coach applique la même règle d'affichage que Home, CoachHome et Planning.
+// V220 — Coach semaine cohérente : équilibre des créneaux restants, couverture des morceaux prioritaires et garde-fous contre la concentration excessive.
+// V219 — Scénarios Coach fiabilisés : décisions plus prudentes selon séance facile/difficile, stagnation, manque d'historique et ajustements récents.
+// V218 — Coach fiabilisé : ajustements de durée/focus uniquement lorsqu'ils sont pédagogiquement significatifs, avec preuve suffisante et anti-oscillation.
+// V217 — correction compilation CoachHome : détection responsive locale du layout iPhone.
+// V231 — distinction des séances non réalisées, annulées volontairement et reportées, sans polluer le journal coach.
+// V236 — stabilisation : nettoyage des branches Coach redondantes et audit statique renforcé.
+// V238 — Coach explicable : raisons courtes et lisibles dans Accueil, résultat d’analyse et journal, sans changer les décisions du moteur.
+// V235 — Maîtrise des morceaux : métriques en cartes distinctes et meilleure lisibilité iPhone
+// V234 — priorité progressive des séances en retard + séparation visuelle renforcée de « Maîtrise des morceaux »
+// V233 — lecture plus fine des séances non réalisées : ancienneté et poids du signal utilisés avec prudence par le coach.
+// V232 — correction de compilation : helpers _day et cycle de vie du planning disponibles dans leurs widgets utilisateurs.
+// V213 — cohérence d'affichage : le nom du morceau est utilisé comme titre principal partout où un planning est présenté.
+// V212.1 — Cohérence planning : le nom du morceau reste le titre principal partout où une séance lui est liée ; recherche et actions utilisent aussi ce nom.
+// V208 — Bilan hebdomadaire : synthèse coach + lecture mobile plus claire.
+// V207 — Maîtrise iPhone : indicateurs d’état plus lisibles et métriques compactées.
+// V206 — Planning + Coach : prochaine séance mise en avant et hiérarchie iPhone renforcée.
+// V205 — Sessions : lecture mobile renforcée, prévu → réalisé, état du Run-through et séance du jour.
+// V204 — fiche morceau : lecture synthétique des 4 étapes + prévu → réalisé dans l'historique.
+// V204 — Finition fiche morceau iPhone : hiérarchie, progression, objectif et focus mieux lisibles.
+// V201 — Audit iPhone : zones tactiles, contraste du fond, champs et boutons harmonisés sans changement fonctionnel.
+// V200 — restauration de sauvegarde Web/iPhone renforcée.
+// V199.1 — Correction : initialisation du contrôleur Coach pour éviter l’écran blanc du Planning sur iPhone.
+// V197 — Planning tournant : l'ordre visuel tourne avec les jours écoulés, sans modifier les dates ni les données.
+// V175 — Coach : une stagnation détectée peut maintenant modifier réellement le focus du prochain créneau, tout en respectant un focus manuel.
+// V176 — Refonte visuelle globale : surfaces plus plates, hiérarchie mobile et accueil allégé pour iPhone.
+// V175 — Coach : stagnation fiabilisée, avec comparaison uniquement sur les données de progression réellement renseignées et distinction avec une régression.
+// V173 — Coach : le moteur utilise maintenant la stagnation récente pour prioriser un morceau et adapter son conseil.
+// V172 — Maîtrise des morceaux : filtres « En progression » et « Stagnants » basés sur l’évolution récente.
+// V171 — journal du coach : recherche, filtres, tri et conservation étendue à 150 entrées.
+// V170 — journal du coach : distingue une séance active d’une séance retirée/annulée après réalisation.
+// V169 — Coach : après une activité réalisée aujourd’hui, le même morceau passe derrière les morceaux encore à faire, sauf s’il n’y a aucune alternative.
+// V192 — Fiche morceau iPhone : résumé visuel, étapes, tempo, statut et historique mieux hiérarchisés.
+// V188 — Planning iPhone : densité et lecture quotidienne affinées.
+// V187 — Contours des fiches iPhone légèrement renforcés pour mieux séparer les items, sans alourdir les surfaces.
+// V184 — Finition iPhone : en-têtes plus compacts et transitions iOS plus naturelles.
+// V183 — ergonomie iPhone : navigation et zones tactiles harmonisées, avec une barre basse plus lisible sans changer la navigation fonctionnelle.
+// V181 — contraste visuel léger des blocs/cards sur mobile, notamment Sessions, sans modifier la structure fonctionnelle.
+// V180.1 — Correction compilation : fermeture des dialogues mobiles + compatibilite InputDecorationTheme Flutter.
+// V179 — Refonte mobile visible : accueil recentré, surfaces iPhone plus plates et navigation tactile allégée.
+// V177 — Look & feel iPhone : Morceaux et Sessions allégés, actions secondaires regroupées, contenu plus lisible.
+// V193 — fiche session iPhone : résumé, évaluation tactile et hiérarchie renforcée.
+// V166 — conservation des sélections Filtrer / Trier de « Maîtrise des morceaux ».
+// V162 — prévu → réalisé : détail par séance + synthèse hebdomadaire fiable sur les séances échues.
+// V161 — analyse globale du planning après chaque séance : le coach examine tous les créneaux restants avant de décider.
+// V165 — Maîtrise complète : tous les morceaux visibles + filtres et tris multi-critères.
+// V164 — Maîtrise des morceaux : synthèse expliquée (progression, tempo, Run-through, régularité).
+// V167 — correction des filtres/tri de Maîtrise : état conservé par l'app et callbacks explicites.
+// V159 — moteur coach : adaptations pédagogiques et significatives, sans micro-ajustements artificiels.
+// V155 — journal coach : date de l'ajustement + bon morceau concerné.
+// V154 — maîtrise des morceaux + adaptation charge/variété + clarté Coach/Planning.
+// V153 — coche verte pour les séances réalisées, sans réactivation.
+// V151 — COACH toujours visible + analyse récente intégrée au planning.
+// V150 — coach explicable : morceaux à faire avancer + analyse récente du coach.
+// Base fonctionnelle : V134 -> V145 -> V146 -> V147.
+// V120 — coach adaptatif : le planning apprend du temps réellement joué.
+// V119 — ergonomie des détails : hiérarchie plus nette, cartes internes allégées.
+// V118 — maîtrise morceau : progression globale + tempo + continuité + stabilité.
+// V117 — moteur coach fiabilisé : actions terminées écartées, rotation renforcée, charge adaptative.
+// V115 — finition responsive iPhone, à partir de V114, sans changement fonctionnel.
+// V89
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
@@ -17,8 +109,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '268.0';
-const String buildTrack = 'release_1_0';
+const String appVersion = '265.0';
+const String buildTrack = 'final_1_0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -4775,14 +4867,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
 
     bool applyDuration(PlanItem item, int newDuration, String reason) {
-      // V266 — garde-fou final : une décision du coach ne peut viser qu'un
+      // V265 — garde-fou final : une décision du coach ne peut viser qu'un
       // créneau encore actif et conserver les limites pédagogiques du focus.
       if (item.completed || !item.isPending || item.sourceSessionId != null) return false;
       if (newDuration == item.duration) return false;
       if ((newDuration - item.duration).abs() < 10) return false;
-      final durationProject = projectById(item.projectId);
-      if (durationProject == null) return false;
-      final durationFocus = _focusFor(durationProject);
+      final durationFocus = _focusFor(projectById(item.projectId) ?? candidateProject);
       if (newDuration < math.max(20, workFocusMinMinutes(durationFocus))) return false;
       if (newDuration > workFocusMaxMinutes(durationFocus)) return false;
       final lastAt = item.coachAdjustedAt;
@@ -4863,6 +4953,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final candidate = selected.key;
     final candidateProject = selected.value;
     final selectedScore = needScore(candidateProject);
+    final candidateFeeling = lastFeelingFor(candidateProject.id);
     final candidateMinutes = recentMinutes7d(candidateProject.id);
     final candidateDays = daysSinceLastPractice(candidateProject);
     final candidateCount = recentCount7d(candidateProject.id);
@@ -8085,6 +8176,12 @@ class CoachHome extends StatelessWidget {
       return a.id.compareTo(b.id);
     });
     return ranked.first;
+  }
+
+  List<Session> _recentPlannedSessions(String projectId) {
+    final list = sessions.where((s) => s.projectId == projectId && s.plannedDuration != null).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return list.take(3).toList();
   }
 
   int? _tempoFromPlanDetails(String details) {

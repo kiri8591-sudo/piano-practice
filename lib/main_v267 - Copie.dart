@@ -1,4 +1,4 @@
-// V268 — Version finale 1.0
+// V267 — Release Candidate 1.0
 // Nettoyage final intégré : suppression d'un helper devenu sans appel,
 // consolidation des métadonnées de version et aucune nouvelle règle métier.
 // V266 — garde-fous finaux Coach + correction de portée candidateProject.
@@ -17,8 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '268.0';
-const String buildTrack = 'release_1_0';
+const String appVersion = '267.0';
+const String buildTrack = 'release_candidate_1_0';
 
 void main() => runApp(const PianoPracticeApp());
 
