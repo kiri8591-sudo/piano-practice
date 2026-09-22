@@ -1,20 +1,3 @@
-// V260 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V259 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V258 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V257 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V256 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V255 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V254 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V253 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V252 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V251 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V250 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V249 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V248 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V247 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V246 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V245 — étape de la trajectoire finale : stabilisation / finition / consolidation.
-// V244 — étape de la trajectoire finale : stabilisation / finition / consolidation.
 // V243 — étape de la trajectoire finale : stabilisation / finition / consolidation.
 // V239 — correction CoachHome : ajout du helper _coachShortReason utilisé par l’Accueil.
 // V239 — harmonisation finale des statuts du Planning : même lecture visuelle pour réalisée, en retard, annulée, reportée et ajustée par le coach.
@@ -105,8 +88,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V195 — Planning : positionnement fiable sur aujourd'hui + prochaine séance visible sur tous les supports — Planning iPhone : hiérarchie des journées, séance suivante et lecture du statut.
 // V211 — le planning affiche le nom du morceau comme titre principal, avec le type de travail en sous-titre..1 — cohérence Coach ↔ Planning : lien visuel explicite entre le morceau, la date et l'ajustement réellement appliqué.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '260.0';
-const String buildTrack = 'final_1_0';
+const String appVersion = '243.0';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -2188,8 +2170,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       'dailyCapacity': dailyCapacity,
       // V243 : version explicite du format de sauvegarde. Les anciennes sauvegardes restent importables.
       'backupFormatVersion': 2,
-      'appVersion': appVersion,
-      // Les clés facultatives ajoutées dans les versions suivantes doivent rester non bloquantes à l'import.
       'weeklyInstructions': weeklyInstructions,
       'coachRestDayKeys': coachRestDayKeys.toList(),
       'learningMethods': learningMethods,
@@ -3909,15 +3889,6 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
     if (lower.contains('aucune séance future à ajuster')) {
       return 'Il ne reste aucune séance future que le Coach puisse utilement ajuster cette semaine.';
-    }
-    if (lower.contains('récupération')) {
-      return 'La charge récente justifie une journée plus légère pour récupérer.';
-    }
-    if (lower.contains('équilibre')) {
-      return 'La semaine est déjà suffisamment couverte : le Coach laisse volontairement de l’espace.';
-    }
-    if (lower.contains('charge lissée')) {
-      return 'Après des journées soutenues, le Coach lisse la charge pour éviter l’enchaînement.';
     }
     final firstSentence = raw.split(RegExp(r'(?<=[.!?])\s+')).first.trim();
     if (firstSentence.length <= 190) return firstSentence;
@@ -6380,12 +6351,12 @@ class CardBox extends StatelessWidget {
     final compactPhone = MediaQuery.sizeOf(c).width < 430;
     final cardRadius = compactPhone ? 14.0 : (phone ? 16.0 : 20.0);
     final basePadding = padding == const EdgeInsets.all(18)
-        ? EdgeInsets.all(compactPhone ? 14 : (phone ? 15 : 18))
+        ? EdgeInsets.all(compactPhone ? 13 : (phone ? 15 : 18))
         : padding;
 
     return Container(
       decoration: BoxDecoration(
-        color: phone ? scheme.surfaceContainerHigh : scheme.surface,
+        color: phone ? scheme.surfaceContainer : scheme.surface,
         borderRadius: BorderRadius.circular(cardRadius),
         border: phone
             ? (accentColor == null
@@ -6702,9 +6673,6 @@ class WeeklyPlanComparison {
     if (!completed || realizedMinutes == null) return null;
     return realizedMinutes! - plannedMinutes;
   }
-
-  double? get realizationRatio =>
-      (!completed || realizedMinutes == null || plannedMinutes <= 0) ? null : realizedMinutes! / plannedMinutes;
 }
 
 class WeeklyBilan {
@@ -6753,10 +6721,6 @@ class WeeklyBilan {
   /// Taux de couverture du planning de la semaine entière, information distincte
   /// du taux d'adhérence des seules séances échues.
   double? get weeklyPlanningCoverage =>
-      plannedMinutes > 0 ? totalMinutes / plannedMinutes : null;
-
-  /// Taux prévu → réalisé sur l'ensemble des séances planifiées avec un réalisé disponible.
-  double? get realizedPlanningRate =>
       plannedMinutes > 0 ? totalMinutes / plannedMinutes : null;
 }
 
@@ -13933,7 +13897,7 @@ class ProgressDashboardScreen extends StatelessWidget {
                   : Icons.calendar_today_outlined;
       return Container(
         width: double.infinity,
-        constraints: BoxConstraints(minHeight: compact ? 82 : 64),
+        constraints: BoxConstraints(minHeight: compact ? 78 : 64),
         padding: EdgeInsets.fromLTRB(compact ? 10 : 9, compact ? 9 : 8, compact ? 10 : 9, compact ? 10 : 9),
         decoration: BoxDecoration(
           color: accent.withOpacity(compact ? .07 : .05),
@@ -14264,8 +14228,8 @@ class ProgressDashboardScreen extends StatelessWidget {
                     ...entries.map((entry) {
                       final p = entry['project'] as Project;
                       final pieceSessions = sessions.where((s) => s.projectId == p.id).toList();
-                      final score = ((entry['mastery'] as double).clamp(0.0, 100.0)).toDouble();
-                      final stageScore = ((entry['stage'] as double).clamp(0.0, 1.0)).toDouble();
+                      final score = entry['mastery'] as double;
+                      final stageScore = entry['stage'] as double;
                       final tempoValue = (entry['tempo'] as double) < 0 ? null : entry['tempo'] as double;
                       final runValue = (entry['run'] as double) < 0 ? null : entry['run'] as double;
                       final regularity = entry['regularity'] as double;
