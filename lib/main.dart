@@ -1,6 +1,5 @@
+// V269 — retours terrain iPhone : navigation Aujourd'hui, saisie avec clavier et liserés du Bilan.
 // V268 — Version finale 1.0
-// Nettoyage final intégré : suppression d'un helper devenu sans appel,
-// consolidation des métadonnées de version et aucune nouvelle règle métier.
 // V266 — garde-fous finaux Coach + correction de portée candidateProject.
 
 import 'dart:async';
@@ -17,8 +16,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '268.0';
-const String buildTrack = 'release_1_0';
+const String appVersion = '269.0';
+const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
 
@@ -88,6 +87,22 @@ InputDecorationThemeData _mobileFriendlyDialogInputs(BuildContext context) {
     isDense: false,
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
   );
+}
+
+// V269 : tient compte du clavier iPhone pour éviter qu'un formulaire soit masqué.
+EdgeInsets _dialogScrollPadding(BuildContext context) {
+  final phone = _isPhoneLayout(context);
+  final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+  return EdgeInsets.only(bottom: keyboard + (phone ? 28 : 16));
+}
+
+double _dialogUsableHeight(BuildContext context, {required double phoneMax, required double desktopMax}) {
+  final media = MediaQuery.of(context);
+  final phone = _isPhoneLayout(context);
+  final keyboard = media.viewInsets.bottom;
+  if (!phone) return math.min(media.size.height * .82, desktopMax);
+  final available = math.max(300.0, media.size.height - keyboard - 128.0);
+  return math.min(available, phoneMax);
 }
 
 // V100 : en-têtes légers pour les écrans de détail, sans cartes imbriquées.
@@ -2801,6 +2816,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     final duration = TextEditingController(text: (initial?.durationMinutes ?? 20).toString());
     String level = initial?.level ?? 'Tous niveaux';
     return showDialog<MethodDefinition>(context: context, builder: (c) => StatefulBuilder(builder: (c, setD) {
+      final media = MediaQuery.of(c);
       final flatTheme = Theme.of(c).copyWith(
         inputDecorationTheme: Theme.of(c).inputDecorationTheme.copyWith(
           border: const UnderlineInputBorder(),
@@ -2818,7 +2834,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       contentPadding: const EdgeInsets.fromLTRB(22, 6, 22, 6),
       actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       title: Text(initial == null ? 'Nouvelle méthode' : 'Modifier la méthode'),
-      content: SizedBox(width: 520, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      content: SizedBox(width: math.min(media.size.width - 32, 520.0), child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: math.max(300.0, media.size.height - media.viewInsets.bottom - 150.0)),
+        child: SingleChildScrollView(padding: _dialogScrollPadding(c), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _detailSectionHeader(c, 'IDENTITÉ', icon: Icons.menu_book_outlined),
         TextField(controller: name, decoration: const InputDecoration(labelText: 'Nom de la méthode*')),
         const SizedBox(height: 6),
@@ -2834,7 +2852,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         DropdownButtonFormField<String>(value: level, decoration: const InputDecoration(labelText: 'Niveau'), items: const [
           DropdownMenuItem(value: 'Tous niveaux', child: Text('Tous niveaux')), DropdownMenuItem(value: 'Débutant', child: Text('Débutant')), DropdownMenuItem(value: 'Intermédiaire', child: Text('Intermédiaire')), DropdownMenuItem(value: 'Avancé', child: Text('Avancé')), DropdownMenuItem(value: 'Débutant à intermédiaire', child: Text('Débutant à intermédiaire')), DropdownMenuItem(value: 'Intermédiaire à avancé', child: Text('Intermédiaire à avancé')),
         ], onChanged: (v) => setD(() => level = v ?? level)),
-      ]))),
+      ])))),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')), FilledButton(onPressed: () { final mins = (int.tryParse(duration.text.trim()) ?? 20).clamp(1, 180); Navigator.pop(c, MethodDefinition(name: name.text.trim(), description: description.text.trim(), objectives: objectives.text.trim(), exercises: exercises.text.trim(), durationMinutes: mins, level: level)); }, child: const Text('Enregistrer'))],
       ));
     }));
@@ -2970,6 +2988,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
             ),
           ]),
           content: SingleChildScrollView(
+            padding: _dialogScrollPadding(c),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3789,6 +3808,26 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
   // V238 : transforme les raisons internes du moteur en une phrase courte et
   // naturelle à lire. La raison détaillée reste conservée pour le journal.
+  void _openTodayItem(PlanItem item) {
+    if (item.completed) {
+      final source = item.sourceSessionId == null
+          ? null
+          : sessions.where((s) => s.id == item.sourceSessionId).firstOrNull;
+      if (source != null) {
+        addOrEditSession(source);
+        return;
+      }
+    }
+    final project = projectById(item.projectId);
+    if (project != null) {
+      addOrEditProject(project);
+      return;
+    }
+    if (!item.completed) {
+      startPracticeTimer(item);
+    }
+  }
+
   String _coachShortReason(String? reason) {
     final raw = reason?.trim() ?? '';
     if (raw.isEmpty) return 'Aucune raison complémentaire disponible.';
@@ -6083,6 +6122,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onOpenBadges: openBadgesScreen,
         onOpenBilan: openBilanScreen,
         onOpenProgress: openProgressDashboard,
+        onOpenProject: (p) => addOrEditProject(p),
+        onOpenSession: (s) => addOrEditSession(s),
         onStart: startPracticeTimer,
         onTogglePlan: togglePlanCompleted,
         onEditCapacity: editDailyCapacity,
@@ -7677,6 +7718,7 @@ class CoachHome extends StatelessWidget {
     required this.minutes, required this.weeklyTarget, required this.streak,
     required this.suggestions, required this.challenges, required this.challengeProgress,
     required this.badges, required this.onOpenBadges, required this.onOpenBilan, required this.onOpenProgress,
+    required this.onOpenProject, required this.onOpenSession,
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
@@ -7689,6 +7731,7 @@ class CoachHome extends StatelessWidget {
   final List<Suggestion> suggestions; final List<Challenge> challenges;
   final int Function(Challenge) challengeProgress; final List<AppBadge> badges;
   final VoidCallback onOpenBadges; final VoidCallback onOpenBilan; final VoidCallback onOpenProgress;
+  final void Function(Project) onOpenProject; final void Function(Session) onOpenSession;
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
   final VoidCallback onExport; final bool darkMode; final VoidCallback onToggleDarkMode; final VoidCallback onImport;
@@ -7697,6 +7740,28 @@ class CoachHome extends StatelessWidget {
   final Future<void> Function(String) onOrientSuggestionThisWeek;
   final CoachDecision? latestCoachDecision;
   final VoidCallback onOpenCoachLog;
+
+  void _openTodayItem(PlanItem item) {
+    if (item.completed) {
+      final source = item.sourceSessionId == null
+          ? null
+          : sessions.where((s) => s.id == item.sourceSessionId).firstOrNull;
+      if (source != null) {
+        onOpenSession(source);
+        return;
+      }
+    }
+
+    final project = projectById(item.projectId);
+    if (project != null) {
+      onOpenProject(project);
+      return;
+    }
+
+    if (!item.completed) {
+      onStart(item);
+    }
+  }
 
   DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -8221,14 +8286,16 @@ class CoachHome extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
                 child: Row(children: [
-                IconButton(onPressed: () => onTogglePlan(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: Icon(item.completed ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded), color: item.completed ? Colors.green.shade600 : categoryColor(item.category), tooltip: item.completed ? 'Décocher' : 'Marquer comme fait'),
+                IconButton(onPressed: () => onTogglePlan(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 44, height: 44), icon: Icon(item.completed ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded), color: item.completed ? Colors.green.shade600 : categoryColor(item.category), tooltip: item.completed ? 'Décocher' : 'Marquer comme fait'),
                 const SizedBox(width: 6),
-                Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => onTogglePlan(item), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_displayPlanTitle(item), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
-                  if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.25, color: scheme.onSurfaceVariant)),
+                Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => _openTodayItem(item), child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_displayPlanTitle(item), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
+                    if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.25, color: scheme.onSurfaceVariant)),
+                  ])),
+                  const SizedBox(width: 8),
+                  Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
                 ]))),
-                const SizedBox(width: 8),
-                Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
                 if (!item.completed) IconButton(onPressed: () => onStart(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: const Icon(Icons.play_circle_outline_rounded), tooltip: 'Démarrer'),
                 ]),
               ),
@@ -8480,16 +8547,19 @@ class CoachHome extends StatelessWidget {
             const SizedBox(width: 2),
             Expanded(child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => onTogglePlan(item),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_displayPlanTitle(item), style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
-                  if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
-                ]),
-              ),
+              onTap: () => _openTodayItem(item),
+              child: Row(children: [
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_displayPlanTitle(item), style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
+                    if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  ]),
+                )),
+                const SizedBox(width: 8),
+                Text('${item.duration} min', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+              ]),
             )),
-            Text('${item.duration} min', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
             if (!item.completed)
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -9234,6 +9304,7 @@ class _RunThroughResultDialogState extends State<_RunThroughResultDialog> {
   Widget build(BuildContext context) => AlertDialog(
         title: const Text('🎹 Bilan du Run-through'),
         content: SingleChildScrollView(
+          padding: _dialogScrollPadding(context),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Comment s’est déroulée l’exécution ?', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 10),
@@ -9583,7 +9654,7 @@ class _SessionDialogState extends State<SessionDialog> {
     final media = MediaQuery.of(c);
     final phone = _isPhoneLayout(c);
     final maxWidth = phone ? media.size.width - 16 : math.min(media.size.width - 24, 620.0);
-    final maxHeight = phone ? math.min(media.size.height * .90, 820.0) : math.min(media.size.height * .82, 720.0);
+    final maxHeight = _dialogUsableHeight(c, phoneMax: 820.0, desktopMax: 720.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: _mobileFriendlyDialogInputs(c),
     );
@@ -9608,6 +9679,7 @@ class _SessionDialogState extends State<SessionDialog> {
           width: maxWidth,
           height: maxHeight,
           child: SingleChildScrollView(
+            padding: _dialogScrollPadding(c),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -10291,7 +10363,9 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
       ]),
       content: SizedBox(
         width: 500,
-        child: SingleChildScrollView(child: Column(
+        child: SingleChildScrollView(
+          padding: _dialogScrollPadding(c),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Bilan de la session', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.primary)),
@@ -11435,7 +11509,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
     final editing = widget.existing != null;
     final media = MediaQuery.of(c);
     final phone = _isPhoneLayout(c);
-    final maxDialogHeight = phone ? math.min(media.size.height * .90, 860.0) : media.size.height * .82;
+    final maxDialogHeight = _dialogUsableHeight(c, phoneMax: 860.0, desktopMax: 760.0);
     final maxDialogWidth = phone ? media.size.width - 16 : math.min(media.size.width - 32, 760.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: _mobileFriendlyDialogInputs(c),
@@ -11456,8 +11530,9 @@ class _ProjectDialogState extends State<ProjectDialog> {
           : Text(editing ? 'Modifier le morceau' : 'Nouveau morceau'),
       content: SizedBox(
         width: maxDialogWidth,
-        height: math.min(maxDialogHeight, media.size.height - 140),
+        height: math.min(maxDialogHeight, math.max(300.0, media.size.height - media.viewInsets.bottom - 140)),
         child: SingleChildScrollView(
+          padding: _dialogScrollPadding(c),
           child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -13276,6 +13351,18 @@ class _BilanScreenState extends State<BilanScreen> {
     );
   }
 
+  Widget _statusLegend(BuildContext c, Color color, String label) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 4,
+        height: 18,
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+    ]);
+  }
+
   Widget _planComparisonRow(BuildContext c, WeeklyPlanComparison item) {
     final day = '${item.date.day.toString().padLeft(2, '0')}/${item.date.month.toString().padLeft(2, '0')}';
     final planned = '${item.plannedMinutes} min';
@@ -13292,11 +13379,14 @@ class _BilanScreenState extends State<BilanScreen> {
             : delta > 0
                 ? '+$delta min'
                 : '$delta min';
+    // V269 : liseré du Bilan selon l'état réel du créneau.
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final isFuture = item.date.isAfter(today);
+    final realizedMinutes = item.realizedMinutes ?? item.plannedMinutes;
+    final isIncomplete = item.completed && realizedMinutes < item.plannedMinutes;
     final accent = item.completed
-        ? ((item.adherence ?? 0) >= .9 && (item.adherence ?? 0) <= 1.2 ? Colors.green.shade700 : Colors.orange.shade700)
-        : item.date.isAfter(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
-            ? Theme.of(c).colorScheme.onSurfaceVariant
-            : Colors.orange.shade700;
+        ? (isIncomplete ? Colors.orange.shade700 : Colors.green.shade700)
+        : (isFuture ? Colors.blue.shade700 : Colors.red.shade700);
     final phone = MediaQuery.sizeOf(c).width < 600;
     final child = phone
         ? Column(
@@ -13557,6 +13647,17 @@ class _BilanScreenState extends State<BilanScreen> {
                   Icons.list_alt_outlined,
                   'Détail des séances planifiées',
                   subtitle: 'Pour chaque créneau : prévu, réalisé et écart. Les séances futures sont indiquées comme à venir.',
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 6,
+                  children: [
+                    _statusLegend(c, Colors.red.shade700, 'Pas fait'),
+                    _statusLegend(c, Colors.orange.shade700, 'Incomplet'),
+                    _statusLegend(c, Colors.blue.shade700, 'À faire'),
+                    _statusLegend(c, Colors.green.shade700, 'Complet'),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 for (final item in bilan.planComparisons)
@@ -14930,7 +15031,7 @@ class _RoutineDialogState extends State<RoutineDialog> {
     final media = MediaQuery.of(c);
     final phone = _isPhoneLayout(c);
     final maxWidth = phone ? media.size.width - 16 : math.min(media.size.width - 32, 640.0);
-    final maxHeight = phone ? math.min(media.size.height * .90, 760.0) : math.min(media.size.height * .82, 680.0);
+    final maxHeight = _dialogUsableHeight(c, phoneMax: 760.0, desktopMax: 680.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: _mobileFriendlyDialogInputs(c),
     );
@@ -14948,6 +15049,7 @@ class _RoutineDialogState extends State<RoutineDialog> {
         width: maxWidth,
         height: maxHeight,
         child: SingleChildScrollView(
+          padding: _dialogScrollPadding(c),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -15138,7 +15240,7 @@ class _PlanDialogState extends State<PlanDialog> {
     final media = MediaQuery.of(c);
     final phone = _isPhoneLayout(c);
     final maxWidth = phone ? media.size.width - 16 : math.min(media.size.width - 32, 640.0);
-    final maxHeight = phone ? math.min(media.size.height * .90, 760.0) : math.min(media.size.height * .82, 680.0);
+    final maxHeight = _dialogUsableHeight(c, phoneMax: 760.0, desktopMax: 680.0);
     final flatTheme = Theme.of(c).copyWith(
       inputDecorationTheme: _mobileFriendlyDialogInputs(c),
     );
@@ -15154,6 +15256,7 @@ class _PlanDialogState extends State<PlanDialog> {
         width: maxWidth,
         height: maxHeight,
         child: SingleChildScrollView(
+          padding: _dialogScrollPadding(c),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             mainAxisSize: MainAxisSize.min,
