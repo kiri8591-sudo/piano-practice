@@ -1,3 +1,4 @@
+// V270 — page Statistiques (modèle MyBestWeek) : Jour N, anneau par type de travail, calendrier, détail par morceau, revue des semaines.
 // V269 — retours terrain iPhone : navigation Aujourd'hui, saisie avec clavier et liserés du Bilan.
 // V268 — Version finale 1.0
 // V266 — garde-fous finaux Coach + correction de portée candidateProject.
@@ -16,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '269.0';
+const String appVersion = '270.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -1508,6 +1509,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         ),
       ),
     );
+  }
+
+  void openStatsScreen() {
+    Navigator.of(navKey.currentContext!).push(MaterialPageRoute(
+      builder: (_) => StatsScreen(projects: projects, sessions: sessions, onOpenBadges: openBadgesScreen),
+    ));
   }
 
   void openBilanScreen() {
@@ -6122,6 +6129,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         onOpenBadges: openBadgesScreen,
         onOpenBilan: openBilanScreen,
         onOpenProgress: openProgressDashboard,
+        onOpenStats: openStatsScreen,
         onOpenProject: (p) => addOrEditProject(p),
         onOpenSession: (s) => addOrEditSession(s),
         onStart: startPracticeTimer,
@@ -7717,7 +7725,7 @@ class CoachHome extends StatelessWidget {
     required this.projects, required this.sessions, required this.plan,
     required this.minutes, required this.weeklyTarget, required this.streak,
     required this.suggestions, required this.challenges, required this.challengeProgress,
-    required this.badges, required this.onOpenBadges, required this.onOpenBilan, required this.onOpenProgress,
+    required this.badges, required this.onOpenBadges, required this.onOpenBilan, required this.onOpenProgress, required this.onOpenStats,
     required this.onOpenProject, required this.onOpenSession,
     required this.onStart, required this.onTogglePlan, required this.onEditCapacity,
     required this.onQuickProject, required this.onQuickPlan, required this.onExport,
@@ -7730,7 +7738,7 @@ class CoachHome extends StatelessWidget {
   final int minutes; final int weeklyTarget; final int streak;
   final List<Suggestion> suggestions; final List<Challenge> challenges;
   final int Function(Challenge) challengeProgress; final List<AppBadge> badges;
-  final VoidCallback onOpenBadges; final VoidCallback onOpenBilan; final VoidCallback onOpenProgress;
+  final VoidCallback onOpenBadges; final VoidCallback onOpenBilan; final VoidCallback onOpenProgress; final VoidCallback onOpenStats;
   final void Function(Project) onOpenProject; final void Function(Session) onOpenSession;
   final void Function([PlanItem?]) onStart; final void Function(PlanItem) onTogglePlan;
   final VoidCallback onEditCapacity; final VoidCallback onQuickProject; final VoidCallback onQuickPlan;
@@ -8361,6 +8369,8 @@ class CoachHome extends StatelessWidget {
           const SizedBox(width: 7),
           Expanded(child: _action('Badges $badgeCount/${badges.length}', Icons.emoji_events_outlined, onOpenBadges)),
         ]),
+        const SizedBox(height: 7),
+        _action('Statistiques', Icons.bar_chart_outlined, onOpenStats),
       ],
     );
   }
@@ -8633,6 +8643,8 @@ class CoachHome extends StatelessWidget {
           Expanded(child: _action('Planning', Icons.calendar_month, onQuickPlan)),
           const SizedBox(width: 6),
           Expanded(child: _action('Badges $badgeCount/${badges.length}', Icons.emoji_events, onOpenBadges)),
+          const SizedBox(width: 6),
+          Expanded(child: _action('Statistiques', Icons.bar_chart, onOpenStats)),
         ]),
 
       if (challenges.isNotEmpty) ...[
@@ -14671,6 +14683,839 @@ class ProgressDashboardScreen extends StatelessWidget {
 /// des releves de tempo saisis apres chaque session (voir Session.newTempo). Chaque point
 /// correspond a une session ou le tempo a ete explicitement renseigne : les sessions sans
 /// tempo saisi n'apparaissent pas, evitant de fausser la courbe avec des zeros.
+// ---------------------------------------------------------------------------
+// V270 — Page Statistiques sur le modèle de MyBestWeek : « Jour N », répartition
+// en anneau par type de travail (30 jours / 1 an / Tout), calendrier mensuel,
+// liste « Par morceau » avec écran de détail, et « Revue des semaines ».
+// Lecture seule : aucune donnée n'est modifiée.
+// ---------------------------------------------------------------------------
+
+const List<String> _statsMonths = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+];
+const List<String> _statsMonthsShort = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+];
+const List<String> _statsWeekdays = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const List<String> _statsLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+const Color _statsSage = Color(0xFF5E8873);
+const Color _statsGold = Color(0xFFD9A94F);
+const Color _statsTodayRing = Color(0xFFA9C7DC);
+const List<Color> _statsPalette = [
+  Color(0xFF5E8873), Color(0xFF8A6B2F), Color(0xFF8A5A4B),
+  Color(0xFF5F7F95), Color(0xFF7D6A8F), Color(0xFF7FA08C),
+];
+
+DateTime _statsDay(DateTime d) {
+  final l = d.toLocal();
+  return DateTime(l.year, l.month, l.day);
+}
+
+int _statsDaysBetween(DateTime a, DateTime b) =>
+    DateTime.utc(b.year, b.month, b.day).difference(DateTime.utc(a.year, a.month, a.day)).inDays;
+
+DateTime _statsMondayOf(DateTime d) => DateTime(d.year, d.month, d.day - (d.weekday - 1));
+
+int _statsIsoWeek(DateTime d) {
+  final thursday = DateTime.utc(d.year, d.month, d.day).add(Duration(days: 4 - d.weekday));
+  final jan1 = DateTime.utc(thursday.year, 1, 1);
+  return thursday.difference(jan1).inDays ~/ 7 + 1;
+}
+
+int _statsIsoYear(DateTime d) => DateTime.utc(d.year, d.month, d.day).add(Duration(days: 4 - d.weekday)).year;
+
+String _statsDecimal(double v) => v.toStringAsFixed(1).replaceAll('.', ',');
+String _statsHours(int minutes) => _statsDecimal(minutes / 60);
+String _statsCellLabel(int m) => m < 60 ? '${m}m' : '${_statsDecimal(m / 60)}h';
+String _statsDuration(int m) {
+  if (m < 60) return '$m min';
+  final h = m ~/ 60;
+  final r = m % 60;
+  return r == 0 ? '$h h' : '$h h ${r.toString().padLeft(2, '0')}';
+}
+
+class _StatsCard extends StatelessWidget {
+  const _StatsCard({required this.child, this.tint});
+  final Widget child;
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: tint ?? scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(.6), width: 1),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _StatsHeading extends StatelessWidget {
+  const _StatsHeading({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    return Row(children: [
+      Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: scheme.outlineVariant, width: 1.2),
+        ),
+        child: Icon(icon, color: _statsSage, size: 24),
+      ),
+      const SizedBox(width: 14),
+      Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
+    ]);
+  }
+}
+
+class _StatsDonutPainter extends CustomPainter {
+  _StatsDonutPainter({required this.values, required this.colors});
+  final List<double> values;
+  final List<Color> colors;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+    const stroke = 34.0;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.butt;
+    final gap = values.length > 1 ? 0.04 : 0.0;
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * 2 * math.pi;
+      paint.color = colors[i % colors.length];
+      final drawn = sweep - gap;
+      if (drawn > 0) canvas.drawArc(rect, start + gap / 2, drawn, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StatsDonutPainter old) => true;
+}
+
+/// Calendrier mensuel (lundi en premier) : jour + durée, aujourd'hui entouré.
+class _StatsMonthCalendar extends StatefulWidget {
+  const _StatsMonthCalendar({required this.minutesByDay, required this.firstMonth, this.suffix = ''});
+  final Map<DateTime, int> minutesByDay;
+  final DateTime firstMonth;
+  final String suffix;
+
+  @override
+  State<_StatsMonthCalendar> createState() => _StatsMonthCalendarState();
+}
+
+class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
+  late DateTime _month;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _month = DateTime(now.year, now.month);
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final currentMonth = DateTime(now.year, now.month);
+    final canNext = _month.isBefore(currentMonth);
+    final canPrev = _month.isAfter(widget.firstMonth);
+    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
+    final offset = DateTime(_month.year, _month.month, 1).weekday - 1;
+    final emptyColor = scheme.onSurface.withOpacity(dark ? .08 : .06);
+    final filledText = dark ? const Color(0xFF14201B) : Colors.white;
+
+    var monthMinutes = 0;
+    for (var d = 1; d <= daysInMonth; d++) {
+      monthMinutes += widget.minutesByDay[DateTime(_month.year, _month.month, d)] ?? 0;
+    }
+
+    final rowCount = (offset + daysInMonth + 6) ~/ 7;
+    final rows = <Widget>[];
+    for (var r = 0; r < rowCount; r++) {
+      final cells = <Widget>[];
+      for (var col = 0; col < 7; col++) {
+        final day = r * 7 + col - offset + 1;
+        if (day < 1 || day > daysInMonth) {
+          cells.add(const Expanded(child: SizedBox()));
+          continue;
+        }
+        final date = DateTime(_month.year, _month.month, day);
+        final mins = widget.minutesByDay[date] ?? 0;
+        final isToday = date == today;
+        final textColor = mins > 0 ? filledText : scheme.onSurface;
+        cells.add(Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: AspectRatio(
+              aspectRatio: .95,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: mins > 0 ? _statsSage : emptyColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: isToday ? Border.all(color: _statsTodayRing, width: 2) : null,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('$day', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textColor)),
+                    if (mins > 0) Text(_statsCellLabel(mins), style: TextStyle(fontSize: 11, color: textColor)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ));
+      }
+      rows.add(Row(children: cells));
+    }
+
+    return _StatsCard(
+      child: Column(children: [
+        Row(children: [
+          IconButton(
+            onPressed: canPrev ? () => setState(() => _month = DateTime(_month.year, _month.month - 1)) : null,
+            icon: const Icon(Icons.chevron_left),
+          ),
+          Expanded(
+            child: Column(children: [
+              Text('${_statsMonths[_month.month - 1]} ${_month.year}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 2),
+              Text('${_statsDuration(monthMinutes)}${widget.suffix}', style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+            ]),
+          ),
+          IconButton(
+            onPressed: canNext ? () => setState(() => _month = DateTime(_month.year, _month.month + 1)) : null,
+            icon: const Icon(Icons.chevron_right),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          for (final l in _statsLetters)
+            Expanded(
+              child: Center(
+                child: Text(l, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 6),
+        ...rows,
+      ]),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Écran principal
+// ---------------------------------------------------------------------------
+
+class StatsScreen extends StatefulWidget {
+  const StatsScreen({super.key, required this.projects, required this.sessions, required this.onOpenBadges});
+  final List<Project> projects;
+  final List<Session> sessions;
+  final VoidCallback onOpenBadges;
+
+  @override
+  State<StatsScreen> createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  int _period = 2; // 0 = 30 jours, 1 = 1 an, 2 = Tout
+
+  void _openPiece(String key, Map<String, Project> byId) {
+    final proj = byId[key];
+    final list = widget.sessions
+        .where((s) => key == '_routine' ? (s.projectId == null || !byId.containsKey(s.projectId)) : s.projectId == key)
+        .toList();
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => StatsPieceDetailScreen(
+        title: proj?.name ?? 'Routine / hors morceau',
+        emoji: proj?.emoji ?? '🎹',
+        sessions: list,
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final sessions = widget.sessions;
+
+    DateTime? first;
+    for (final s in sessions) {
+      final d = _statsDay(s.date);
+      if (first == null || d.isBefore(first)) first = d;
+    }
+    final firstUse = first ?? today;
+    final dayNumber = _statsDaysBetween(firstUse, today) + 1;
+    final firstMonth = DateTime(firstUse.year, firstUse.month);
+
+    final DateTime? from = _period == 0
+        ? DateTime(today.year, today.month, today.day - 29)
+        : (_period == 1 ? DateTime(today.year - 1, today.month, today.day) : null);
+    final inPeriod = from == null
+        ? List<Session>.of(sessions)
+        : sessions.where((s) => !_statsDay(s.date).isBefore(from)).toList();
+    final totalMin = inPeriod.fold<int>(0, (a, s) => a + s.duration);
+
+    // Répartition par type de travail (6 parts maximum).
+    final byType = <String, int>{};
+    for (final s in inPeriod) {
+      final key = s.type.trim().isEmpty ? 'Autre' : s.type.trim();
+      byType[key] = (byType[key] ?? 0) + s.duration;
+    }
+    var typeEntries = byType.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    if (typeEntries.length > 6) {
+      final head = typeEntries.take(5).toList();
+      final rest = typeEntries.skip(5).fold<int>(0, (a, e) => a + e.value);
+      typeEntries = [...head, MapEntry('Autres', rest)];
+    }
+
+    // Temps par morceau.
+    final projectById = {for (final p in widget.projects) p.id: p};
+    final byPiece = <String, int>{};
+    for (final s in inPeriod) {
+      final key = (s.projectId != null && projectById.containsKey(s.projectId)) ? s.projectId! : '_routine';
+      byPiece[key] = (byPiece[key] ?? 0) + s.duration;
+    }
+    final pieceEntries = byPiece.entries.where((e) => e.value > 0).toList()..sort((a, b) => b.value.compareTo(a.value));
+
+    // Calendrier : toutes séances confondues.
+    final minutesByDay = <DateTime, int>{};
+    for (final s in sessions) {
+      final d = _statsDay(s.date);
+      minutesByDay[d] = (minutesByDay[d] ?? 0) + s.duration;
+    }
+
+    final totalHours = totalMin / 60;
+    final centerNumber = totalHours >= 10 ? '${totalHours.round()}' : _statsDecimal(totalHours);
+    final donutSize = math.min(MediaQuery.sizeOf(c).width - 120, 250.0).clamp(180.0, 250.0).toDouble();
+
+    Widget topButton(IconData icon, String label, VoidCallback onTap) {
+      return Expanded(
+        child: Material(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(icon, size: 22, color: scheme.onSecondaryContainer),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSecondaryContainer)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(centerTitle: true, title: const Text('Statistiques', style: TextStyle(fontWeight: FontWeight.w900))),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+              children: [
+                const SizedBox(height: 8),
+                Center(
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: 'Jour ', style: TextStyle(fontSize: 18, color: scheme.onSurfaceVariant)),
+                      TextSpan(text: '$dayNumber', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
+                      TextSpan(text: ' avec Piano Practice', style: TextStyle(fontSize: 18, color: scheme.onSurfaceVariant)),
+                    ]),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(children: [
+                  topButton(Icons.emoji_events_outlined, 'Mes réalisations', widget.onOpenBadges),
+                  const SizedBox(width: 12),
+                  topButton(Icons.grid_view_rounded, 'Revue des semaines', () {
+                    Navigator.of(c).push(MaterialPageRoute(
+                      builder: (_) => StatsWeeksReviewScreen(projects: widget.projects, sessions: widget.sessions),
+                    ));
+                  }),
+                ]),
+                const SizedBox(height: 16),
+                _StatsCard(
+                  child: Column(children: [
+                    SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 0, label: Text('30 jours')),
+                        ButtonSegment(value: 1, label: Text('1 an')),
+                        ButtonSegment(value: 2, label: Text('Tout')),
+                      ],
+                      selected: {_period},
+                      onSelectionChanged: (v) => setState(() => _period = v.first),
+                    ),
+                    const SizedBox(height: 22),
+                    if (totalMin == 0)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 28),
+                        child: Text('Aucune séance sur cette période.', style: TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+                      )
+                    else ...[
+                      SizedBox(
+                        width: donutSize,
+                        height: donutSize,
+                        child: CustomPaint(
+                          painter: _StatsDonutPainter(
+                            values: [for (final e in typeEntries) e.value.toDouble()],
+                            colors: _statsPalette,
+                          ),
+                          child: Center(
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Text('Total investi', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+                              Text(centerNumber, style: const TextStyle(fontSize: 54, fontWeight: FontWeight.w900, height: 1.1)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                decoration: BoxDecoration(color: scheme.onSurface.withOpacity(.07), borderRadius: BorderRadius.circular(16)),
+                                child: Text('heures', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
+                              ),
+                            ]),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      for (var i = 0; i < typeEntries.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(children: [
+                            Row(children: [
+                              Container(width: 14, height: 14, decoration: BoxDecoration(color: _statsPalette[i % _statsPalette.length], shape: BoxShape.circle)),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(typeEntries[i].key, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+                              Text('${_statsHours(typeEntries[i].value)} h', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                              SizedBox(
+                                width: 52,
+                                child: Text('${(typeEntries[i].value / totalMin * 100).round()} %', textAlign: TextAlign.right, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+                              ),
+                            ]),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                value: (typeEntries[i].value / totalMin).clamp(0.0, 1.0).toDouble(),
+                                minHeight: 7,
+                                color: _statsPalette[i % _statsPalette.length],
+                                backgroundColor: scheme.onSurface.withOpacity(.08),
+                              ),
+                            ),
+                          ]),
+                        ),
+                    ],
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                _StatsMonthCalendar(minutesByDay: minutesByDay, firstMonth: firstMonth, suffix: ' de piano'),
+                const SizedBox(height: 16),
+                _StatsCard(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const _StatsHeading(icon: Icons.auto_graph, title: 'Par morceau'),
+                    const SizedBox(height: 12),
+                    Text('Touche un morceau pour voir son détail.', style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant)),
+                    const SizedBox(height: 8),
+                    if (pieceEntries.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Text('Aucune séance sur cette période.', style: TextStyle(color: scheme.onSurfaceVariant)),
+                      ),
+                    for (var i = 0; i < pieceEntries.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: scheme.outlineVariant),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => _openPiece(pieceEntries[i].key, projectById),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Row(children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(color: scheme.onSurface.withOpacity(.07), shape: BoxShape.circle),
+                              child: Text(pieceEntries[i].key == '_routine' ? '🎹' : projectById[pieceEntries[i].key]!.emoji, style: const TextStyle(fontSize: 24)),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Text(
+                                pieceEntries[i].key == '_routine' ? 'Routine / hors morceau' : projectById[pieceEntries[i].key]!.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                              Text(_statsHours(pieceEntries[i].value), style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: scheme.primary)),
+                              Text('heures', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+                            ]),
+                            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                          ]),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Détail d'un morceau
+// ---------------------------------------------------------------------------
+
+class StatsPieceDetailScreen extends StatelessWidget {
+  const StatsPieceDetailScreen({super.key, required this.title, required this.emoji, required this.sessions});
+  final String title;
+  final String emoji;
+  final List<Session> sessions;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final minutesByDay = <DateTime, int>{};
+    for (final s in sessions) {
+      final d = _statsDay(s.date);
+      minutesByDay[d] = (minutesByDay[d] ?? 0) + s.duration;
+    }
+    final totalMin = minutesByDay.values.fold<int>(0, (a, v) => a + v);
+    DateTime? first;
+    for (final d in minutesByDay.keys) {
+      if (first == null || d.isBefore(first)) first = d;
+    }
+    final firstDay = first ?? today;
+    final daysSince = _statsDaysBetween(firstDay, today) + 1;
+    final perWeekHours = totalMin / 60 / math.max(1.0, daysSince / 7);
+    final weekStart = DateTime(today.year, today.month, today.day - 6);
+    var last7 = 0;
+    minutesByDay.forEach((d, m) {
+      if (!d.isBefore(weekStart) && !d.isAfter(today)) last7 += m;
+    });
+    final nextMilestone = (totalMin ~/ 600 + 1) * 10;
+    final remaining = nextMilestone - totalMin / 60;
+
+    Widget stat(String value, String label) {
+      return Expanded(
+        child: Column(children: [
+          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: scheme.primary)),
+          const SizedBox(height: 4),
+          Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: scheme.onSurfaceVariant)),
+        ]),
+      );
+    }
+
+    // Trois derniers mois en points.
+    final emptyDot = scheme.onSurface.withOpacity(dark ? .10 : .08);
+    Widget monthDots(DateTime m) {
+      final dim = DateTime(m.year, m.month + 1, 0).day;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(children: [
+          SizedBox(width: 50, child: Text(_statsMonthsShort[m.month - 1], style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant))),
+          for (var d = 1; d <= 31; d++)
+            Expanded(
+              child: d > dim
+                  ? const SizedBox()
+                  : Padding(
+                      padding: const EdgeInsets.all(1.1),
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: (minutesByDay[DateTime(m.year, m.month, d)] ?? 0) > 0 ? _statsSage : emptyDot,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+        ]),
+      );
+    }
+
+    // Dernières réalisations (une ligne par jour).
+    final days = minutesByDay.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
+
+    return Scaffold(
+      appBar: AppBar(centerTitle: true, title: const Text('Détail du morceau', style: TextStyle(fontWeight: FontWeight.w900))),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              children: [
+                _StatsCard(
+                  tint: Color.alphaBlend(_statsSage.withOpacity(dark ? .20 : .14), scheme.surfaceContainerHigh),
+                  child: Column(children: [
+                    Row(children: [
+                      Container(
+                        width: 76,
+                        height: 76,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: scheme.onSurface.withOpacity(.10), shape: BoxShape.circle),
+                        child: Text(emoji, style: const TextStyle(fontSize: 36)),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          if (sessions.isNotEmpty)
+                            Text('Depuis le ${firstDay.day} ${_statsMonths[firstDay.month - 1]} ${firstDay.year}', style: TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant)),
+                        ]),
+                      ),
+                      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                        Text(_statsHours(totalMin), style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900, color: _statsGold, height: 1.05)),
+                        const Text('heures', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _statsGold)),
+                      ]),
+                    ]),
+                    const SizedBox(height: 18),
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      stat('$daysSince', 'Jours'),
+                      stat('${_statsDecimal(perWeekHours)} h', 'Chaque semaine'),
+                      stat('${_statsHours(last7)} h', '7 derniers jours'),
+                      stat('${_statsDecimal(remaining)} h', 'Avant $nextMilestone h'),
+                    ]),
+                    const SizedBox(height: 14),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    const SizedBox(height: 14),
+                    monthDots(DateTime(today.year, today.month - 2)),
+                    monthDots(DateTime(today.year, today.month - 1)),
+                    monthDots(DateTime(today.year, today.month)),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                _StatsMonthCalendar(minutesByDay: minutesByDay, firstMonth: DateTime(firstDay.year, firstDay.month)),
+                const SizedBox(height: 16),
+                _StatsCard(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const _StatsHeading(icon: Icons.edit_note, title: 'Dernières réalisations'),
+                    const SizedBox(height: 14),
+                    if (days.isEmpty) Text('Aucune séance enregistrée.', style: TextStyle(color: scheme.onSurfaceVariant)),
+                    for (final e in days.take(8))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        child: Row(children: [
+                          Expanded(
+                            child: Text('${_statsWeekdays[e.key.weekday - 1]} ${e.key.day} ${_statsMonths[e.key.month - 1]}', style: const TextStyle(fontSize: 17)),
+                          ),
+                          Container(width: 12, height: 12, decoration: const BoxDecoration(color: _statsSage, shape: BoxShape.circle)),
+                          const SizedBox(width: 12),
+                          Text(_statsDuration(e.value), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                        ]),
+                      ),
+                  ]),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Revue des semaines
+// ---------------------------------------------------------------------------
+
+class StatsWeeksReviewScreen extends StatelessWidget {
+  const StatsWeeksReviewScreen({super.key, required this.projects, required this.sessions});
+  final List<Project> projects;
+  final List<Session> sessions;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final thisMonday = _statsMondayOf(today);
+    final projectById = {for (final p in projects) p.id: p};
+
+    // lundi → (morceau → jours de la semaine pratiqués), et minutes par morceau.
+    final weekDays = <DateTime, Map<String, Set<int>>>{};
+    final weekMinutes = <DateTime, Map<String, int>>{};
+    DateTime? first;
+    for (final s in sessions) {
+      final d = _statsDay(s.date);
+      if (first == null || d.isBefore(first)) first = d;
+      final monday = _statsMondayOf(d);
+      final key = (s.projectId != null && projectById.containsKey(s.projectId)) ? s.projectId! : '_routine';
+      (weekDays[monday] ??= <String, Set<int>>{}).putIfAbsent(key, () => <int>{}).add(d.weekday - 1);
+      final mm = weekMinutes[monday] ??= <String, int>{};
+      mm[key] = (mm[key] ?? 0) + s.duration;
+    }
+    final firstMonday = _statsMondayOf(first ?? today);
+    final weekCount = _statsDaysBetween(firstMonday, thisMonday) ~/ 7 + 1;
+
+    final emptyCell = scheme.onSurface.withOpacity(dark ? .08 : .06);
+    final checkColor = dark ? const Color(0xFF14201B) : Colors.white;
+
+    String dm(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+    Widget gridRow({required Widget label, required Set<int> days}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Expanded(flex: 9, child: label),
+          Expanded(
+            flex: 14,
+            child: Row(children: [
+              for (var d = 0; d < 7; d++)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: Container(
+                        decoration: BoxDecoration(color: days.contains(d) ? _statsSage : emptyCell, borderRadius: BorderRadius.circular(10)),
+                        child: days.contains(d) ? Icon(Icons.check, size: 20, color: checkColor) : null,
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+        ]),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(centerTitle: true, title: const Text('Revue des semaines', style: TextStyle(fontWeight: FontWeight.w900))),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              itemCount: weekCount,
+              itemBuilder: (ctx, i) {
+                final monday = DateTime(thisMonday.year, thisMonday.month, thisMonday.day - 7 * i);
+                final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+                final pieces = weekDays[monday] ?? <String, Set<int>>{};
+                final mins = weekMinutes[monday] ?? <String, int>{};
+                final keys = pieces.keys.toList()..sort((a, b) => (mins[b] ?? 0).compareTo(mins[a] ?? 0));
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _StatsCard(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            children: [
+                              Text.rich(TextSpan(children: [
+                                TextSpan(text: '${_statsIsoYear(monday)}  ', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+                                TextSpan(text: 'Semaine ', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+                                TextSpan(text: '${_statsIsoWeek(monday)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+                              ])),
+                              if (i == 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(color: _statsGold.withOpacity(.16), borderRadius: BorderRadius.circular(16)),
+                                  child: const Text('En cours', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _statsGold)),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Text('${dm(monday)} – ${dm(sunday)}', style: TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant)),
+                      ]),
+                      const SizedBox(height: 12),
+                      Divider(height: 1, color: scheme.outlineVariant),
+                      const SizedBox(height: 10),
+                      if (keys.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text('Aucune séance cette semaine.', style: TextStyle(color: scheme.onSurfaceVariant)),
+                        )
+                      else ...[
+                        Row(children: [
+                          const Expanded(flex: 9, child: SizedBox()),
+                          Expanded(
+                            flex: 14,
+                            child: Row(children: [
+                              for (final l in _statsLetters)
+                                Expanded(child: Center(child: Text(l, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)))),
+                            ]),
+                          ),
+                        ]),
+                        for (final k in keys)
+                          gridRow(
+                            days: pieces[k] ?? <int>{},
+                            label: Row(children: [
+                              Text(k == '_routine' ? '🎹' : projectById[k]!.emoji, style: const TextStyle(fontSize: 22)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  k == '_routine' ? 'Routine' : projectById[k]!.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ]),
+                          ),
+                      ],
+                    ]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class TempoHistoryScreen extends StatelessWidget {
   const TempoHistoryScreen({super.key, required this.projectName, required this.targetTempo, required this.entries});
   final String projectName;
