@@ -1,3 +1,9 @@
+// V276 — Statistiques : camembert des morceaux joués (7 jours / 30 jours / 1 an / Tout), légende cliquable vers le détail du morceau.
+// V275 — « Dernières réalisations » : vue Semaine avec numéro de semaine ISO ; vue Mois avec le détail des sessions du mois (date + durée) sous chaque mois.
+// V274 — Statistiques > détail d'un morceau : « Dernières réalisations » en 4 onglets (Jour, Semaine, Mois, Année) avec barres de durée comparatives.
+// V273 — Statistiques > détail d'un morceau : les points de pratique couvrent tous les mois depuis la première session (et non plus les 3 derniers).
+// V272 — Statistiques > détail d'un morceau : toutes les sessions listées (plus de limite à 8 jours), une ligne par session avec barre de durée comparative.
+// V271 — saisie d'un historique de sessions passées + historique de pratique au-delà de 26 semaines (52 sem., Tout).
 // V270 — page Statistiques (modèle MyBestWeek) : Jour N, anneau par type de travail, calendrier, détail par morceau, revue des semaines.
 // V269 — retours terrain iPhone : navigation Aujourd'hui, saisie avec clavier et liserés du Bilan.
 // V268 — Version finale 1.0
@@ -17,7 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '270.0';
+const String appVersion = '276.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -1364,7 +1370,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// en cours comme pour n'importe quelle semaine passee (voir [weeklyHistory]).
   WeeklyBilan weeklyBilanFor(DateTime weekStart) {
     final start = startOfWeek(weekStart);
-    final end = start.add(const Duration(days: 7));
+    // Arithmétique calendaire (et non +168 h) : sur un historique long, les semaines qui
+    // traversent un changement d'heure ne doivent ni perdre ni gagner une heure.
+    final end = DateTime(start.year, start.month, start.day + 7);
     final weekSessions = sessions.where((s) => !s.date.isBefore(start) && s.date.isBefore(end)).toList();
 
     final totalMinutes = weekSessions.fold(0, (a, s) => a + s.duration);
@@ -1468,29 +1476,96 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// Bilan de la semaine en cours — conserve pour compatibilite avec le reste de l'app.
   WeeklyBilan get weeklyBilan => weeklyBilanFor(DateTime.now());
 
+  /// Nombre de semaines (calendaires, semaine en cours incluse) couvertes par les sessions
+  /// enregistrées, de la première session à aujourd'hui. 0 s'il n'y a aucune session.
+  /// Sert à proposer les périodes d'historique longues (52 semaines, Tout) uniquement
+  /// lorsque des données plus anciennes existent réellement.
+  int practiceSpanWeeks() {
+    if (sessions.isEmpty) return 0;
+    var earliest = sessions.first.date;
+    for (final s in sessions) {
+      if (s.date.isBefore(earliest)) earliest = s.date;
+    }
+    final diff = startOfWeek(DateTime.now()).difference(startOfWeek(earliest));
+    // round() : la différence en heures peut valoir 7n × 24 ± 1 h autour d'un changement d'heure.
+    return (diff.inHours / (24 * 7)).round() + 1;
+  }
+
   /// Historique des [weeks] dernieres semaines (la semaine en cours incluse), du plus
   /// ancien au plus recent. Si la pratique enregistree est plus jeune que [weeks]
   /// semaines, la liste est raccourcie a la premiere semaine ayant une session plutot que
   /// d'afficher une longue serie de semaines vides avant le debut de l'usage de l'app.
   List<WeeklyBilan> weeklyHistory({int weeks = 12}) {
     final currentStart = startOfWeek(DateTime.now());
-    DateTime? earliest;
-    for (final s in sessions) {
-      if (earliest == null || s.date.isBefore(earliest)) earliest = s.date;
-    }
-    var available = weeks;
-    if (earliest != null) {
-      final earliestStart = startOfWeek(earliest);
-      final weeksSinceStart = currentStart.difference(earliestStart).inDays ~/ 7 + 1;
-      available = weeksSinceStart < weeks ? weeksSinceStart : weeks;
-    } else {
-      available = 1;
-    }
+    final span = practiceSpanWeeks();
+    var available = span == 0 ? 1 : (span < weeks ? span : weeks);
     if (available < 1) available = 1;
     return List.generate(available, (i) {
-      final start = currentStart.subtract(Duration(days: 7 * (available - 1 - i)));
+      // Arithmétique calendaire : Duration(days: 7 * k) donnerait des débuts de semaine
+      // décalés d'une heure (donc au dimanche 23 h) après un changement d'heure d'été.
+      final back = 7 * (available - 1 - i);
+      final start = DateTime(currentStart.year, currentStart.month, currentStart.day - back);
       return weeklyBilanFor(start);
     });
+  }
+
+  /// V271 — Saisie d'un historique : ouvre l'écran de saisie rapide de sessions passées et
+  /// enregistre le résultat. Ces sessions alimentent l'historique, les statistiques et le
+  /// Coach, mais volontairement : pas d'instantané d'avancement (le morceau n'était pas dans
+  /// cet état à l'époque), pas de bilan express, pas de recalibrage du planning, pas de
+  /// lien avec les séances planifiées, pas de célébration pour des exploits passés.
+  Future<void> openSessionHistoryEntry() async {
+    final added = await Navigator.of(navKey.currentContext!).push<List<Session>>(
+      MaterialPageRoute(builder: (_) => SessionHistoryEntryScreen(projects: projects)),
+    );
+    if (added == null || added.isEmpty) return;
+    setState(() {
+      sessions.addAll(added);
+      for (final id in added.map((s) => s.projectId).whereType<String>().toSet()) {
+        _updateAutoProgress(id);
+      }
+      _auditSessionIntegrity();
+      _absorbHistoricalAchievements();
+    });
+    await _persist();
+    final ctx = navKey.currentContext;
+    if (ctx != null) {
+      final minutes = added.fold<int>(0, (a, s) => a + s.duration);
+      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+        content: Text('${added.length} session${added.length > 1 ? 's' : ''} ajoutée${added.length > 1 ? 's' : ''} à l\'historique (${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')}).'),
+      ));
+    }
+    // Seuls les défis de la semaine en cours peuvent encore se déclencher ici : badges,
+    // morceaux terminés et série record ont été absorbés silencieusement juste avant.
+    _checkCelebrations();
+  }
+
+  /// Plus longue série de jours consécutifs avec au moins une session.
+  int _longestPracticeStreak() {
+    if (sessions.isEmpty) return 0;
+    final days = sessions.map((s) => DateTime(s.date.year, s.date.month, s.date.day)).toSet().toList()..sort();
+    var best = 1, run = 1;
+    for (var i = 1; i < days.length; i++) {
+      final expectedNext = DateTime(days[i - 1].year, days[i - 1].month, days[i - 1].day + 1);
+      run = days[i] == expectedNext ? run + 1 : 1;
+      if (run > best) best = run;
+    }
+    return best;
+  }
+
+  /// Après l'ajout d'un historique, ce qui est déjà acquis ne doit pas déclencher une
+  /// avalanche de fenêtres de félicitations : on met à jour la série record, puis on marque
+  /// comme déjà vus les badges obtenus et comme déjà célébrés les morceaux terminés.
+  void _absorbHistoricalAchievements() {
+    final longest = _longestPracticeStreak();
+    if (longest > bestStreakEver) bestStreakEver = longest;
+    if (practiceStreak > bestStreakEver) bestStreakEver = practiceStreak;
+    for (final p in projects) {
+      if (!p.celebratedComplete && p.progress >= 1) p.celebratedComplete = true;
+    }
+    for (final b in badges) {
+      if (b.earned && !seenBadgeIds.contains(b.id)) seenBadgeIds.add(b.id);
+    }
   }
 
   void openProgressDashboard() {
@@ -1522,6 +1597,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       builder: (_) => BilanScreen(
         currentBilan: weeklyBilan,
         weeklyHistory: weeklyHistory,
+        practiceSpanWeeks: practiceSpanWeeks,
+        onEnterHistory: openSessionHistoryEntry,
         onFocusNextWeek: (cat) {
           final current = weeklyInstructions.trim();
           setState(() {
@@ -6031,37 +6108,51 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
 
     final durationCtrl = TextEditingController(text: x.duration.toString());
+    var rating = 4;
     final result = await showDialog<Object>(
       context: navKey.currentContext!,
-      builder: (c) => AlertDialog(
-        title: Text('Terminé : ${projectById(x.projectId)?.name ?? x.title}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: durationCtrl,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Durée pratiquée (minutes)'),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => Navigator.pop(c, 'timer'),
-                icon: const Icon(Icons.timer_outlined, size: 18),
-                label: const Text('Utiliser le chrono à la place'),
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDialogState) => AlertDialog(
+          title: Text('Terminé : ${projectById(x.projectId)?.name ?? x.title}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: durationCtrl,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Durée pratiquée (minutes)'),
               ),
+              const SizedBox(height: 10),
+              // Ressenti de la séance : auparavant fixé à 4 sans jamais être demandé.
+              DropdownButtonFormField<int>(
+                value: rating,
+                decoration: const InputDecoration(labelText: 'Ressenti'),
+                items: List.generate(5, (i) => DropdownMenuItem(value: i + 1, child: Text('★' * (i + 1)))),
+                onChanged: (v) => setDialogState(() => rating = v ?? rating),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(c, 'timer'),
+                  icon: const Icon(Icons.timer_outlined, size: 18),
+                  label: const Text('Utiliser le chrono à la place'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                c,
+                _CompletePlanResult(int.tryParse(durationCtrl.text) ?? x.duration, rating),
+              ),
+              child: const Text('Confirmer'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler')),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, int.tryParse(durationCtrl.text) ?? x.duration),
-            child: const Text('Confirmer'),
-          ),
-        ],
       ),
     );
     if (result == null) return;
@@ -6069,14 +6160,14 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       await startPracticeTimer(x);
       return;
     }
-    final minutes = result as int;
+    final confirmed = result as _CompletePlanResult;
     final newSession = Session(
       id: newId(),
       date: DateTime.now(),
-      duration: minutes,
+      duration: confirmed.duration,
       projectId: x.projectId,
       type: x.category ?? 'Répertoire',
-      rating: 4,
+      rating: confirmed.rating,
       notes: x.details,
       method: x.method,
       coachFocus: _plannedFocus(x),
@@ -6157,6 +6248,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       Sessions(
         items: sessions,
         onAdd: () => addOrEditSession(),
+        onBackfill: openSessionHistoryEntry,
         onEdit: addOrEditSession,
         onDelete: deleteSession,
         projectById: projectById,
@@ -8684,6 +8776,7 @@ class Sessions extends StatefulWidget {
     super.key,
     required this.items,
     required this.onAdd,
+    required this.onBackfill,
     required this.onEdit,
     required this.onDelete,
     required this.projectById,
@@ -8691,6 +8784,7 @@ class Sessions extends StatefulWidget {
   });
   final List<Session> items;
   final VoidCallback onAdd;
+  final VoidCallback onBackfill; // V271 : saisie d'un historique de sessions passées
   final void Function(Session) onEdit;
   final void Function(Session) onDelete;
   final Project? Function(String?) projectById;
@@ -9048,10 +9142,14 @@ class _SessionsState extends State<Sessions> {
       AppBar(
         title: const Text('Sessions'),
         actions: [
-          if (phone)
-            IconButton(tooltip: 'Nouvelle session', onPressed: widget.onAdd, icon: const Icon(Icons.add_rounded))
-          else
+          if (phone) ...[
+            IconButton(tooltip: 'Saisir un historique', onPressed: widget.onBackfill, icon: const Icon(Icons.history_rounded)),
+            IconButton(tooltip: 'Nouvelle session', onPressed: widget.onAdd, icon: const Icon(Icons.add_rounded)),
+          ] else ...[
+            OutlinedButton.icon(onPressed: widget.onBackfill, icon: const Icon(Icons.history_rounded), label: const Text('Saisir un historique')),
+            const SizedBox(width: 8),
             FilledButton.icon(onPressed: widget.onAdd, icon: const Icon(Icons.add_rounded), label: const Text('Nouvelle')),
+          ],
         ],
       ),
       Expanded(child: ListView(padding: EdgeInsets.fromLTRB(phone ? 12 : 16, 10, phone ? 12 : 16, 22), children: [
@@ -10307,6 +10405,13 @@ String _weakestStepLabel(Project p) {
     }
   }
   return label;
+}
+
+/// Résultat du mini-dialogue « Terminé » d'une séance planifiée : durée réelle et ressenti.
+class _CompletePlanResult {
+  _CompletePlanResult(this.duration, this.rating);
+  final int duration;
+  final int rating;
 }
 
 class _DetailedProgressResult {
@@ -13325,10 +13430,22 @@ class _BadgeCard extends StatelessWidget {
 }
 
 class BilanScreen extends StatefulWidget {
-  const BilanScreen({super.key, required this.currentBilan, required this.weeklyHistory, required this.onFocusNextWeek});
+  const BilanScreen({
+    super.key,
+    required this.currentBilan,
+    required this.weeklyHistory,
+    required this.practiceSpanWeeks,
+    required this.onFocusNextWeek,
+    this.onEnterHistory,
+  });
   final WeeklyBilan currentBilan;
   final List<WeeklyBilan> Function({int weeks}) weeklyHistory;
+  /// Nombre de semaines couvertes par les sessions enregistrées (évalué à chaque affichage,
+  /// car il peut augmenter après une saisie d'historique).
+  final int Function() practiceSpanWeeks;
   final void Function(String category) onFocusNextWeek;
+  /// Ouvre la saisie d'un historique de sessions passées (V271).
+  final Future<void> Function()? onEnterHistory;
 
   @override
   State<BilanScreen> createState() => _BilanScreenState();
@@ -13336,7 +13453,23 @@ class BilanScreen extends StatefulWidget {
 
 class _BilanScreenState extends State<BilanScreen> {
   bool showHistory = false;
+  // Période de l'historique en semaines ; 0 = toute la période enregistrée (V271).
   int selectedWeeks = 12;
+  late WeeklyBilan _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.currentBilan;
+  }
+
+  /// Ouvre la saisie d'historique puis rafraîchit les deux vues : la semaine en cours
+  /// (si des sessions y ont été ajoutées) et l'historique.
+  Future<void> _enterHistory() async {
+    await widget.onEnterHistory?.call();
+    if (!mounted) return;
+    setState(() => _current = widget.weeklyHistory(weeks: 1).last);
+  }
 
   static const _weekdayNamesFull = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
@@ -13536,7 +13669,7 @@ class _BilanScreenState extends State<BilanScreen> {
   }
 
   Widget _buildCurrentWeek(BuildContext c) {
-    final bilan = widget.currentBilan;
+    final bilan = _current;
     final start = bilan.weekStart;
     final end = start.add(const Duration(days: 6));
     return ListView(
@@ -13774,11 +13907,37 @@ class _BilanScreenState extends State<BilanScreen> {
   }
 
   Widget _buildHistory(BuildContext c) {
-    final history = widget.weeklyHistory(weeks: selectedWeeks);
+    final span = widget.practiceSpanWeeks();
+    // 0 = « Tout » : toutes les semaines depuis la première session enregistrée.
+    final weeksToShow = selectedWeeks == 0 ? math.max(span, 1) : selectedWeeks;
+    final history = widget.weeklyHistory(weeks: weeksToShow);
     if (history.length < 2) {
       // Pas encore assez de semaines de pratique enregistrees pour qu'un historique ait du sens.
-      return emptyState('Reviens ici dans quelques semaines : l\'historique se construit au fil de tes sessions.');
+      return ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          emptyState('Reviens ici dans quelques semaines : l\'historique se construit au fil de tes sessions.\n\nTu as déjà pratiqué avant d\'utiliser l\'application ? Tu peux saisir tes sessions passées.'),
+          if (widget.onEnterHistory != null)
+            Center(
+              child: FilledButton.tonalIcon(
+                onPressed: _enterHistory,
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('Saisir un historique'),
+              ),
+            ),
+        ],
+      );
     }
+
+    // Périodes proposées : les périodes longues n'apparaissent que lorsque des sessions
+    // plus anciennes existent (après une saisie d'historique, typiquement).
+    final periodOptions = <int>[4, 8, 12, 26, if (span > 26) 52, if (span > 52) 0];
+    // Beaucoup de semaines : barres plus serrées et libellés espacés pour rester lisibles.
+    final barGap = history.length > 52 ? 0.5 : (history.length > 26 ? 1.0 : 2.0);
+    final labelStep = history.length <= 14 ? 1 : (history.length / 7).ceil();
+    String weekLabel(DateTime d) => history.length > 26
+        ? '${d.month}/${(d.year % 100).toString().padLeft(2, '0')}'
+        : '${d.day}/${d.month}';
 
     final totalMinutes = history.fold(0, (a, w) => a + w.totalMinutes);
     final avgPerWeek = totalMinutes / history.length;
@@ -13810,18 +13969,30 @@ class _BilanScreenState extends State<BilanScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         Center(
-          child: SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 4, label: Text('4 sem.')),
-              ButtonSegment(value: 8, label: Text('8 sem.')),
-              ButtonSegment(value: 12, label: Text('12 sem.')),
-              ButtonSegment(value: 26, label: Text('26 sem.')),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final o in periodOptions)
+                ChoiceChip(
+                  label: Text(o == 0 ? 'Tout' : '$o sem.'),
+                  selected: selectedWeeks == o,
+                  onSelected: (_) => setState(() => selectedWeeks = o),
+                ),
             ],
-            selected: {selectedWeeks},
-            onSelectionChanged: (v) => setState(() => selectedWeeks = v.first),
           ),
         ),
-        const SizedBox(height: 16),
+        if (widget.onEnterHistory != null)
+          Align(
+            alignment: Alignment.center,
+            child: TextButton.icon(
+              onPressed: _enterHistory,
+              icon: const Icon(Icons.history_rounded, size: 18),
+              label: const Text('Saisir des sessions passées'),
+            ),
+          ),
+        const SizedBox(height: 12),
         Row(children: [
           Expanded(
             child: _statTile(c,
@@ -13855,10 +14026,11 @@ class _BilanScreenState extends State<BilanScreen> {
                     for (final w in history)
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          padding: EdgeInsets.symmetric(horizontal: barGap),
                           child: Tooltip(
-                            message: '${w.weekStart.day}/${w.weekStart.month} : ${w.totalMinutes} min',
+                            message: 'Semaine du ${w.weekStart.day}/${w.weekStart.month}/${w.weekStart.year} : ${w.totalMinutes} min',
                             child: Builder(builder: (_) {
+                              final wi = history.indexOf(w);
                               final ratio = maxMinutes > 0 ? (w.totalMinutes / maxMinutes).clamp(0.02, 1.0).toDouble() : 0.02;
                               return Column(
                                 mainAxisAlignment: MainAxisAlignment.end,
@@ -13881,10 +14053,19 @@ class _BilanScreenState extends State<BilanScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(
-                                    '${w.weekStart.day}/${w.weekStart.month}',
-                                    style: const TextStyle(fontSize: 9, color: Colors.grey),
-                                    textAlign: TextAlign.center,
+                                  SizedBox(
+                                    height: 12,
+                                    child: wi % labelStep == 0
+                                        ? OverflowBox(
+                                            maxWidth: 48,
+                                            child: Text(
+                                              weekLabel(w.weekStart),
+                                              softWrap: false,
+                                              style: const TextStyle(fontSize: 9, color: Colors.grey),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          )
+                                        : null,
                                   ),
                                 ],
                               );
@@ -13905,7 +14086,7 @@ class _BilanScreenState extends State<BilanScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _sectionHeader(c, Icons.pie_chart_outline, 'Répartition par morceau',
-                  subtitle: 'Sur les $selectedWeeks dernières semaines'),
+                  subtitle: 'Sur les ${history.length} dernières semaines'),
                 const SizedBox(height: 14),
                 for (final id in topProjects)
                   Padding(
@@ -13936,7 +14117,7 @@ class _BilanScreenState extends State<BilanScreen> {
                               for (final m in weeklyByProject[id]!)
                                 Expanded(
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 1),
+                                    padding: EdgeInsets.symmetric(horizontal: history.length > 52 ? 0 : (history.length > 26 ? 0.5 : 1)),
                                     child: Builder(builder: (_) {
                                       final ratio = maxMinutes > 0
                                           ? (m / maxMinutes).clamp(m > 0 ? 0.06 : 0.0, 1.0).toDouble()
@@ -14931,6 +15112,206 @@ class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
 // Écran principal
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// V276 — Camembert des morceaux joués (7 jours / 30 jours / 1 an / Tout)
+// ---------------------------------------------------------------------------
+
+const List<Color> _statsPiePalette = [
+  Color(0xFF5E8873), Color(0xFFC26D5C), Color(0xFF4A6FA5), Color(0xFFB7A24A),
+  Color(0xFF7D6A8F), Color(0xFF8A5A4B), Color(0xFF4F9AA0), Color(0xFF9C5C8B),
+];
+
+/// Camembert plein (secteurs séparés par un fin trait de la couleur du fond).
+class _StatsPiePainter extends CustomPainter {
+  _StatsPiePainter({required this.values, required this.colors, required this.separator});
+  final List<double> values;
+  final List<Color> colors;
+  final Color separator;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+    final rect = Rect.fromLTWH(1, 1, size.width - 2, size.height - 2);
+    final fill = Paint()..style = PaintingStyle.fill;
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = separator;
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * 2 * math.pi;
+      fill.color = colors[i % colors.length];
+      canvas.drawArc(rect, start, sweep, true, fill);
+      if (values.length > 1) canvas.drawArc(rect, start, sweep, true, edge);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StatsPiePainter old) => true;
+}
+
+class _PieceSlice {
+  _PieceSlice({required this.key, required this.name, required this.emoji, required this.minutes});
+  final String key; // id du morceau, '_routine' (hors morceau) ou '_others' (regroupement)
+  final String name;
+  final String emoji;
+  final int minutes;
+}
+
+class _StatsPieceShareCard extends StatefulWidget {
+  const _StatsPieceShareCard({required this.projects, required this.sessions, required this.onOpenPiece});
+  final List<Project> projects;
+  final List<Session> sessions;
+  final void Function(String key) onOpenPiece;
+
+  @override
+  State<_StatsPieceShareCard> createState() => _StatsPieceShareCardState();
+}
+
+class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
+  int _period = 1; // 0 = 7 jours, 1 = 30 jours, 2 = 1 an, 3 = Tout
+  static const _maxSlices = 8;
+
+  DateTime? _from(DateTime today) {
+    if (_period == 0) return DateTime(today.year, today.month, today.day - 6);
+    if (_period == 1) return DateTime(today.year, today.month, today.day - 29);
+    if (_period == 2) return DateTime(today.year - 1, today.month, today.day);
+    return null;
+  }
+
+  /// Temps par morceau sur la période, du plus travaillé au moins travaillé ; au-delà de
+  /// [_maxSlices] morceaux, le reste est regroupé dans « Autres ».
+  List<_PieceSlice> _slices(DateTime today) {
+    final from = _from(today);
+    final byId = {for (final p in widget.projects) p.id: p};
+    final minutes = <String, int>{};
+    for (final s in widget.sessions) {
+      if (from != null && _statsDay(s.date).isBefore(from)) continue;
+      final key = (s.projectId != null && byId.containsKey(s.projectId)) ? s.projectId! : '_routine';
+      minutes[key] = (minutes[key] ?? 0) + s.duration;
+    }
+    final entries = minutes.entries.where((e) => e.value > 0).toList()..sort((a, b) => b.value.compareTo(a.value));
+    _PieceSlice toSlice(MapEntry<String, int> e) {
+      final p = byId[e.key];
+      if (e.key == '_routine' || p == null) {
+        return _PieceSlice(key: '_routine', name: 'Routine / hors morceau', emoji: '🎹', minutes: e.value);
+      }
+      return _PieceSlice(key: e.key, name: p.name, emoji: p.emoji, minutes: e.value);
+    }
+
+    if (entries.length <= _maxSlices) return [for (final e in entries) toSlice(e)];
+    final rest = entries.skip(_maxSlices).toList();
+    return [
+      for (final e in entries.take(_maxSlices)) toSlice(e),
+      _PieceSlice(
+        key: '_others',
+        name: 'Autres (${rest.length})',
+        emoji: '🎵',
+        minutes: rest.fold<int>(0, (a, e) => a + e.value),
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final slices = _slices(today);
+    final total = slices.fold<int>(0, (a, s) => a + s.minutes);
+    final size = math.min(MediaQuery.sizeOf(c).width - 120, 250.0).clamp(180.0, 250.0).toDouble();
+    Color colorOf(int i) => slices[i].key == '_others' ? scheme.outline : _statsPiePalette[i % _statsPiePalette.length];
+
+    return _StatsCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const _StatsHeading(icon: Icons.pie_chart_outline, title: 'Morceaux joués'),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 0, label: Text('7 jours')),
+              ButtonSegment(value: 1, label: Text('30 jours')),
+              ButtonSegment(value: 2, label: Text('1 an')),
+              ButtonSegment(value: 3, label: Text('Tout')),
+            ],
+            selected: {_period},
+            onSelectionChanged: (v) => setState(() => _period = v.first),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (total == 0)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text('Aucune séance sur cette période.', style: TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+            ),
+          )
+        else ...[
+          Center(
+            child: Text(
+              '${_statsDuration(total)} · ${slices.length} morceau${slices.length > 1 ? 'x' : ''}',
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: CustomPaint(
+                painter: _StatsPiePainter(
+                  values: [for (final s in slices) s.minutes.toDouble()],
+                  colors: [for (var i = 0; i < slices.length; i++) colorOf(i)],
+                  separator: scheme.surfaceContainerHigh,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          for (var i = 0; i < slices.length; i++) ...[
+            if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withOpacity(.5)),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: slices[i].key == '_others' ? null : () => widget.onOpenPiece(slices[i].key),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(children: [
+                  Container(width: 14, height: 14, decoration: BoxDecoration(color: colorOf(i), shape: BoxShape.circle)),
+                  const SizedBox(width: 10),
+                  Text(slices[i].emoji, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      slices[i].name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_statsDuration(slices[i].minutes), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
+                  SizedBox(
+                    width: 50,
+                    child: Text(
+                      slices[i].minutes / total * 100 < 1 ? '<1 %' : '${(slices[i].minutes / total * 100).round()} %',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ],
+        ],
+      ]),
+    );
+  }
+}
+
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key, required this.projects, required this.sessions, required this.onOpenBadges});
   final List<Project> projects;
@@ -15140,6 +15521,12 @@ class _StatsScreenState extends State<StatsScreen> {
                   ]),
                 ),
                 const SizedBox(height: 16),
+                _StatsPieceShareCard(
+                  projects: widget.projects,
+                  sessions: widget.sessions,
+                  onOpenPiece: (key) => _openPiece(key, projectById),
+                ),
+                const SizedBox(height: 16),
                 _StatsMonthCalendar(minutesByDay: minutesByDay, firstMonth: firstMonth, suffix: ' de piano'),
                 const SizedBox(height: 16),
                 _StatsCard(
@@ -15202,6 +15589,243 @@ class _StatsScreenState extends State<StatsScreen> {
 // Détail d'un morceau
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// V274 — « Dernières réalisations » d'un morceau en quatre vues : jour, semaine,
+// mois, année. Chaque ligne = une période avec sa barre de durée comparative.
+// ---------------------------------------------------------------------------
+
+class _AchievementRow {
+  _AchievementRow({
+    required this.label,
+    required this.minutes,
+    required this.sessions,
+    this.detail,
+  });
+  final String label;
+  final String? detail; // précision affichée sous le libellé (ex. dates d'une semaine)
+  final int minutes;
+  final List<Session> sessions;
+  int get count => sessions.length;
+}
+
+class _StatsAchievementsCard extends StatefulWidget {
+  const _StatsAchievementsCard({required this.sessions});
+  final List<Session> sessions;
+
+  @override
+  State<_StatsAchievementsCard> createState() => _StatsAchievementsCardState();
+}
+
+class _StatsAchievementsCardState extends State<_StatsAchievementsCard> {
+  int _view = 0; // 0 = jour, 1 = semaine, 2 = mois, 3 = année
+
+  static const _units = ['jours', 'semaines', 'mois', 'années'];
+
+  /// Début de la période qui contient [date], selon la vue active.
+  DateTime _keyOf(DateTime date) {
+    final d = _statsDay(date);
+    if (_view == 1) return startOfWeek(d);
+    if (_view == 2) return DateTime(d.year, d.month);
+    if (_view == 3) return DateTime(d.year);
+    return d;
+  }
+
+  /// Début de la période suivante (arithmétique calendaire, sûre vis-à-vis des changements d'heure).
+  DateTime _next(DateTime k) {
+    if (_view == 1) return DateTime(k.year, k.month, k.day + 7);
+    if (_view == 2) return DateTime(k.year, k.month + 1);
+    if (_view == 3) return DateTime(k.year + 1);
+    return DateTime(k.year, k.month, k.day + 1);
+  }
+
+  String _label(DateTime k) {
+    final now = DateTime.now();
+    if (_view == 1) {
+      // Numéro de semaine ISO ; l'année n'est rappelée que si ce n'est pas l'année en cours.
+      final isoYear = _statsIsoYear(k);
+      return isoYear == now.year ? 'Semaine ${_statsIsoWeek(k)}' : 'Semaine ${_statsIsoWeek(k)} · $isoYear';
+    }
+    if (_view == 2) return '${_statsMonths[k.month - 1]} ${k.year}';
+    if (_view == 3) return '${k.year}';
+    final base = '${_statsWeekdays[k.weekday - 1].substring(0, 3)}. ${k.day} ${_statsMonthsShort[k.month - 1]}';
+    return k.year == now.year ? base : '$base ${k.year}';
+  }
+
+  /// Dates de la semaine (vue semaine uniquement), ex. « 8 – 14 sept. » ou « 29 sept. – 5 oct. ».
+  String? _detail(DateTime k) {
+    if (_view != 1) return null;
+    final end = DateTime(k.year, k.month, k.day + 6);
+    final start = k.month == end.month ? '${k.day}' : '${k.day} ${_statsMonthsShort[k.month - 1]}';
+    return '$start – ${end.day} ${_statsMonthsShort[end.month - 1]}';
+  }
+
+  /// Périodes de la plus récente à la plus ancienne. En vue jour, seuls les jours pratiqués
+  /// sont listés ; en vues semaine / mois / année, les périodes sans pratique entre la
+  /// première session et aujourd'hui sont conservées (barre vide) pour repérer les creux.
+  List<_AchievementRow> _rows() {
+    if (widget.sessions.isEmpty) return const [];
+    final byKey = <DateTime, List<Session>>{};
+    for (final s in widget.sessions) {
+      byKey.putIfAbsent(_keyOf(s.date), () => []).add(s);
+    }
+    var keys = byKey.keys.toList()..sort();
+    if (_view != 0) {
+      final now = DateTime.now();
+      var last = _keyOf(DateTime(now.year, now.month, now.day));
+      if (keys.last.isAfter(last)) last = keys.last;
+      final all = <DateTime>[];
+      var k = keys.first;
+      while (!k.isAfter(last)) {
+        all.add(k);
+        k = _next(k);
+      }
+      keys = all;
+    }
+    return [
+      for (final k in keys.reversed)
+        _AchievementRow(
+          label: _label(k),
+          detail: _detail(k),
+          minutes: (byKey[k] ?? const <Session>[]).fold<int>(0, (a, s) => a + s.duration),
+          // Sessions du plus récent au plus ancien (utilisées par le détail mensuel).
+          sessions: [...(byKey[k] ?? const <Session>[])]..sort((a, b) => b.date.compareTo(a.date)),
+        ),
+    ];
+  }
+
+  String? _subText(_AchievementRow r) {
+    final countText = r.count > 0 ? '${r.count} session${r.count > 1 ? 's' : ''}' : null;
+    if (_view == 0) return r.count > 1 ? countText : null;
+    if (_view == 1) {
+      if (r.detail == null) return countText;
+      return countText == null ? r.detail : '${r.detail} · $countText';
+    }
+    return countText;
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final dark = Theme.of(c).brightness == Brightness.dark;
+    final rows = _rows();
+    final maxMinutes = rows.fold<int>(1, (a, r) => r.minutes > a ? r.minutes : a);
+
+    Widget bar(int minutes) {
+      final ratio = minutes <= 0 ? 0.0 : (minutes / maxMinutes).clamp(0.04, 1.0).toDouble();
+      return Container(
+        height: 10,
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withOpacity(dark ? .10 : .08),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: ratio,
+            child: Container(
+              decoration: BoxDecoration(color: _statsSage, borderRadius: BorderRadius.circular(6)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Vue mois : sessions du mois en petit, sous la ligne du mois (date + durée).
+    Widget monthSessions(_AchievementRow r) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final s in r.sessions)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withOpacity(dark ? .08 : .06),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${_statsWeekdays[_statsDay(s.date).weekday - 1].substring(0, 3)}. ${_statsDay(s.date).day} · ${_statsDuration(s.duration)}',
+                  style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return _StatsCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const _StatsHeading(icon: Icons.edit_note, title: 'Dernières réalisations'),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 0, label: Text('Jour')),
+              ButtonSegment(value: 1, label: Text('Semaine')),
+              ButtonSegment(value: 2, label: Text('Mois')),
+              ButtonSegment(value: 3, label: Text('Année')),
+            ],
+            selected: {_view},
+            onSelectionChanged: (v) => setState(() => _view = v.first),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (rows.isEmpty)
+          Text('Aucune séance enregistrée.', style: TextStyle(color: scheme.onSurfaceVariant))
+        else
+          Text(
+            '${rows.length} ${_units[_view]} · barres relatives au maximum (${_statsDuration(maxMinutes)})',
+            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+          ),
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                SizedBox(
+                  width: 140,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(r.label, style: const TextStyle(fontSize: 15.5)),
+                    ),
+                    if (_subText(r) != null)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(_subText(r)!, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                      ),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: bar(r.minutes)),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    r.minutes > 0 ? _statsDuration(r.minutes) : '—',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: r.minutes > 0 ? null : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ]),
+              if (_view == 2 && r.sessions.isNotEmpty) monthSessions(r),
+            ]),
+          ),
+      ]),
+    );
+  }
+}
+
 class StatsPieceDetailScreen extends StatelessWidget {
   const StatsPieceDetailScreen({super.key, required this.title, required this.emoji, required this.sessions});
   final String title;
@@ -15246,14 +15870,32 @@ class StatsPieceDetailScreen extends StatelessWidget {
       );
     }
 
-    // Trois derniers mois en points.
+    // Points de pratique : un mois par ligne, depuis le premier mois de pratique du morceau
+    // jusqu'au mois en cours (au minimum les 3 derniers mois). Avant V273, seuls les 3
+    // derniers mois étaient affichés, même pour un morceau travaillé depuis plus d'un an.
     final emptyDot = scheme.onSurface.withOpacity(dark ? .10 : .08);
+    final firstDotMonth = DateTime(firstDay.year, firstDay.month);
+    final minDotMonth = DateTime(today.year, today.month - 2);
+    final startDotMonth = firstDotMonth.isBefore(minDotMonth) ? firstDotMonth : minDotMonth;
+    final dotMonthCount = (today.year - startDotMonth.year) * 12 + today.month - startDotMonth.month + 1;
+    final dotMonths = [for (var i = 0; i < dotMonthCount; i++) DateTime(startDotMonth.year, startDotMonth.month + i)];
     Widget monthDots(DateTime m) {
       final dim = DateTime(m.year, m.month + 1, 0).day;
+      // L'année est ajoutée au libellé des mois qui ne sont pas de l'année en cours.
+      final monthLabel = m.year == today.year
+          ? _statsMonthsShort[m.month - 1]
+          : '${_statsMonthsShort[m.month - 1]} ${(m.year % 100).toString().padLeft(2, '0')}';
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(children: [
-          SizedBox(width: 50, child: Text(_statsMonthsShort[m.month - 1], style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant))),
+          SizedBox(
+            width: 66,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(monthLabel, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
+            ),
+          ),
           for (var d = 1; d <= 31; d++)
             Expanded(
               child: d > dim
@@ -15274,9 +15916,6 @@ class StatsPieceDetailScreen extends StatelessWidget {
         ]),
       );
     }
-
-    // Dernières réalisations (une ligne par jour).
-    final days = minutesByDay.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
 
     return Scaffold(
       appBar: AppBar(centerTitle: true, title: const Text('Détail du morceau', style: TextStyle(fontWeight: FontWeight.w900))),
@@ -15323,33 +15962,13 @@ class StatsPieceDetailScreen extends StatelessWidget {
                     const SizedBox(height: 14),
                     Divider(height: 1, color: scheme.outlineVariant),
                     const SizedBox(height: 14),
-                    monthDots(DateTime(today.year, today.month - 2)),
-                    monthDots(DateTime(today.year, today.month - 1)),
-                    monthDots(DateTime(today.year, today.month)),
+                    for (final m in dotMonths) monthDots(m),
                   ]),
                 ),
                 const SizedBox(height: 16),
                 _StatsMonthCalendar(minutesByDay: minutesByDay, firstMonth: DateTime(firstDay.year, firstDay.month)),
                 const SizedBox(height: 16),
-                _StatsCard(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const _StatsHeading(icon: Icons.edit_note, title: 'Dernières réalisations'),
-                    const SizedBox(height: 14),
-                    if (days.isEmpty) Text('Aucune séance enregistrée.', style: TextStyle(color: scheme.onSurfaceVariant)),
-                    for (final e in days.take(8))
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 9),
-                        child: Row(children: [
-                          Expanded(
-                            child: Text('${_statsWeekdays[e.key.weekday - 1]} ${e.key.day} ${_statsMonths[e.key.month - 1]}', style: const TextStyle(fontSize: 17)),
-                          ),
-                          Container(width: 12, height: 12, decoration: const BoxDecoration(color: _statsSage, shape: BoxShape.circle)),
-                          const SizedBox(width: 12),
-                          Text(_statsDuration(e.value), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                        ]),
-                      ),
-                  ]),
-                ),
+                _StatsAchievementsCard(sessions: sessions),
               ],
             ),
           ),
@@ -15511,6 +16130,389 @@ class StatsWeeksReviewScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// V271 — Saisie d'un historique de sessions passées
+// ---------------------------------------------------------------------------
+
+/// Un lot de sessions créées en une seule saisie (une journée, ou une période répétée).
+class _HistoryBatch {
+  _HistoryBatch({required this.title, required this.detail, required this.sessions});
+  final String title;
+  final String detail;
+  final List<Session> sessions;
+  int get minutes => sessions.fold(0, (a, s) => a + s.duration);
+}
+
+/// Écran de saisie rapide de sessions antérieures à l'utilisation de l'application.
+/// Renvoie (via Navigator.pop) la liste des sessions à enregistrer. Une session peut être
+/// saisie pour un jour précis, ou répétée sur une période (ex. « tous les jours », « lundi,
+/// mercredi, vendredi ») pour reconstituer vite une pratique régulière.
+class SessionHistoryEntryScreen extends StatefulWidget {
+  const SessionHistoryEntryScreen({super.key, required this.projects});
+  final List<Project> projects;
+
+  @override
+  State<SessionHistoryEntryScreen> createState() => _SessionHistoryEntryScreenState();
+}
+
+class _SessionHistoryEntryScreenState extends State<SessionHistoryEntryScreen> {
+  static const _weekdayShort = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+  static const _maxDaysPerBatch = 800;
+
+  late DateTime day;
+  late DateTime endDay;
+  bool repeat = false;
+  final Set<int> weekdays = {0, 1, 2, 3, 4, 5, 6}; // 0 = lundi
+  Project? project;
+  String type = 'Répertoire';
+  int rating = 4;
+  final durationCtrl = TextEditingController(text: '30');
+  final List<_HistoryBatch> batches = [];
+  String? error;
+
+  DateTime get _today {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  DateTime _shift(DateTime d, int days) => DateTime(d.year, d.month, d.day + days);
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  @override
+  void initState() {
+    super.initState();
+    day = _shift(_today, -1);
+    endDay = day;
+  }
+
+  @override
+  void dispose() {
+    durationCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate({required bool end}) async {
+    final initial = end ? endDay : day;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(_today) ? _today : initial,
+      firstDate: DateTime(2000),
+      lastDate: _today,
+      helpText: end ? 'Dernier jour de la période' : (repeat ? 'Premier jour de la période' : 'Jour de la session'),
+    );
+    if (picked == null) return;
+    setState(() {
+      error = null;
+      if (end) {
+        endDay = picked;
+        if (endDay.isBefore(day)) day = endDay;
+      } else {
+        day = picked;
+        if (endDay.isBefore(day)) endDay = day;
+      }
+    });
+  }
+
+  List<DateTime> _targetDays() {
+    if (!repeat) return [day];
+    final out = <DateTime>[];
+    var d = day;
+    while (!d.isAfter(endDay) && out.length <= _maxDaysPerBatch) {
+      if (weekdays.contains(d.weekday - 1)) out.add(d);
+      d = _shift(d, 1);
+    }
+    return out;
+  }
+
+  /// Midi du jour choisi (évite tout effet de bord de fuseau ou de changement d'heure),
+  /// ramené à maintenant si ce midi n'est pas encore passé.
+  DateTime _stamp(DateTime d) {
+    final noon = DateTime(d.year, d.month, d.day, 12);
+    final now = DateTime.now();
+    return noon.isAfter(now) ? now : noon;
+  }
+
+  void _addBatch() {
+    final minutes = int.tryParse(durationCtrl.text.trim());
+    if (minutes == null || minutes < 1 || minutes > 600) {
+      setState(() => error = 'Durée invalide : entre 1 et 600 minutes.');
+      return;
+    }
+    final days = _targetDays();
+    if (days.isEmpty) {
+      setState(() => error = 'Aucun jour sélectionné dans cette période.');
+      return;
+    }
+    if (days.length > _maxDaysPerBatch) {
+      setState(() => error = 'Période trop longue : $_maxDaysPerBatch jours maximum par saisie.');
+      return;
+    }
+    final created = <Session>[
+      for (final d in days)
+        Session(
+          id: newId(),
+          date: _stamp(d),
+          duration: minutes,
+          projectId: project?.id,
+          type: type,
+          rating: rating,
+          notes: '',
+          method: project?.method,
+        ),
+    ];
+    final period = days.length == 1 ? _fmt(days.first) : '${_fmt(days.first)} → ${_fmt(days.last)}';
+    final dayNames = repeat && weekdays.length < 7
+        ? ' · ${(weekdays.toList()..sort()).map((i) => _weekdayShort[i]).join(', ')}'
+        : '';
+    setState(() {
+      error = null;
+      batches.insert(
+        0,
+        _HistoryBatch(
+          title: project?.name ?? 'Pratique libre',
+          detail: '$period$dayNames · ${days.length} session${days.length > 1 ? 's' : ''} × $minutes min · ${'★' * rating}',
+          sessions: created,
+        ),
+      );
+    });
+  }
+
+  String _hm(int minutes) => '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final total = batches.fold<int>(0, (a, b) => a + b.sessions.length);
+    final totalMinutes = batches.fold<int>(0, (a, b) => a + b.minutes);
+    final preview = _targetDays().length;
+    final capped = preview > _maxDaysPerBatch;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Saisir un historique'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton(
+              onPressed: total == 0
+                  ? null
+                  : () => Navigator.pop<List<Session>>(c, [for (final b in batches) ...b.sessions]),
+              child: Text(total == 0 ? 'Enregistrer' : 'Enregistrer ($total)'),
+            ),
+          ),
+        ],
+      ),
+      body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.all(16),
+        children: [
+          CardBox(
+            child: Text(
+              'Ajoute ici tes sessions passées. Elles alimentent l\'historique, les statistiques et le Coach, '
+              'mais ne modifient ni l\'avancement de tes morceaux ni ton planning. '
+              'Pour une pratique régulière, utilise « Répéter sur une période ».',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13, height: 1.35),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CardBox(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionHeader(c, Icons.event_note_outlined, 'Nouvelle saisie'),
+                const SizedBox(height: 12),
+                if (!repeat)
+                  Row(children: [
+                    IconButton(
+                      tooltip: 'Jour précédent',
+                      onPressed: () => setState(() {
+                        error = null;
+                        day = _shift(day, -1);
+                        endDay = day;
+                      }),
+                      icon: const Icon(Icons.chevron_left_rounded),
+                    ),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDate(end: false),
+                        icon: const Icon(Icons.event_outlined, size: 18),
+                        label: Text(_fmt(day)),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Jour suivant',
+                      onPressed: _shift(day, 1).isAfter(_today)
+                          ? null
+                          : () => setState(() {
+                                error = null;
+                                day = _shift(day, 1);
+                                endDay = day;
+                              }),
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ])
+                else
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDate(end: false),
+                        icon: const Icon(Icons.event_outlined, size: 18),
+                        label: Text('Du ${_fmt(day)}'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDate(end: true),
+                        icon: const Icon(Icons.event_outlined, size: 18),
+                        label: Text('Au ${_fmt(endDay)}'),
+                      ),
+                    ),
+                  ]),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Répéter sur une période'),
+                  value: repeat,
+                  onChanged: (v) => setState(() {
+                    repeat = v;
+                    error = null;
+                    if (endDay.isBefore(day)) endDay = day;
+                  }),
+                ),
+                if (repeat) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (var i = 0; i < 7; i++)
+                        FilterChip(
+                          label: Text(_weekdayShort[i]),
+                          selected: weekdays.contains(i),
+                          onSelected: (selected) => setState(() {
+                            error = null;
+                            if (selected) {
+                              weekdays.add(i);
+                            } else {
+                              weekdays.remove(i);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    capped
+                        ? 'Période trop longue : $_maxDaysPerBatch jours maximum par saisie.'
+                        : '$preview session${preview > 1 ? 's' : ''} seront créées.',
+                    style: TextStyle(fontSize: 12, color: capped ? scheme.error : scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                DropdownButtonFormField<Project?>(
+                  isExpanded: true,
+                  value: project,
+                  decoration: const InputDecoration(labelText: 'Morceau'),
+                  items: projectItems(widget.projects),
+                  onChanged: (v) => setState(() => project = v),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: type,
+                  decoration: const InputDecoration(labelText: 'Type de travail'),
+                  items: objectiveCategories
+                      .map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: (v) => setState(() => type = v ?? type),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: durationCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Durée par session (minutes)'),
+                ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  const Expanded(child: Text('Ressenti moyen', style: TextStyle(fontWeight: FontWeight.w600))),
+                  for (var i = 1; i <= 5; i++)
+                    IconButton(
+                      tooltip: '$i / 5',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(() => rating = i),
+                      icon: Icon(
+                        i <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                        size: 26,
+                        color: i <= rating ? Colors.amber.shade700 : scheme.outline,
+                      ),
+                    ),
+                ]),
+                if (error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(error!, style: TextStyle(color: scheme.error, fontSize: 12.5)),
+                ],
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: capped ? null : _addBatch,
+                    icon: const Icon(Icons.playlist_add_rounded),
+                    label: Text(repeat ? 'Ajouter ces $preview sessions à la liste' : 'Ajouter à la liste'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          CardBox(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionHeader(
+                  c,
+                  Icons.fact_check_outlined,
+                  'À enregistrer',
+                  subtitle: total == 0
+                      ? 'Rien pour l\'instant'
+                      : '$total session${total > 1 ? 's' : ''} · ${_hm(totalMinutes)}',
+                ),
+                if (batches.isEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Les saisies ajoutées apparaissent ici. Rien n\'est enregistré tant que tu n\'as pas appuyé sur « Enregistrer ».',
+                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+                  ),
+                ] else
+                  for (final b in batches)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(b.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 2),
+                            Text('${b.detail} · ${_hm(b.minutes)}',
+                                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5)),
+                          ]),
+                        ),
+                        IconButton(
+                          tooltip: 'Retirer cette saisie',
+                          onPressed: () => setState(() => batches.remove(b)),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                        ),
+                      ]),
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
