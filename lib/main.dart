@@ -1,3 +1,7 @@
+// V280 — Icône de morceau : retour à la liste d'origine avec libellés + bouton « Autre » (icônes musicales uniquement, avec libellé) ; saisie d'historique : détection des doublons ; filtre de période commun (7 j / 30 j / 1 an / Tout) à tout l'écran Statistiques.
+// V279 — Bibliothèque d'icônes pour les morceaux (≈ 280 émojis en 11 catégories + saisie libre) à la place de la liste de 8 icônes.
+// V278 — Planning : run-through hebdomadaire garanti pour les morceaux à 90 % (non acquis) ; run-through tiré au sort (sous-ensemble et jour) pour les morceaux acquis.
+// V277 — Statistiques : le calendrier mensuel affiche dans chaque case les morceaux joués (émoji + temps) ; toucher une case ouvre le détail du jour.
 // V276 — Statistiques : camembert des morceaux joués (7 jours / 30 jours / 1 an / Tout), légende cliquable vers le détail du morceau.
 // V275 — « Dernières réalisations » : vue Semaine avec numéro de semaine ISO ; vue Mois avec le détail des sessions du mois (date + durée) sous chaque mois.
 // V274 — Statistiques > détail d'un morceau : « Dernières réalisations » en 4 onglets (Jour, Semaine, Mois, Année) avec barres de durée comparatives.
@@ -23,7 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '276.0';
+const String appVersion = '280.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -1516,7 +1520,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
   /// lien avec les séances planifiées, pas de célébration pour des exploits passés.
   Future<void> openSessionHistoryEntry() async {
     final added = await Navigator.of(navKey.currentContext!).push<List<Session>>(
-      MaterialPageRoute(builder: (_) => SessionHistoryEntryScreen(projects: projects)),
+      MaterialPageRoute(builder: (_) => SessionHistoryEntryScreen(projects: projects, existingSessions: sessions)),
     );
     if (added == null || added.isEmpty) return;
     setState(() {
@@ -3128,7 +3132,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
 
     final multipliers = _parseWeeklyInstructions(instructions);
     final rec = recommendedMinutesByProject(multipliers: multipliers.isEmpty ? null : multipliers);
-    if (rec.isEmpty && routine.isEmpty) {
+    // V278 : un morceau à 90 % ou acquis suffit à générer des run-throughs, même sans autre travail à planifier.
+    final hasRunThroughPieces = projects.any((p) => p.progress >= .9 || p.effectiveStatus == 'Répertoire d’entretien');
+    if (rec.isEmpty && routine.isEmpty && !hasRunThroughPieces) {
       await showDialog<void>(
         context: navKey.currentContext!,
         builder: (c) => AlertDialog(
@@ -3289,6 +3295,116 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         }
       }
 
+      // --- V278 : Run-throughs planifiés pour les morceaux presque acquis / acquis. ---
+      // • Morceau à 90 % d'avancement ou plus (pas encore acquis) : UN run-through par
+      //   semaine, garanti (sauf s'il a déjà été fait cette semaine).
+      // • Morceau acquis (100 % ou « Répertoire d'entretien ») : un run-through placé un jour
+      //   tiré au hasard, pour un sous-ensemble de morceaux tiré au hasard chaque semaine
+      //   (tirage pondéré en faveur des morceaux joués il y a longtemps ; environ 10 % du
+      //   temps hebdomadaire). Le tirage est initialisé par la semaine : régénérer le
+      //   planning ne change donc pas le résultat.
+      // Ces créneaux sont posés avant la répartition quotidienne : ils consomment la capacité
+      // du jour et remplacent (au lieu de s'ajouter à) le temps recommandé du morceau.
+      final preplannedRunThroughs = <String>{};
+      {
+        bool isAcquired(Project p) => p.effectiveStatus == 'Répertoire d’entretien' || p.progress >= 1;
+        bool doneThisWeek(Project p) =>
+            sessions.any((s) => s.projectId == p.id && s.type == 'Run-through' && !s.date.isBefore(weekStart));
+        DateTime? lastSessionOf(Project p) {
+          DateTime? latest;
+          for (final s in sessions) {
+            if (s.projectId != p.id) continue;
+            if (latest == null || s.date.isAfter(latest)) latest = s.date;
+          }
+          return latest;
+        }
+
+        final rng = math.Random(weekStart.year * 10000 + weekStart.month * 100 + weekStart.day);
+        final runCountByDay = <DateTime, int>{for (final d in days) d: 0};
+
+        void place(Project p, int minutes, {required bool weekly}) {
+          var pool = days.where((d) => !d.isBefore(today) && (remainingByDay[d] ?? 0) >= minutes).toList();
+          if (coachLightDay != null) {
+            final notLight = pool.where((d) => !_sameDay(d, coachLightDay!)).toList();
+            if (notLight.isNotEmpty) pool = notLight;
+          }
+          var chosenMinutes = minutes;
+          if (pool.isEmpty) {
+            // Pas assez de place pour la durée voulue : on prend le jour restant le plus
+            // libre, à condition de pouvoir y loger au moins 10 minutes.
+            final fallback = days.where((d) => !d.isBefore(today) && (remainingByDay[d] ?? 0) >= 10).toList()
+              ..sort((a, b) => (remainingByDay[b] ?? 0).compareTo(remainingByDay[a] ?? 0));
+            if (fallback.isEmpty) return;
+            pool = [fallback.first];
+            chosenMinutes = remainingByDay[fallback.first]!;
+          }
+          DateTime day;
+          if (weekly) {
+            // Jour le moins chargé en run-throughs, puis le plus libre.
+            pool.sort((a, b) {
+              final byRuns = runCountByDay[a]!.compareTo(runCountByDay[b]!);
+              return byRuns != 0 ? byRuns : remainingByDay[b]!.compareTo(remainingByDay[a]!);
+            });
+            day = pool.first;
+          } else {
+            // Tirage au hasard parmi les jours les moins chargés en run-throughs.
+            final minRuns = pool.map((d) => runCountByDay[d]!).reduce((a, b) => a < b ? a : b);
+            final spread = pool.where((d) => runCountByDay[d]! == minRuns).toList();
+            day = spread[rng.nextInt(spread.length)];
+          }
+          final baseDetails = _methodPlanningDetails(p);
+          final prefix = baseDetails.isEmpty ? '' : '$baseDetails · ';
+          final tempo = p.targetTempo > 0 ? ' · cible ${p.targetTempo} BPM' : '';
+          final origin = weekly ? 'run-through hebdomadaire (morceau à 90 %)' : 'run-through tiré au sort (morceau acquis)';
+          plan.add(PlanItem(
+            id: newId(),
+            date: day,
+            duration: chosenMinutes,
+            title: p.name,
+            details: '${prefix}Run-through · exécution complète$tempo · $origin',
+            projectId: p.id,
+            category: 'Run-through',
+            method: p.method,
+          ));
+          remainingByDay[day] = remainingByDay[day]! - chosenMinutes;
+          runCountByDay[day] = runCountByDay[day]! + 1;
+          preplannedRunThroughs.add(p.id);
+          if (rec.containsKey(p.id)) {
+            final left = rec[p.id]! - chosenMinutes;
+            rec[p.id] = left >= 10 ? left : 0;
+          }
+        }
+
+        // 1) Morceaux à 90 % (non acquis) : un run-through par semaine.
+        final weeklyPieces = projects.where((p) => !isAcquired(p) && p.progress >= .9 && !doneThisWeek(p)).toList()
+          ..sort((a, b) => b.progress.compareTo(a.progress));
+        for (final p in weeklyPieces) {
+          place(p, 20, weekly: true);
+        }
+
+        // 2) Morceaux acquis : sous-ensemble tiré au hasard, jour tiré au hasard.
+        final acquired = projects.where((p) => isAcquired(p) && !doneThisWeek(p)).toList()
+          ..sort((a, b) => a.id.compareTo(b.id));
+        if (acquired.isNotEmpty) {
+          final alreadyDone = projects.where((p) => isAcquired(p) && doneThisWeek(p)).length;
+          final weeklyQuota = math.max(2, (weeklyTarget * .10 / 15).round());
+          final quota = math.max(0, math.min(acquired.length, weeklyQuota - alreadyDone));
+          // Tirage pondéré sans remise (Efraimidis–Spirakis) : plus un morceau est resté
+          // longtemps sans être joué, plus il a de chances d'être tiré.
+          final keyed = <MapEntry<Project, double>>[];
+          for (final p in acquired) {
+            final last = lastSessionOf(p);
+            final daysSince = last == null ? 60 : math.min(60, now.difference(last).inDays);
+            final weight = 1.0 + daysSince / 15.0;
+            keyed.add(MapEntry(p, math.pow(rng.nextDouble(), 1.0 / weight).toDouble()));
+          }
+          keyed.sort((a, b) => b.value.compareTo(a.value));
+          for (final e in keyed.take(quota)) {
+            place(e.key, 15, weekly: false);
+          }
+        }
+      }
+
       // V225 : si aucun signal de récupération n'est présent mais que la
       // semaine est déjà suffisamment couverte par les besoins recommandés,
       // on conserve une seule journée plus légère. C'est une décision
@@ -3369,6 +3485,8 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         }
 
         bool runThroughDue(Project p, DateTime day) {
+          // V278 : un run-through déjà planifié cette semaine (morceau à 90 % ou acquis) suffit.
+          if (preplannedRunThroughs.contains(p.id)) return false;
           if (p.targetTempo <= 0) return false;
           if (p.progress < .65 && p.effectiveStatus != 'Acquis' && p.effectiveStatus != 'Répertoire d’entretien') {
             return false;
@@ -11477,6 +11595,131 @@ class _TempoEvolutionPainter extends CustomPainter {
   bool shouldRepaint(covariant _TempoEvolutionPainter old) => old.selectedIndex != selectedIndex || old.sessions != sessions || old.project != project || old.targetTempo != targetTempo;
 }
 
+// ---------------------------------------------------------------------------
+// V280 — Icône de morceau : liste d'origine (avec libellés) + autres icônes musicales
+// ---------------------------------------------------------------------------
+
+class _PieceIconOption {
+  const _PieceIconOption(this.emoji, this.label);
+  final String emoji;
+  final String label;
+}
+
+/// Icônes de la liste déroulante d'origine, avec leur libellé.
+const List<_PieceIconOption> _pieceIconPresets = [
+  _PieceIconOption('🎵', 'Musique'),
+  _PieceIconOption('🎹', 'Piano'),
+  _PieceIconOption('🌙', 'Sonate / calme'),
+  _PieceIconOption('💧', 'Douceur'),
+  _PieceIconOption('🎩', 'Élégant'),
+  _PieceIconOption('⭐', 'Priorité'),
+  _PieceIconOption('❤️', 'Coup de cœur'),
+  _PieceIconOption('🚀', 'Challenge'),
+];
+
+/// Autres icônes proposées via le bouton « Autre » : uniquement des icônes musicales,
+/// chacune avec son libellé.
+const List<_PieceIconOption> _musicIconLibrary = [
+  _PieceIconOption('🎵', 'Note de musique'),
+  _PieceIconOption('🎶', 'Notes'),
+  _PieceIconOption('🎼', 'Partition'),
+  _PieceIconOption('🎹', 'Piano'),
+  _PieceIconOption('🎸', 'Guitare'),
+  _PieceIconOption('🎻', 'Violon'),
+  _PieceIconOption('🎷', 'Saxophone'),
+  _PieceIconOption('🎺', 'Trompette'),
+  _PieceIconOption('🥁', 'Batterie'),
+  _PieceIconOption('🪕', 'Banjo'),
+  _PieceIconOption('🪗', 'Accordéon'),
+  _PieceIconOption('🪘', 'Tambour'),
+  _PieceIconOption('🎤', 'Chant'),
+  _PieceIconOption('🎧', 'Casque'),
+  _PieceIconOption('🎙️', 'Micro studio'),
+  _PieceIconOption('🎚️', 'Mixage'),
+  _PieceIconOption('🎛️', 'Console'),
+  _PieceIconOption('📯', 'Cor'),
+  _PieceIconOption('📻', 'Radio'),
+  _PieceIconOption('💿', 'Disque'),
+  _PieceIconOption('🔊', 'Haut-parleur'),
+];
+
+/// Libellé d'une icône connue (liste d'origine ou icônes musicales), sinon null.
+String? _pieceIconLabel(String emoji) {
+  for (final o in _pieceIconPresets) {
+    if (o.emoji == emoji) return o.label;
+  }
+  for (final o in _musicIconLibrary) {
+    if (o.emoji == emoji) return o.label;
+  }
+  return null;
+}
+
+/// Feuille de choix d'une autre icône musicale : chaque icône est affichée avec son libellé.
+/// Renvoie l'émoji choisi.
+class _MusicIconSheet extends StatelessWidget {
+  const _MusicIconSheet({required this.current});
+  final String current;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(c).height * .6,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Text('Autre icône musicale', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text('Touche une icône pour l\'appliquer au morceau.', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+          ),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 104,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: .95,
+              ),
+              itemCount: _musicIconLibrary.length,
+              itemBuilder: (_, i) {
+                final o = _musicIconLibrary[i];
+                final selected = o.emoji == current;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.pop(c, o.emoji),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: selected ? scheme.primaryContainer : scheme.onSurface.withOpacity(.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: selected ? Border.all(color: scheme.primary, width: 2) : null,
+                    ),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Text(o.emoji, style: const TextStyle(fontSize: 30)),
+                      const SizedBox(height: 4),
+                      Text(
+                        o.label,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, height: 1.15),
+                      ),
+                    ]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 class ProjectDialog extends StatefulWidget {
   const ProjectDialog({super.key, this.existing, this.totalMinutesPracticed = 0, this.projectSessions = const [], this.scheduledCoachSessions = const [], required this.onScheduleCoachSession, required this.onRunThrough});
   final Project? existing;
@@ -11666,21 +11909,37 @@ class _ProjectDialogState extends State<ProjectDialog> {
             _dialogFieldGap(c),
             TextField(controller: goalCtrl, decoration: const InputDecoration(labelText: 'Objectif final')),
             _dialogFieldGap(c),
-            DropdownButtonFormField<String>(
-              value: emoji,
-              decoration: const InputDecoration(labelText: 'Icône du morceau'),
-              items: const [
-                DropdownMenuItem(value: '🎵', child: Text('🎵  Musique')),
-                DropdownMenuItem(value: '🎹', child: Text('🎹  Piano')),
-                DropdownMenuItem(value: '🌙', child: Text('🌙  Sonate / calme')),
-                DropdownMenuItem(value: '💧', child: Text('💧  Douceur')),
-                DropdownMenuItem(value: '🎩', child: Text('🎩  Élégant')),
-                DropdownMenuItem(value: '⭐', child: Text('⭐  Priorité')),
-                DropdownMenuItem(value: '❤️', child: Text('❤️  Coup de cœur')),
-                DropdownMenuItem(value: '🚀', child: Text('🚀  Challenge')),
-              ],
-              onChanged: (v) => setState(() => emoji = v ?? '🎵'),
-            ),
+            // V280 : liste d'origine avec libellés, plus un bouton « Autre » pour choisir une autre
+            // icône musicale. Une icône hors liste (déjà enregistrée) reste valide.
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: emoji,
+                  decoration: const InputDecoration(labelText: 'Icône du morceau'),
+                  items: [
+                    if (!_pieceIconPresets.any((o) => o.emoji == emoji))
+                      DropdownMenuItem(value: emoji, child: Text('$emoji  ${_pieceIconLabel(emoji) ?? 'Personnalisée'}')),
+                    for (final o in _pieceIconPresets) DropdownMenuItem(value: o.emoji, child: Text('${o.emoji}  ${o.label}')),
+                  ],
+                  onChanged: (v) => setState(() => emoji = v ?? '🎵'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showModalBottomSheet<String>(
+                    context: c,
+                    isScrollControlled: true,
+                    showDragHandle: true,
+                    builder: (_) => _MusicIconSheet(current: emoji),
+                  );
+                  if (picked != null && picked.isNotEmpty) setState(() => emoji = picked);
+                },
+                icon: const Icon(Icons.library_music_outlined, size: 18),
+                label: const Text('Autre'),
+              ),
+            ]),
             _dialogFieldGap(c, phone: 12),
             _detailSectionHeader(c, 'AVANCEMENT', icon: Icons.trending_up_outlined),
             SwitchListTile(
@@ -14994,11 +15253,40 @@ class _StatsDonutPainter extends CustomPainter {
 }
 
 /// Calendrier mensuel (lundi en premier) : jour + durée, aujourd'hui entouré.
+/// Temps passé sur un morceau (ou en routine hors morceau) au cours d'une journée.
+class _DayPiece {
+  _DayPiece({required this.name, required this.emoji, required this.minutes, required this.count});
+  final String name;
+  final String emoji;
+  int minutes;
+  int count;
+}
+
+/// Pour chaque jour, les morceaux travaillés (du plus long au plus court) avec leur durée.
+Map<DateTime, List<_DayPiece>> _statsPiecesByDay(List<Session> sessions, Map<String, Project> byId) {
+  final tmp = <DateTime, Map<String, _DayPiece>>{};
+  for (final s in sessions) {
+    final day = _statsDay(s.date);
+    final p = byId[s.projectId];
+    final piece = tmp.putIfAbsent(day, () => {}).putIfAbsent(
+          p?.id ?? '_routine',
+          () => _DayPiece(name: p?.name ?? 'Routine / hors morceau', emoji: p?.emoji ?? '🎹', minutes: 0, count: 0),
+        );
+    piece.minutes += s.duration;
+    piece.count += 1;
+  }
+  return {
+    for (final e in tmp.entries) e.key: (e.value.values.toList()..sort((a, b) => b.minutes.compareTo(a.minutes))),
+  };
+}
+
 class _StatsMonthCalendar extends StatefulWidget {
-  const _StatsMonthCalendar({required this.minutesByDay, required this.firstMonth, this.suffix = ''});
+  const _StatsMonthCalendar({required this.minutesByDay, required this.firstMonth, this.suffix = '', this.piecesByDay});
   final Map<DateTime, int> minutesByDay;
   final DateTime firstMonth;
   final String suffix;
+  /// Si renseigné, chaque case liste les morceaux joués (émoji + temps) et devient cliquable.
+  final Map<DateTime, List<_DayPiece>>? piecesByDay;
 
   @override
   State<_StatsMonthCalendar> createState() => _StatsMonthCalendarState();
@@ -15006,6 +15294,65 @@ class _StatsMonthCalendar extends StatefulWidget {
 
 class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
   late DateTime _month;
+
+  /// Lignes affichées dans une case : un morceau par ligne (émoji + temps), 3 lignes au plus
+  /// (au-delà de 3 morceaux : les 2 premiers puis « +n »).
+  List<String> _cellLines(List<_DayPiece> pieces) {
+    String line(_DayPiece p) => '${p.emoji} ${_statsCellLabel(p.minutes)}';
+    if (pieces.length <= 3) return [for (final p in pieces) line(p)];
+    return [line(pieces[0]), line(pieces[1]), '+${pieces.length - 2}'];
+  }
+
+  /// Détail d'une journée : chaque morceau joué avec son nom complet, ses sessions et son temps.
+  void _showDay(BuildContext c, DateTime date, List<_DayPiece> pieces) {
+    final total = pieces.fold<int>(0, (a, p) => a + p.minutes);
+    final sessionCount = pieces.fold<int>(0, (a, p) => a + p.count);
+    showModalBottomSheet<void>(
+      context: c,
+      showDragHandle: true,
+      builder: (sheet) {
+        final scheme = Theme.of(sheet).colorScheme;
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_statsWeekdays[date.weekday - 1]} ${date.day} ${_statsMonths[date.month - 1]} ${date.year}',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_statsDuration(total)} · $sessionCount session${sessionCount > 1 ? 's' : ''}',
+                  style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 10),
+                for (final p in pieces)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(children: [
+                      Text(p.emoji, style: const TextStyle(fontSize: 22)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          if (p.count > 1)
+                            Text('${p.count} sessions', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                        ]),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(_statsDuration(p.minutes), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                    ]),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -15027,6 +15374,18 @@ class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
     final offset = DateTime(_month.year, _month.month, 1).weekday - 1;
     final emptyColor = scheme.onSurface.withOpacity(dark ? .08 : .06);
     final filledText = dark ? const Color(0xFF14201B) : Colors.white;
+    final piecesByDay = widget.piecesByDay;
+    final detailed = piecesByDay != null;
+    // Hauteur des cases : s'adapte au jour du mois qui compte le plus de morceaux (3 lignes max).
+    var maxLines = 1;
+    if (piecesByDay != null) {
+      for (var d = 1; d <= daysInMonth; d++) {
+        final n = piecesByDay[DateTime(_month.year, _month.month, d)]?.length ?? 0;
+        final lines = n > 3 ? 3 : n;
+        if (lines > maxLines) maxLines = lines;
+      }
+    }
+    final cellHeight = 30.0 + 12.0 * maxLines;
 
     var monthMinutes = 0;
     for (var d = 1; d <= daysInMonth; d++) {
@@ -15047,26 +15406,41 @@ class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
         final mins = widget.minutesByDay[date] ?? 0;
         final isToday = date == today;
         final textColor = mins > 0 ? filledText : scheme.onSurface;
+        final dayPieces = piecesByDay?[date] ?? const <_DayPiece>[];
+        final cellBox = Container(
+          decoration: BoxDecoration(
+            color: mins > 0 ? _statsSage : emptyColor,
+            borderRadius: BorderRadius.circular(12),
+            border: isToday ? Border.all(color: _statsTodayRing, width: 2) : null,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('$day', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textColor)),
+              if (mins > 0 && !detailed) Text(_statsCellLabel(mins), style: TextStyle(fontSize: 11, color: textColor)),
+              if (detailed)
+                for (final l in _cellLines(dayPieces))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(l, maxLines: 1, style: TextStyle(fontSize: 9.5, height: 1.15, color: textColor)),
+                    ),
+                  ),
+            ],
+          ),
+        );
+        final sizedCell = detailed ? SizedBox(height: cellHeight, child: cellBox) : AspectRatio(aspectRatio: .95, child: cellBox);
         cells.add(Expanded(
           child: Padding(
             padding: const EdgeInsets.all(3),
-            child: AspectRatio(
-              aspectRatio: .95,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: mins > 0 ? _statsSage : emptyColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: isToday ? Border.all(color: _statsTodayRing, width: 2) : null,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('$day', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textColor)),
-                    if (mins > 0) Text(_statsCellLabel(mins), style: TextStyle(fontSize: 11, color: textColor)),
-                  ],
-                ),
-              ),
-            ),
+            child: dayPieces.isEmpty
+                ? sizedCell
+                : GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showDay(c, date, dayPieces),
+                    child: sizedCell,
+                  ),
           ),
         ));
       }
@@ -15161,30 +15535,31 @@ class _PieceSlice {
 }
 
 class _StatsPieceShareCard extends StatefulWidget {
-  const _StatsPieceShareCard({required this.projects, required this.sessions, required this.onOpenPiece});
+  const _StatsPieceShareCard({
+    required this.projects,
+    required this.sessions,
+    required this.onOpenPiece,
+    required this.from,
+    required this.periodLabel,
+  });
   final List<Project> projects;
   final List<Session> sessions;
   final void Function(String key) onOpenPiece;
+  /// Début de la période (null = toute la période), fourni par le filtre commun de l'écran.
+  final DateTime? from;
+  final String periodLabel;
 
   @override
   State<_StatsPieceShareCard> createState() => _StatsPieceShareCardState();
 }
 
 class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
-  int _period = 1; // 0 = 7 jours, 1 = 30 jours, 2 = 1 an, 3 = Tout
   static const _maxSlices = 8;
-
-  DateTime? _from(DateTime today) {
-    if (_period == 0) return DateTime(today.year, today.month, today.day - 6);
-    if (_period == 1) return DateTime(today.year, today.month, today.day - 29);
-    if (_period == 2) return DateTime(today.year - 1, today.month, today.day);
-    return null;
-  }
 
   /// Temps par morceau sur la période, du plus travaillé au moins travaillé ; au-delà de
   /// [_maxSlices] morceaux, le reste est regroupé dans « Autres ».
-  List<_PieceSlice> _slices(DateTime today) {
-    final from = _from(today);
+  List<_PieceSlice> _slices() {
+    final from = widget.from;
     final byId = {for (final p in widget.projects) p.id: p};
     final minutes = <String, int>{};
     for (final s in widget.sessions) {
@@ -15217,9 +15592,7 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
   @override
   Widget build(BuildContext c) {
     final scheme = Theme.of(c).colorScheme;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final slices = _slices(today);
+    final slices = _slices();
     final total = slices.fold<int>(0, (a, s) => a + s.minutes);
     final size = math.min(MediaQuery.sizeOf(c).width - 120, 250.0).clamp(180.0, 250.0).toDouble();
     Color colorOf(int i) => slices[i].key == '_others' ? scheme.outline : _statsPiePalette[i % _statsPiePalette.length];
@@ -15227,21 +15600,6 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
     return _StatsCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const _StatsHeading(icon: Icons.pie_chart_outline, title: 'Morceaux joués'),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: SegmentedButton<int>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 0, label: Text('7 jours')),
-              ButtonSegment(value: 1, label: Text('30 jours')),
-              ButtonSegment(value: 2, label: Text('1 an')),
-              ButtonSegment(value: 3, label: Text('Tout')),
-            ],
-            selected: {_period},
-            onSelectionChanged: (v) => setState(() => _period = v.first),
-          ),
-        ),
         const SizedBox(height: 16),
         if (total == 0)
           Center(
@@ -15253,7 +15611,7 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
         else ...[
           Center(
             child: Text(
-              '${_statsDuration(total)} · ${slices.length} morceau${slices.length > 1 ? 'x' : ''}',
+              '${widget.periodLabel} · ${_statsDuration(total)} · ${slices.length} morceau${slices.length > 1 ? 'x' : ''}',
               style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -15323,7 +15681,9 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  int _period = 2; // 0 = 30 jours, 1 = 1 an, 2 = Tout
+  // V280 : un seul filtre pour tout l'écran (anneau, camembert, liste par morceau).
+  int _period = 3; // 0 = 7 jours, 1 = 30 jours, 2 = 1 an, 3 = Tout
+  static const _periodLabels = ['7 jours', '30 jours', '1 an', 'Toute la période'];
 
   void _openPiece(String key, Map<String, Project> byId) {
     final proj = byId[key];
@@ -15356,8 +15716,10 @@ class _StatsScreenState extends State<StatsScreen> {
     final firstMonth = DateTime(firstUse.year, firstUse.month);
 
     final DateTime? from = _period == 0
-        ? DateTime(today.year, today.month, today.day - 29)
-        : (_period == 1 ? DateTime(today.year - 1, today.month, today.day) : null);
+        ? DateTime(today.year, today.month, today.day - 6)
+        : (_period == 1
+            ? DateTime(today.year, today.month, today.day - 29)
+            : (_period == 2 ? DateTime(today.year - 1, today.month, today.day) : null));
     final inPeriod = from == null
         ? List<Session>.of(sessions)
         : sessions.where((s) => !_statsDay(s.date).isBefore(from)).toList();
@@ -15454,10 +15816,12 @@ class _StatsScreenState extends State<StatsScreen> {
                 _StatsCard(
                   child: Column(children: [
                     SegmentedButton<int>(
+                      showSelectedIcon: false,
                       segments: const [
-                        ButtonSegment(value: 0, label: Text('30 jours')),
-                        ButtonSegment(value: 1, label: Text('1 an')),
-                        ButtonSegment(value: 2, label: Text('Tout')),
+                        ButtonSegment(value: 0, label: Text('7 jours')),
+                        ButtonSegment(value: 1, label: Text('30 jours')),
+                        ButtonSegment(value: 2, label: Text('1 an')),
+                        ButtonSegment(value: 3, label: Text('Tout')),
                       ],
                       selected: {_period},
                       onSelectionChanged: (v) => setState(() => _period = v.first),
@@ -15525,9 +15889,16 @@ class _StatsScreenState extends State<StatsScreen> {
                   projects: widget.projects,
                   sessions: widget.sessions,
                   onOpenPiece: (key) => _openPiece(key, projectById),
+                  from: from,
+                  periodLabel: _periodLabels[_period],
                 ),
                 const SizedBox(height: 16),
-                _StatsMonthCalendar(minutesByDay: minutesByDay, firstMonth: firstMonth, suffix: ' de piano'),
+                _StatsMonthCalendar(
+                  minutesByDay: minutesByDay,
+                  firstMonth: firstMonth,
+                  suffix: ' de piano',
+                  piecesByDay: _statsPiecesByDay(sessions, projectById),
+                ),
                 const SizedBox(height: 16),
                 _StatsCard(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -16153,8 +16524,10 @@ class _HistoryBatch {
 /// saisie pour un jour précis, ou répétée sur une période (ex. « tous les jours », « lundi,
 /// mercredi, vendredi ») pour reconstituer vite une pratique régulière.
 class SessionHistoryEntryScreen extends StatefulWidget {
-  const SessionHistoryEntryScreen({super.key, required this.projects});
+  const SessionHistoryEntryScreen({super.key, required this.projects, required this.existingSessions});
   final List<Project> projects;
+  /// Sessions déjà enregistrées : sert à repérer les doublons avant l'ajout.
+  final List<Session> existingSessions;
 
   @override
   State<SessionHistoryEntryScreen> createState() => _SessionHistoryEntryScreenState();
@@ -16239,13 +16612,19 @@ class _SessionHistoryEntryScreenState extends State<SessionHistoryEntryScreen> {
     return noon.isAfter(now) ? now : noon;
   }
 
-  void _addBatch() {
+  /// Une session du même morceau existe-t-elle déjà ce jour-là (enregistrée ou en attente) ?
+  bool _hasSession(DateTime day, String? projectId) {
+    bool same(Session s) => s.projectId == projectId && _statsDay(s.date) == day;
+    return widget.existingSessions.any(same) || batches.any((b) => b.sessions.any(same));
+  }
+
+  Future<void> _addBatch() async {
     final minutes = int.tryParse(durationCtrl.text.trim());
     if (minutes == null || minutes < 1 || minutes > 600) {
       setState(() => error = 'Durée invalide : entre 1 et 600 minutes.');
       return;
     }
-    final days = _targetDays();
+    var days = _targetDays();
     if (days.isEmpty) {
       setState(() => error = 'Aucun jour sélectionné dans cette période.');
       return;
@@ -16254,6 +16633,39 @@ class _SessionHistoryEntryScreenState extends State<SessionHistoryEntryScreen> {
       setState(() => error = 'Période trop longue : $_maxDaysPerBatch jours maximum par saisie.');
       return;
     }
+
+    // Détection des doublons : jours où une session de ce morceau existe déjà.
+    final conflicts = [for (final d in days) if (_hasSession(d, project?.id)) d];
+    if (conflicts.isNotEmpty) {
+      final shown = conflicts.take(5).map(_fmt).join(', ');
+      final more = conflicts.length > 5 ? ' et ${conflicts.length - 5} autre${conflicts.length - 5 > 1 ? 's' : ''}' : '';
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('Sessions déjà présentes'),
+          content: Text(
+            '${conflicts.length} jour${conflicts.length > 1 ? 's' : ''} de cette saisie '
+            'contien${conflicts.length > 1 ? 'nent' : 't'} déjà une session de '
+            '« ${project?.name ?? 'Pratique libre'} » : $shown$more.\n\n'
+            'Les ajouter quand même risque de compter deux fois le même travail.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d, 'cancel'), child: const Text('Annuler')),
+            TextButton(onPressed: () => Navigator.pop(d, 'all'), child: const Text('Ajouter quand même')),
+            FilledButton(onPressed: () => Navigator.pop(d, 'skip'), child: const Text('Ignorer ces jours')),
+          ],
+        ),
+      );
+      if (!mounted || choice == null || choice == 'cancel') return;
+      if (choice == 'skip') {
+        days = [for (final d in days) if (!conflicts.contains(d)) d];
+        if (days.isEmpty) {
+          setState(() => error = 'Tous ces jours ont déjà une session de ce morceau : rien à ajouter.');
+          return;
+        }
+      }
+    }
+
     final created = <Session>[
       for (final d in days)
         Session(
