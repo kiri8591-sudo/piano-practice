@@ -1,3 +1,5 @@
+// V282 — Une session créée à la main est rattachée au planning du jour : elle valide le créneau prévu du même morceau, ou apparaît comme séance « hors plan » ; supprimer la session retire ce créneau hors plan.
+// V281 — Calendrier : cases plus claires (icônes visibles) ; icône de morceau : le libellé est conservé, seule l'image change (+ icônes de styles de musique) ; Statistiques : liste « Par morceau » fusionnée dans le camembert, filtre Semaine et Dates.
 // V280 — Icône de morceau : retour à la liste d'origine avec libellés + bouton « Autre » (icônes musicales uniquement, avec libellé) ; saisie d'historique : détection des doublons ; filtre de période commun (7 j / 30 j / 1 an / Tout) à tout l'écran Statistiques.
 // V279 — Bibliothèque d'icônes pour les morceaux (≈ 280 émojis en 11 catégories + saisie libre) à la place de la liste de 8 icônes.
 // V278 — Planning : run-through hebdomadaire garanti pour les morceaux à 90 % (non acquis) ; run-through tiré au sort (sous-ensemble et jour) pour les morceaux acquis.
@@ -27,7 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '280.0';
+const String appVersion = '282.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -293,6 +295,7 @@ class Project {
     this.targetHours,
     this.celebratedComplete = false,
     this.emoji = '🎵',
+    this.iconLabel,
     DateTime? lastModified,
   }) : lastModified = lastModified ?? DateTime.now();
   final String id;
@@ -315,6 +318,7 @@ class Project {
   double? targetHours; // si defini, l'avancement est calcule automatiquement depuis le temps pratique
   bool celebratedComplete; // evite de refeter le passage a 100% a chaque rebuild
   String emoji; // emoji visuel du morceau
+  String? iconLabel; // libellé de l'icône (liste d'origine : Musique, Piano…) ; null = déduit de l'émoji
   DateTime lastModified; // dernière modification de la fiche / du suivi du morceau
 
   Map<String, dynamic> toJson() => {
@@ -338,6 +342,7 @@ class Project {
         'targetHours': targetHours,
         'celebratedComplete': celebratedComplete,
         'emoji': emoji,
+        'iconLabel': iconLabel,
         'lastModified': lastModified.toIso8601String(),
       };
 
@@ -365,6 +370,7 @@ class Project {
         targetHours: (j['targetHours'] as num?)?.toDouble(),
         celebratedComplete: j['celebratedComplete'] as bool? ?? false,
         emoji: j['emoji'] as String? ?? '🎵',
+        iconLabel: j['iconLabel'] as String?,
         lastModified: j['lastModified'] is String
             ? (DateTime.tryParse(j['lastModified'] as String) ?? DateTime.fromMillisecondsSinceEpoch(0))
             : DateTime.fromMillisecondsSinceEpoch(0),
@@ -3960,7 +3966,10 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
       }
       _updateAutoProgress(existing?.projectId);
       _updateAutoProgress(r.projectId);
-      if (existing == null) _syncCompletedPlanItemsForSession(r);
+      if (existing == null) {
+        _linkSessionToTodaysPlan(r);
+        _syncCompletedPlanItemsForSession(r);
+      }
       _auditPlanningIntegrity();
       _auditSessionIntegrity();
     });
@@ -4546,7 +4555,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     // écoulés. Une semaine qui vient juste de commencer ne doit pas être jugée
     // « sous-réalisée » simplement parce que plusieurs créneaux sont encore futurs.
     final weekItems = plan.where((x) =>
-        !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd) && x.duration > 0).toList();
+        !x.date.isBefore(weekStart) && x.date.isBefore(weekEnd) && x.duration > 0 && !x.motsCles.contains('Hors plan')).toList();
     final elapsedDays = math.max(1, today.difference(weekStart).inDays + 1);
     final elapsedShare = elapsedDays / 7.0;
     final dueItems = weekItems.where((x) => !x.date.isAfter(today)).toList();
@@ -5580,6 +5589,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           method: r.method,
           completed: true,
           sourceSessionId: r.id,
+          motsCles: ['Hors plan'],
         ));
         _auditPlanningIntegrity();
         _auditSessionIntegrity();
@@ -5656,6 +5666,54 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         item.duration = s.duration;
       }
     }
+  }
+
+  /// V282 : rattache au planning du jour une session créée à la main.
+  /// • Si un créneau non réalisé du même morceau est prévu ce jour-là, il est validé et lié à la
+  ///   session : la durée réalisée remplace la durée du créneau (la durée prévue reste conservée dans
+  ///   plannedDuration et sur la session pour la comparaison prévu / réalisé).
+  /// • Sinon, la session apparaît dans le planning du jour comme séance réalisée « hors plan »
+  ///   (même comportement que le chrono libre).
+  /// Un créneau Run-through n'est validé que par une session de type Run-through, et inversement.
+  void _linkSessionToTodaysPlan(Session s) {
+    PlanItem? match;
+    var bestScore = -1;
+    for (final item in plan) {
+      if (item.completed || item.sourceSessionId != null || !_sameDay(item.date, s.date)) continue;
+      if (item.projectId != s.projectId) continue;
+      if ((item.category == 'Run-through') != (s.type == 'Run-through')) continue;
+      if (s.projectId == null && item.category != s.type) continue;
+      var score = 1;
+      if (item.category == s.type) score += 2;
+      if (item.method != null && item.method == s.method) score += 1;
+      if ((item.duration - s.duration).abs() <= 10) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        match = item;
+      }
+    }
+    if (match != null) {
+      final planned = match.duration > 0 ? match.duration : match.plannedDuration;
+      s.plannedDuration ??= planned > 0 ? planned : null;
+      match.completed = true;
+      match.sourceSessionId = s.id;
+      match.duration = s.duration;
+      _removeDuplicatePendingCoachPlans(s.projectId, keepId: match.id);
+      return;
+    }
+    plan.add(PlanItem(
+      id: newId(),
+      date: s.date,
+      duration: s.duration,
+      title: projectById(s.projectId)?.name ?? 'Pratique libre',
+      details: s.notes,
+      projectId: s.projectId,
+      category: s.type,
+      method: s.method,
+      completed: true,
+      sourceSessionId: s.id,
+      motsCles: ['Hors plan'],
+    ));
   }
 
   void _removeDuplicatePendingCoachPlans(String? projectId, {String? keepId}) {
@@ -5935,9 +5993,12 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           projectSessions.first.id == s.id;
 
       final linkedPlanItem = plan.where((x) => x.sourceSessionId == s.id).firstOrNull;
-      final removedFromPlanAfterRealization = linkedPlanItem != null;
+      final removedFromPlanAfterRealization = linkedPlanItem != null && !linkedPlanItem.motsCles.contains('Hors plan');
 
       sessions.removeWhere((x) => x.id == s.id);
+
+      // Un créneau créé uniquement pour cette session (« hors plan ») disparaît avec elle.
+      plan.removeWhere((x) => x.sourceSessionId == s.id && x.motsCles.contains('Hors plan'));
 
       // Une session provenant du planning doit redevenir non terminée.
       for (final x in plan) {
@@ -11596,7 +11657,7 @@ class _TempoEvolutionPainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
-// V280 — Icône de morceau : liste d'origine (avec libellés) + autres icônes musicales
+// V281 — Icône de morceau : le libellé d'origine est conservé, seule l'image change
 // ---------------------------------------------------------------------------
 
 class _PieceIconOption {
@@ -11605,7 +11666,7 @@ class _PieceIconOption {
   final String label;
 }
 
-/// Icônes de la liste déroulante d'origine, avec leur libellé.
+/// Liste d'origine : chaque libellé a une icône par défaut.
 const List<_PieceIconOption> _pieceIconPresets = [
   _PieceIconOption('🎵', 'Musique'),
   _PieceIconOption('🎹', 'Piano'),
@@ -11617,45 +11678,50 @@ const List<_PieceIconOption> _pieceIconPresets = [
   _PieceIconOption('🚀', 'Challenge'),
 ];
 
-/// Autres icônes proposées via le bouton « Autre » : uniquement des icônes musicales,
-/// chacune avec son libellé.
-const List<_PieceIconOption> _musicIconLibrary = [
-  _PieceIconOption('🎵', 'Note de musique'),
-  _PieceIconOption('🎶', 'Notes'),
-  _PieceIconOption('🎼', 'Partition'),
-  _PieceIconOption('🎹', 'Piano'),
-  _PieceIconOption('🎸', 'Guitare'),
-  _PieceIconOption('🎻', 'Violon'),
-  _PieceIconOption('🎷', 'Saxophone'),
-  _PieceIconOption('🎺', 'Trompette'),
-  _PieceIconOption('🥁', 'Batterie'),
-  _PieceIconOption('🪕', 'Banjo'),
-  _PieceIconOption('🪗', 'Accordéon'),
-  _PieceIconOption('🪘', 'Tambour'),
-  _PieceIconOption('🎤', 'Chant'),
-  _PieceIconOption('🎧', 'Casque'),
-  _PieceIconOption('🎙️', 'Micro studio'),
-  _PieceIconOption('🎚️', 'Mixage'),
-  _PieceIconOption('🎛️', 'Console'),
-  _PieceIconOption('📯', 'Cor'),
-  _PieceIconOption('📻', 'Radio'),
-  _PieceIconOption('💿', 'Disque'),
-  _PieceIconOption('🔊', 'Haut-parleur'),
+/// Icônes supplémentaires proposées pour changer l'image : uniquement des styles de musique.
+const List<_PieceIconOption> _musicStyleIcons = [
+  _PieceIconOption('🎼', 'Classique'),
+  _PieceIconOption('🏛️', 'Baroque'),
+  _PieceIconOption('🌹', 'Romantique'),
+  _PieceIconOption('🎭', 'Opéra'),
+  _PieceIconOption('🎬', 'Musique de film'),
+  _PieceIconOption('🎮', 'Jeux vidéo'),
+  _PieceIconOption('🌟', 'Comédie musicale'),
+  _PieceIconOption('🎷', 'Jazz'),
+  _PieceIconOption('🌃', 'Blues'),
+  _PieceIconOption('💜', 'Soul / R&B'),
+  _PieceIconOption('🙏', 'Gospel'),
+  _PieceIconOption('🎸', 'Rock'),
+  _PieceIconOption('🤘', 'Métal'),
+  _PieceIconOption('⚡', 'Punk / Grunge'),
+  _PieceIconOption('🎤', 'Pop'),
+  _PieceIconOption('🕺', 'Disco / Funk'),
+  _PieceIconOption('🎧', 'Électro'),
+  _PieceIconOption('🧢', 'Hip-hop / Rap'),
+  _PieceIconOption('☕', 'Lo-fi / Chill'),
+  _PieceIconOption('🌌', 'Ambient / New age'),
+  _PieceIconOption('🤠', 'Country'),
+  _PieceIconOption('🪕', 'Folk / Bluegrass'),
+  _PieceIconOption('🍀', 'Celtique'),
+  _PieceIconOption('🌴', 'Reggae / Bossa nova'),
+  _PieceIconOption('💃', 'Latino / Salsa'),
+  _PieceIconOption('🌶️', 'Flamenco'),
+  _PieceIconOption('🪗', 'Valse / Musette'),
+  _PieceIconOption('🥖', 'Chanson française'),
+  _PieceIconOption('🌍', 'Musique du monde'),
+  _PieceIconOption('🎄', 'Chants de Noël'),
 ];
 
-/// Libellé d'une icône connue (liste d'origine ou icônes musicales), sinon null.
-String? _pieceIconLabel(String emoji) {
+/// Libellé de la liste d'origine dont l'icône par défaut est [emoji], sinon null.
+String? _presetLabelFor(String emoji) {
   for (final o in _pieceIconPresets) {
-    if (o.emoji == emoji) return o.label;
-  }
-  for (final o in _musicIconLibrary) {
     if (o.emoji == emoji) return o.label;
   }
   return null;
 }
 
-/// Feuille de choix d'une autre icône musicale : chaque icône est affichée avec son libellé.
-/// Renvoie l'émoji choisi.
+/// Feuille de choix de l'image d'icône : icônes d'origine puis styles de musique, chacune avec
+/// son nom. Renvoie l'émoji choisi (le libellé du morceau n'est pas modifié).
 class _MusicIconSheet extends StatelessWidget {
   const _MusicIconSheet({required this.current});
   final String current;
@@ -11663,55 +11729,74 @@ class _MusicIconSheet extends StatelessWidget {
   @override
   Widget build(BuildContext c) {
     final scheme = Theme.of(c).colorScheme;
+
+    Widget section(String title, List<_PieceIconOption> options) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+          child: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
+        ),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 104,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: .95,
+          ),
+          itemCount: options.length,
+          itemBuilder: (_, i) {
+            final o = options[i];
+            final selected = o.emoji == current;
+            return InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => Navigator.pop(c, o.emoji),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: selected ? scheme.primaryContainer : scheme.onSurface.withOpacity(.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: selected ? Border.all(color: scheme.primary, width: 2) : null,
+                ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text(o.emoji, style: const TextStyle(fontSize: 30)),
+                  const SizedBox(height: 4),
+                  Text(
+                    o.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5, height: 1.15),
+                  ),
+                ]),
+              ),
+            );
+          },
+        ),
+      ]);
+    }
+
     return SafeArea(
       child: SizedBox(
-        height: MediaQuery.sizeOf(c).height * .6,
+        height: MediaQuery.sizeOf(c).height * .7,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
-            child: Text('Autre icône musicale', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            child: Text('Changer l\'image de l\'icône', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-            child: Text('Touche une icône pour l\'appliquer au morceau.', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text('Le libellé du morceau est conservé : seule l\'image change.', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
           ),
           Expanded(
-            child: GridView.builder(
+            child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 104,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: .95,
-              ),
-              itemCount: _musicIconLibrary.length,
-              itemBuilder: (_, i) {
-                final o = _musicIconLibrary[i];
-                final selected = o.emoji == current;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => Navigator.pop(c, o.emoji),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: selected ? scheme.primaryContainer : scheme.onSurface.withOpacity(.05),
-                      borderRadius: BorderRadius.circular(16),
-                      border: selected ? Border.all(color: scheme.primary, width: 2) : null,
-                    ),
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Text(o.emoji, style: const TextStyle(fontSize: 30)),
-                      const SizedBox(height: 4),
-                      Text(
-                        o.label,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5, height: 1.15),
-                      ),
-                    ]),
-                  ),
-                );
-              },
+              children: [
+                section('Icônes d\'origine', _pieceIconPresets),
+                const SizedBox(height: 12),
+                section('Styles de musique', _musicStyleIcons),
+              ],
             ),
           ),
         ]),
@@ -11741,6 +11826,8 @@ class _ProjectDialogState extends State<ProjectDialog> {
   String workFocus = 'Automatique';
   String workIntensity = 'Moyenne';
   String emoji = '🎵';
+  String? iconLabel; // libellé choisi dans la liste d'origine (Musique, Piano…)
+  String get _iconLabel => iconLabel ?? _presetLabelFor(emoji) ?? _pieceIconPresets.first.label;
   double progress = 0;
   String status = 'En cours de déchiffrement';
   bool statusIsManual = false;
@@ -11761,6 +11848,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
     workFocus = widget.existing?.workFocus ?? 'Automatique';
     workIntensity = widget.existing?.workIntensity ?? 'Moyenne';
     emoji = widget.existing?.emoji ?? '🎵';
+    iconLabel = widget.existing?.iconLabel;
     progress = widget.existing?.progress ?? 0;
     status = _normalizeProjectStatus(widget.existing?.status);
     statusIsManual = widget.existing?.statusIsManual ?? false;
@@ -11909,20 +11997,28 @@ class _ProjectDialogState extends State<ProjectDialog> {
             _dialogFieldGap(c),
             TextField(controller: goalCtrl, decoration: const InputDecoration(labelText: 'Objectif final')),
             _dialogFieldGap(c),
-            // V280 : liste d'origine avec libellés, plus un bouton « Autre » pour choisir une autre
-            // icône musicale. Une icône hors liste (déjà enregistrée) reste valide.
+            // V281 : le libellé (Musique, Piano, Sonate / calme…) est conservé ; le bouton « Image »
+            // change seulement l'image de l'icône (icônes d'origine + styles de musique).
             Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
                   isExpanded: true,
-                  value: emoji,
+                  value: _iconLabel,
                   decoration: const InputDecoration(labelText: 'Icône du morceau'),
-                  items: [
-                    if (!_pieceIconPresets.any((o) => o.emoji == emoji))
-                      DropdownMenuItem(value: emoji, child: Text('$emoji  ${_pieceIconLabel(emoji) ?? 'Personnalisée'}')),
-                    for (final o in _pieceIconPresets) DropdownMenuItem(value: o.emoji, child: Text('${o.emoji}  ${o.label}')),
+                  selectedItemBuilder: (_) => [
+                    for (final o in _pieceIconPresets)
+                      Align(alignment: Alignment.centerLeft, child: Text('$emoji  ${o.label}', overflow: TextOverflow.ellipsis)),
                   ],
-                  onChanged: (v) => setState(() => emoji = v ?? '🎵'),
+                  items: [
+                    for (final o in _pieceIconPresets) DropdownMenuItem(value: o.label, child: Text('${o.emoji}  ${o.label}')),
+                  ],
+                  onChanged: (v) {
+                    final o = _pieceIconPresets.firstWhere((o) => o.label == v, orElse: () => _pieceIconPresets.first);
+                    setState(() {
+                      iconLabel = o.label;
+                      emoji = o.emoji;
+                    });
+                  },
                 ),
               ),
               const SizedBox(width: 10),
@@ -11934,10 +12030,15 @@ class _ProjectDialogState extends State<ProjectDialog> {
                     showDragHandle: true,
                     builder: (_) => _MusicIconSheet(current: emoji),
                   );
-                  if (picked != null && picked.isNotEmpty) setState(() => emoji = picked);
+                  if (picked != null && picked.isNotEmpty) {
+                    setState(() {
+                      iconLabel = _iconLabel; // le libellé reste celui d'origine
+                      emoji = picked;
+                    });
+                  }
                 },
                 icon: const Icon(Icons.library_music_outlined, size: 18),
-                label: const Text('Autre'),
+                label: const Text('Image'),
               ),
             ]),
             _dialogFieldGap(c, phone: 12),
@@ -12326,6 +12427,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                       id: widget.existing?.id ?? newId(),
                       name: name,
                       emoji: emoji,
+                      iconLabel: _iconLabel,
                       progress: newProgress,
                       goal: goalCtrl.text,
                       method: method,
@@ -15405,13 +15507,17 @@ class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
         final date = DateTime(_month.year, _month.month, day);
         final mins = widget.minutesByDay[date] ?? 0;
         final isToday = date == today;
-        final textColor = mins > 0 ? filledText : scheme.onSurface;
+        // Avec les icônes de morceaux (detailed), les jours pratiqués ont un fond vert clair et un texte
+        // sombre pour que les icônes restent bien visibles ; sinon le vert plein d'origine est conservé.
+        final textColor = (mins > 0 && !detailed) ? filledText : scheme.onSurface;
         final dayPieces = piecesByDay?[date] ?? const <_DayPiece>[];
         final cellBox = Container(
           decoration: BoxDecoration(
-            color: mins > 0 ? _statsSage : emptyColor,
+            color: mins > 0 ? (detailed ? _statsSage.withOpacity(dark ? .42 : .24) : _statsSage) : emptyColor,
             borderRadius: BorderRadius.circular(12),
-            border: isToday ? Border.all(color: _statsTodayRing, width: 2) : null,
+            border: isToday
+                ? Border.all(color: _statsTodayRing, width: 2)
+                : (detailed && mins > 0 ? Border.all(color: _statsSage.withOpacity(.55), width: 1) : null),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -15424,7 +15530,7 @@ class _StatsMonthCalendarState extends State<_StatsMonthCalendar> {
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Text(l, maxLines: 1, style: TextStyle(fontSize: 9.5, height: 1.15, color: textColor)),
+                      child: Text(l, maxLines: 1, style: TextStyle(fontSize: 10.5, height: 1.15, color: textColor)),
                     ),
                   ),
             ],
@@ -15540,6 +15646,7 @@ class _StatsPieceShareCard extends StatefulWidget {
     required this.sessions,
     required this.onOpenPiece,
     required this.from,
+    required this.to,
     required this.periodLabel,
   });
   final List<Project> projects;
@@ -15547,6 +15654,7 @@ class _StatsPieceShareCard extends StatefulWidget {
   final void Function(String key) onOpenPiece;
   /// Début de la période (null = toute la période), fourni par le filtre commun de l'écran.
   final DateTime? from;
+  final DateTime? to; // dernier jour inclus (null = jusqu'à aujourd'hui)
   final String periodLabel;
 
   @override
@@ -15556,14 +15664,17 @@ class _StatsPieceShareCard extends StatefulWidget {
 class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
   static const _maxSlices = 8;
 
-  /// Temps par morceau sur la période, du plus travaillé au moins travaillé ; au-delà de
-  /// [_maxSlices] morceaux, le reste est regroupé dans « Autres ».
+  /// Temps par morceau sur la période, du plus travaillé au moins travaillé. La légende liste
+  /// tous les morceaux ; seul le graphique regroupe au-delà de [_maxSlices] dans une part grise.
   List<_PieceSlice> _slices() {
     final from = widget.from;
+    final to = widget.to;
     final byId = {for (final p in widget.projects) p.id: p};
     final minutes = <String, int>{};
     for (final s in widget.sessions) {
-      if (from != null && _statsDay(s.date).isBefore(from)) continue;
+      final day = _statsDay(s.date);
+      if (from != null && day.isBefore(from)) continue;
+      if (to != null && day.isAfter(to)) continue;
       final key = (s.projectId != null && byId.containsKey(s.projectId)) ? s.projectId! : '_routine';
       minutes[key] = (minutes[key] ?? 0) + s.duration;
     }
@@ -15576,17 +15687,7 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
       return _PieceSlice(key: e.key, name: p.name, emoji: p.emoji, minutes: e.value);
     }
 
-    if (entries.length <= _maxSlices) return [for (final e in entries) toSlice(e)];
-    final rest = entries.skip(_maxSlices).toList();
-    return [
-      for (final e in entries.take(_maxSlices)) toSlice(e),
-      _PieceSlice(
-        key: '_others',
-        name: 'Autres (${rest.length})',
-        emoji: '🎵',
-        minutes: rest.fold<int>(0, (a, e) => a + e.value),
-      ),
-    ];
+    return [for (final e in entries) toSlice(e)];
   }
 
   @override
@@ -15595,7 +15696,13 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
     final slices = _slices();
     final total = slices.fold<int>(0, (a, s) => a + s.minutes);
     final size = math.min(MediaQuery.sizeOf(c).width - 120, 250.0).clamp(180.0, 250.0).toDouble();
-    Color colorOf(int i) => slices[i].key == '_others' ? scheme.outline : _statsPiePalette[i % _statsPiePalette.length];
+    Color colorOf(int i) => i < _maxSlices ? _statsPiePalette[i % _statsPiePalette.length] : scheme.outline;
+    final pieValues = <double>[for (var i = 0; i < slices.length && i < _maxSlices; i++) slices[i].minutes.toDouble()];
+    final pieColors = <Color>[for (var i = 0; i < pieValues.length; i++) colorOf(i)];
+    if (slices.length > _maxSlices) {
+      pieValues.add(slices.skip(_maxSlices).fold<double>(0, (a, sl) => a + sl.minutes));
+      pieColors.add(scheme.outline);
+    }
 
     return _StatsCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -15622,19 +15729,21 @@ class _StatsPieceShareCardState extends State<_StatsPieceShareCard> {
               height: size,
               child: CustomPaint(
                 painter: _StatsPiePainter(
-                  values: [for (final s in slices) s.minutes.toDouble()],
-                  colors: [for (var i = 0; i < slices.length; i++) colorOf(i)],
+                  values: pieValues,
+                  colors: pieColors,
                   separator: scheme.surfaceContainerHigh,
                 ),
               ),
             ),
           ),
           const SizedBox(height: 16),
+          Text('Touche un morceau pour voir son détail.', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
           for (var i = 0; i < slices.length; i++) ...[
             if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withOpacity(.5)),
             InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: slices[i].key == '_others' ? null : () => widget.onOpenPiece(slices[i].key),
+              onTap: () => widget.onOpenPiece(slices[i].key),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Row(children: [
@@ -15681,9 +15790,47 @@ class StatsScreen extends StatefulWidget {
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  // V280 : un seul filtre pour tout l'écran (anneau, camembert, liste par morceau).
-  int _period = 3; // 0 = 7 jours, 1 = 30 jours, 2 = 1 an, 3 = Tout
-  static const _periodLabels = ['7 jours', '30 jours', '1 an', 'Toute la période'];
+  // V281 : un seul filtre pour l'anneau et le camembert.
+  // 0 = 7 jours, 1 = Semaine, 2 = 30 jours, 3 = 1 an, 4 = Tout, 5 = Dates (de date à date)
+  int _period = 4;
+  DateTime? _weekStart; // lundi de la semaine choisie (null = semaine en cours)
+  DateTime? _rangeStart;
+  DateTime? _rangeEnd;
+  static const _periodChips = ['7 jours', 'Semaine', '30 jours', '1 an', 'Tout', 'Dates'];
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  void _selectPeriod(int i, DateTime today) {
+    setState(() {
+      _period = i;
+      if (i == 5 && (_rangeStart == null || _rangeEnd == null)) {
+        _rangeStart = DateTime(today.year, today.month, today.day - 29);
+        _rangeEnd = today;
+      }
+    });
+  }
+
+  Future<void> _pickRange(DateTime today) async {
+    final start = _rangeStart ?? DateTime(today.year, today.month, today.day - 29);
+    final end = _rangeEnd ?? today;
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: today,
+      initialDateRange: DateTimeRange(
+        start: start.isAfter(today) ? today : start,
+        end: end.isAfter(today) ? today : end,
+      ),
+      helpText: 'Choisir la période',
+      saveText: 'Valider',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _rangeStart = DateTime(picked.start.year, picked.start.month, picked.start.day);
+      _rangeEnd = DateTime(picked.end.year, picked.end.month, picked.end.day);
+    });
+  }
 
   void _openPiece(String key, Map<String, Project> byId) {
     final proj = byId[key];
@@ -15715,14 +15862,37 @@ class _StatsScreenState extends State<StatsScreen> {
     final dayNumber = _statsDaysBetween(firstUse, today) + 1;
     final firstMonth = DateTime(firstUse.year, firstUse.month);
 
-    final DateTime? from = _period == 0
-        ? DateTime(today.year, today.month, today.day - 6)
-        : (_period == 1
-            ? DateTime(today.year, today.month, today.day - 29)
-            : (_period == 2 ? DateTime(today.year - 1, today.month, today.day) : null));
-    final inPeriod = from == null
-        ? List<Session>.of(sessions)
-        : sessions.where((s) => !_statsDay(s.date).isBefore(from)).toList();
+    final weekStart = _weekStart ?? startOfWeek(today);
+    final weekEnd = DateTime(weekStart.year, weekStart.month, weekStart.day + 6);
+    DateTime? from;
+    DateTime? to;
+    String periodLabel;
+    if (_period == 0) {
+      from = DateTime(today.year, today.month, today.day - 6);
+      periodLabel = '7 derniers jours';
+    } else if (_period == 1) {
+      from = weekStart;
+      to = weekEnd;
+      periodLabel = 'Semaine ${_statsIsoWeek(weekStart)}';
+    } else if (_period == 2) {
+      from = DateTime(today.year, today.month, today.day - 29);
+      periodLabel = '30 jours';
+    } else if (_period == 3) {
+      from = DateTime(today.year - 1, today.month, today.day);
+      periodLabel = '1 an';
+    } else if (_period == 4) {
+      periodLabel = 'Toute la période';
+    } else {
+      from = _rangeStart;
+      to = _rangeEnd;
+      periodLabel = (from != null && to != null) ? 'Du ${_fmt(from)} au ${_fmt(to)}' : 'Dates';
+    }
+    final periodFrom = from;
+    final periodTo = to;
+    final inPeriod = sessions.where((s) {
+      final d = _statsDay(s.date);
+      return (periodFrom == null || !d.isBefore(periodFrom)) && (periodTo == null || !d.isAfter(periodTo));
+    }).toList();
     final totalMin = inPeriod.fold<int>(0, (a, s) => a + s.duration);
 
     // Répartition par type de travail (6 parts maximum).
@@ -15740,12 +15910,6 @@ class _StatsScreenState extends State<StatsScreen> {
 
     // Temps par morceau.
     final projectById = {for (final p in widget.projects) p.id: p};
-    final byPiece = <String, int>{};
-    for (final s in inPeriod) {
-      final key = (s.projectId != null && projectById.containsKey(s.projectId)) ? s.projectId! : '_routine';
-      byPiece[key] = (byPiece[key] ?? 0) + s.duration;
-    }
-    final pieceEntries = byPiece.entries.where((e) => e.value > 0).toList()..sort((a, b) => b.value.compareTo(a.value));
 
     // Calendrier : toutes séances confondues.
     final minutesByDay = <DateTime, int>{};
@@ -15815,17 +15979,51 @@ class _StatsScreenState extends State<StatsScreen> {
                 const SizedBox(height: 16),
                 _StatsCard(
                   child: Column(children: [
-                    SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(value: 0, label: Text('7 jours')),
-                        ButtonSegment(value: 1, label: Text('30 jours')),
-                        ButtonSegment(value: 2, label: Text('1 an')),
-                        ButtonSegment(value: 3, label: Text('Tout')),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (var i = 0; i < _periodChips.length; i++)
+                          ChoiceChip(
+                            label: Text(_periodChips[i]),
+                            selected: _period == i,
+                            onSelected: (_) => _selectPeriod(i, today),
+                          ),
                       ],
-                      selected: {_period},
-                      onSelectionChanged: (v) => setState(() => _period = v.first),
                     ),
+                    if (_period == 1) ...[
+                      const SizedBox(height: 10),
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        IconButton(
+                          tooltip: 'Semaine précédente',
+                          onPressed: () => setState(() => _weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day - 7)),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                        Flexible(
+                          child: Text(
+                            'Semaine ${_statsIsoWeek(weekStart)} · ${weekStart.day} ${_statsMonthsShort[weekStart.month - 1]} – ${weekEnd.day} ${_statsMonthsShort[weekEnd.month - 1]}${weekEnd.year != today.year ? ' ${weekEnd.year}' : ''}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Semaine suivante',
+                          onPressed: DateTime(weekStart.year, weekStart.month, weekStart.day + 7).isAfter(today)
+                              ? null
+                              : () => setState(() => _weekStart = DateTime(weekStart.year, weekStart.month, weekStart.day + 7)),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ]),
+                    ],
+                    if (_period == 5) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => _pickRange(today),
+                        icon: const Icon(Icons.date_range_rounded, size: 18),
+                        label: Text(periodFrom != null && periodTo != null ? '${_fmt(periodFrom)} → ${_fmt(periodTo)}' : 'Choisir les dates'),
+                      ),
+                    ],
                     const SizedBox(height: 22),
                     if (totalMin == 0)
                       Padding(
@@ -15889,8 +16087,9 @@ class _StatsScreenState extends State<StatsScreen> {
                   projects: widget.projects,
                   sessions: widget.sessions,
                   onOpenPiece: (key) => _openPiece(key, projectById),
-                  from: from,
-                  periodLabel: _periodLabels[_period],
+                  from: periodFrom,
+                  to: periodTo,
+                  periodLabel: periodLabel,
                 ),
                 const SizedBox(height: 16),
                 _StatsMonthCalendar(
@@ -15899,54 +16098,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   suffix: ' de piano',
                   piecesByDay: _statsPiecesByDay(sessions, projectById),
                 ),
-                const SizedBox(height: 16),
-                _StatsCard(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const _StatsHeading(icon: Icons.auto_graph, title: 'Par morceau'),
-                    const SizedBox(height: 12),
-                    Text('Touche un morceau pour voir son détail.', style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant)),
-                    const SizedBox(height: 8),
-                    if (pieceEntries.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text('Aucune séance sur cette période.', style: TextStyle(color: scheme.onSurfaceVariant)),
-                      ),
-                    for (var i = 0; i < pieceEntries.length; i++) ...[
-                      if (i > 0) Divider(height: 1, color: scheme.outlineVariant),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => _openPiece(pieceEntries[i].key, projectById),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Row(children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(color: scheme.onSurface.withOpacity(.07), shape: BoxShape.circle),
-                              child: Text(pieceEntries[i].key == '_routine' ? '🎹' : projectById[pieceEntries[i].key]!.emoji, style: const TextStyle(fontSize: 24)),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Text(
-                                pieceEntries[i].key == '_routine' ? 'Routine / hors morceau' : projectById[pieceEntries[i].key]!.name,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text(_statsHours(pieceEntries[i].value), style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: scheme.primary)),
-                              Text('heures', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-                            ]),
-                            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ]),
-                ),
+
               ],
             ),
           ),
