@@ -1,3 +1,4 @@
+// V283 — Lisibilité iPhone : tailles de texte relevées (plancher 12 pt pour le texte courant, 11 pt pour les petites étiquettes en capitales), raccourcis de l'accueil regroupés dans une section « Suivi » plus discrète.
 // V282 — Une session créée à la main est rattachée au planning du jour : elle valide le créneau prévu du même morceau, ou apparaît comme séance « hors plan » ; supprimer la session retire ce créneau hors plan.
 // V281 — Calendrier : cases plus claires (icônes visibles) ; icône de morceau : le libellé est conservé, seule l'image change (+ icônes de styles de musique) ; Statistiques : liste « Par morceau » fusionnée dans le camembert, filtre Semaine et Dates.
 // V280 — Icône de morceau : retour à la liste d'origine avec libellés + bouton « Autre » (icônes musicales uniquement, avec libellé) ; saisie d'historique : détection des doublons ; filtre de période commun (7 j / 30 j / 1 an / Tout) à tout l'écran Statistiques.
@@ -29,7 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '282.0';
+const String appVersion = '283.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -4401,7 +4402,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
                                           const SizedBox(height: 4),
                                           Text(
                                             d.reason!,
-                                            style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 11, height: 1.3),
+                                            style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.3),
                                           ),
                                         ],
                                       ] else ...[
@@ -4492,7 +4493,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
                   Text(_coachShortReason(_lastCoachReason), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.35)),
                   if ((_lastCoachReason ?? '').trim() != _coachShortReason(_lastCoachReason)) ...[
                     const SizedBox(height: 4),
-                    Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 11, height: 1.3)),
+                    Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.3)),
                   ],
                 ],
               ] else if (changed) ...[
@@ -4505,7 +4506,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
                 Text(_coachShortReason(_lastCoachReason), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.35)),
                   if ((_lastCoachReason ?? '').trim() != _coachShortReason(_lastCoachReason)) ...[
                     const SizedBox(height: 4),
-                    Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 11, height: 1.3)),
+                    Text(_lastCoachReason!, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 12, height: 1.3)),
                   ],
               ],
             ],
@@ -6973,7 +6974,7 @@ Widget _statTile(BuildContext c, {
         Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         if (sub != null) ...[
           const SizedBox(height: 1),
-          Text(sub, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+          Text(sub, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       ])),
       if (trailing != null) trailing,
@@ -7295,15 +7296,15 @@ Widget _weeklyCoachHomeSummary(
         Icon(Icons.insights_outlined, size: 18, color: scheme.primary),
         const SizedBox(width: 7),
         const Expanded(child: Text('Lecture de la semaine', style: TextStyle(fontWeight: FontWeight.w800))),
-        Text(snapshot.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.primary)),
+        Text(snapshot.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.primary)),
       ]),
       const SizedBox(height: 8),
       Wrap(spacing: 14, runSpacing: 4, children: [
-        Text('Prévu ${snapshot.planned} min', style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
-        Text('Réalisé ${snapshot.realized} min', style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+        Text('Prévu ${snapshot.planned} min', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        Text('Réalisé ${snapshot.realized} min', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         if (snapshot.planned > 0)
-          Text('${(snapshot.adherence * 100).round()} %', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: scheme.onSurface)),
-        Text('${snapshot.plannedDays} j planifiés · ${snapshot.realizedDays} j pratiqués', style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+          Text('${(snapshot.adherence * 100).round()} %', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onSurface)),
+        Text('${snapshot.plannedDays} j planifiés · ${snapshot.realizedDays} j pratiqués', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
       ]),
       if (snapshot.planned > 0) ...[
         const SizedBox(height: 8),
@@ -7535,7 +7536,7 @@ class Home extends StatelessWidget {
             return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               progress(todayRatio),
               const SizedBox(height: 4),
-              Text('${(todayRatio * 100).round()} % de la journée · ${practiceBalanceLabel(practiced: todayDone, target: todayTarget)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              Text('${(todayRatio * 100).round()} % de la journée · ${practiceBalanceLabel(practiced: todayDone, target: todayTarget)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]);
           }),
         ],
@@ -7572,7 +7573,7 @@ class Home extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text(reviewDueLabel(p, sessions), style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                      Text(reviewDueLabel(p, sessions), style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                     ])),
                     TextButton(
                       onPressed: () => onStart(PlanItem(id: newId(), date: DateTime.now(), duration: 20, title: p.name, details: 'Révision · ${nextWorkRecommendation(p)}', projectId: p.id, category: 'Répertoire', method: p.method)),
@@ -7824,7 +7825,7 @@ class Home extends StatelessWidget {
                           const SizedBox(width: 7),
                           Expanded(child: Text(
                             _todayCoachDayReasonText(_todayCoachDayReason(todayItems)!),
-                            style: TextStyle(fontSize: 10.5, height: 1.3, fontWeight: FontWeight.w600, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                            style: TextStyle(fontSize: 12, height: 1.3, fontWeight: FontWeight.w600, color: Theme.of(c).colorScheme.onSurfaceVariant),
                           )),
                         ]),
                       ),
@@ -7861,7 +7862,7 @@ class Home extends StatelessWidget {
                                         color: (item.completed ? Colors.grey : categoryColor(item.category)).withOpacity(.14),
                                       ),
                                       child: Text(item.category!, style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                         color: item.completed ? Colors.grey : categoryColor(item.category),
                                         decoration: item.completed ? TextDecoration.lineThrough : null,
@@ -7884,7 +7885,7 @@ class Home extends StatelessWidget {
                                     visualDensity: VisualDensity.compact,
                                     avatar: Icon(Icons.timer_outlined, size: 13, color: item.completed ? Colors.grey : null),
                                     label: Text('${item.duration} min', style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       color: item.completed ? Colors.grey : null,
                                       decoration: item.completed ? TextDecoration.lineThrough : null,
                                     )),
@@ -7935,7 +7936,7 @@ class Home extends StatelessWidget {
                       Row(children: [
                         Icon(Icons.lightbulb_outline, size: 15, color: Theme.of(c).colorScheme.primary),
                         const SizedBox(width: 5),
-                        Expanded(child: Text('À travailler : ${nextWorkRecommendation(p)}', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+                        Expanded(child: Text('À travailler : ${nextWorkRecommendation(p)}', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant))),
                       ]),
                     ],
                   ),
@@ -8478,7 +8479,7 @@ class CoachHome extends StatelessWidget {
           const SizedBox(width: 5),
           Text('$streak jour${streak > 1 ? 's' : ''} de pratique', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
           const Spacer(),
-          Text('V$appVersion', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+          Text('V$appVersion', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
         ]),
         const SizedBox(height: 16),
 
@@ -8498,14 +8499,14 @@ class CoachHome extends StatelessWidget {
               Container(width: 38, height: 38, alignment: Alignment.center, decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.10), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.auto_awesome_rounded, color: scheme.onPrimaryContainer, size: 20)),
               const SizedBox(width: 10),
               Expanded(child: Row(children: [
-                Expanded(child: Text('MISSION DU JOUR', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: scheme.onPrimaryContainer))),
+                Expanded(child: Text('MISSION DU JOUR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: scheme.onPrimaryContainer))),
                 if (next != null) Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
                     color: scheme.onPrimaryContainer.withOpacity(.10),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text('▶ PROCHAINE', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: .3, color: scheme.onPrimaryContainer)),
+                  child: Text('▶ PROCHAINE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .3, color: scheme.onPrimaryContainer)),
                 ),
               ])),
               if (todayItems.isNotEmpty) Text('$completedCount/${todayItems.length}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: scheme.onPrimaryContainer)),
@@ -8523,8 +8524,8 @@ class CoachHome extends StatelessWidget {
               ],
               const SizedBox(height: 11),
               Wrap(spacing: 7, runSpacing: 6, children: [
-                Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 14, color: scheme.onPrimaryContainer), const SizedBox(width: 5), Text('${next.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))])),
-                if (nextFocus != null) Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Text('${workFocusEmoji(nextFocus)} $nextFocus', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))),
+                Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.timer_outlined, size: 14, color: scheme.onPrimaryContainer), const SizedBox(width: 5), Text('${next.duration} min', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))])),
+                if (nextFocus != null) Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onPrimaryContainer.withOpacity(.09), borderRadius: BorderRadius.circular(20)), child: Text('${workFocusEmoji(nextFocus)} $nextFocus', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer))),
               ]),
               const SizedBox(height: 12),
               SizedBox(width: double.infinity, child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: scheme.onPrimaryContainer, foregroundColor: scheme.primaryContainer, minimumSize: const Size.fromHeight(48)), onPressed: () => onStart(next), icon: const Icon(Icons.play_arrow_rounded), label: const Text('Commencer'))),
@@ -8545,7 +8546,7 @@ class CoachHome extends StatelessWidget {
         const SizedBox(height: 14),
         Row(children: [
           Expanded(child: Text('Aujourd’hui', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
-          Text(todayRemaining > 0 ? '$todayRemaining min restantes' : '${todayDone} min réalisées', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+          Text(todayRemaining > 0 ? '$todayRemaining min restantes' : '${todayDone} min réalisées', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
         ]),
         const SizedBox(height: 7),
         ClipRRect(
@@ -8570,10 +8571,10 @@ class CoachHome extends StatelessWidget {
                 Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => _openTodayItem(item), child: Row(children: [
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(_displayPlanTitle(item), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null, color: item.completed ? scheme.onSurfaceVariant : null)),
-                    if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.25, color: scheme.onSurfaceVariant)),
+                    if (item.details.trim().isNotEmpty) Text(item.details, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: TextStyle(fontSize: 12, height: 1.25, color: scheme.onSurfaceVariant)),
                   ])),
                   const SizedBox(width: 8),
-                  Text('${item.duration} min', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+                  Text('${item.duration} min', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
                 ]))),
                 if (!item.completed) IconButton(onPressed: () => onStart(item), padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 38, height: 38), icon: const Icon(Icons.play_circle_outline_rounded), tooltip: 'Démarrer'),
                 ]),
@@ -8597,7 +8598,7 @@ class CoachHome extends StatelessWidget {
               ? Text('Après ta prochaine séance, le coach analysera ce qui a changé et ajustera les créneaux suivants si nécessaire.', style: TextStyle(fontSize: 12.5, height: 1.35, color: scheme.onSurfaceVariant))
               : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(latestCoachDecision!.message, softWrap: true, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
-                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${_coachShortReason(latestCoachDecision!.reason)}', softWrap: true, style: TextStyle(fontSize: 11.5, height: 1.35, color: scheme.onSurfaceVariant))],
+                  if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[const SizedBox(height: 4), Text('Pourquoi : ${_coachShortReason(latestCoachDecision!.reason)}', softWrap: true, style: TextStyle(fontSize: 12, height: 1.35, color: scheme.onSurfaceVariant))],
                 ])),
         ])),
 
@@ -8613,7 +8614,7 @@ class CoachHome extends StatelessWidget {
 
         if (coachPieces.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Row(children: [Expanded(child: Text('À faire avancer', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))), Text('Top ${coachPieces.length}', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700))]),
+          Row(children: [Expanded(child: Text('À faire avancer', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))), Text('Top ${coachPieces.length}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700))]),
           const SizedBox(height: 7),
           ...coachPieces.take(3).map((item) => Padding(padding: const EdgeInsets.only(bottom: 7), child: CardBox(padding: const EdgeInsets.fromLTRB(12, 11, 12, 11), child: Row(children: [
             Text(item.project.emoji, style: const TextStyle(fontSize: 22)),
@@ -8623,25 +8624,13 @@ class CoachHome extends StatelessWidget {
               const SizedBox(height: 4),
               progress(item.project.progress),
               const SizedBox(height: 3),
-              Text('${(item.project.progress * 100).round()} % · ${_focusFor(item.project)}', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
+              Text('${(item.project.progress * 100).round()} % · ${_focusFor(item.project)}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             ])),
           ])))),
         ],
 
         const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _action('Bilan', Icons.insights_outlined, onOpenBilan)),
-          const SizedBox(width: 7),
-          Expanded(child: _action('Planning', Icons.calendar_month_outlined, onQuickPlan)),
-        ]),
-        const SizedBox(height: 7),
-        Row(children: [
-          Expanded(child: _action('Progression', Icons.trending_up_outlined, onOpenProgress)),
-          const SizedBox(width: 7),
-          Expanded(child: _action('Badges $badgeCount/${badges.length}', Icons.emoji_events_outlined, onOpenBadges)),
-        ]),
-        const SizedBox(height: 7),
-        _action('Statistiques', Icons.bar_chart_outlined, onOpenStats),
+        _followUpSection(c, badgeCount),
       ],
     );
   }
@@ -8718,7 +8707,7 @@ class CoachHome extends StatelessWidget {
           Container(width: 44, height: 44, alignment: Alignment.center, decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(14)), child: Icon(Icons.auto_awesome, color: Theme.of(c).colorScheme.onPrimaryContainer)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('MISSION DU JOUR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.3, color: Theme.of(c).colorScheme.primary)),
+            Text('MISSION DU JOUR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.3, color: Theme.of(c).colorScheme.primary)),
             SizedBox(height: 3), Text('Une séance utile, maintenant', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
           ])),
         ]),
@@ -8735,7 +8724,7 @@ class CoachHome extends StatelessWidget {
               Icon(Icons.lightbulb_outline, size: 18, color: Theme.of(c).colorScheme.primary),
               const SizedBox(width: 9),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('POURQUOI AUJOURD’HUI', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: .6, color: Theme.of(c).colorScheme.primary)),
+                Text('POURQUOI AUJOURD’HUI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: .6, color: Theme.of(c).colorScheme.primary)),
                 const SizedBox(height: 4),
                 Text(_whyToday(nextProject!, now), style: const TextStyle(fontSize: 13, height: 1.3)),
               ])),
@@ -8749,7 +8738,7 @@ class CoachHome extends StatelessWidget {
               Icon(Icons.psychology_outlined, size: 18, color: Theme.of(c).colorScheme.onSurfaceVariant),
               const SizedBox(width: 9),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('DERNIER BILAN · ${_feelingLabel(_lastFeeling(nextProject!.id))}', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: .5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Text('DERNIER BILAN · ${_feelingLabel(_lastFeeling(nextProject!.id))}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: .5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                 const SizedBox(height: 4),
                 Text(_adaptiveAdvice(nextProject!), style: const TextStyle(fontSize: 13, height: 1.3)),
               ])),
@@ -8779,22 +8768,22 @@ class CoachHome extends StatelessWidget {
           Icon(Icons.psychology_outlined, size: 20, color: Theme.of(c).colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: Theme.of(c).colorScheme.primary)),
+            Text('COACH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: Theme.of(c).colorScheme.primary)),
             const SizedBox(height: 4),
             if (latestCoachDecision == null) ...[
               const Text('Aucune analyse récente.', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               Text('La prochaine analyse apparaîtra après ta prochaine séance.', style: TextStyle(fontSize: 12.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
             ] else ...[
-              const Text('DERNIÈRE ANALYSE DU COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .7)),
+              const Text('DERNIÈRE ANALYSE DU COACH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .7)),
               const SizedBox(height: 5),
               Text(latestCoachDecision!.message, style: const TextStyle(fontSize: 13.5, height: 1.35)),
               if ((latestCoachDecision!.reason ?? '').trim().isNotEmpty) ...[
                 const SizedBox(height: 5),
-                Text('Pourquoi : ${latestCoachDecision!.reason}', style: TextStyle(fontSize: 11.5, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Text('Pourquoi : ${latestCoachDecision!.reason}', style: TextStyle(fontSize: 12, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant)),
               ],
               const SizedBox(height: 4),
-              Text(_decisionDateLabel(latestCoachDecision!), style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+              Text(_decisionDateLabel(latestCoachDecision!), style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
             ],
           ])),
           if (latestCoachDecision != null)
@@ -8834,7 +8823,7 @@ class CoachHome extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(_displayPlanTitle(item), style: TextStyle(fontWeight: FontWeight.w700, decoration: item.completed ? TextDecoration.lineThrough : null)),
-                    if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                    if (item.details.isNotEmpty) Text(item.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                   ]),
                 )),
                 const SizedBox(width: 8),
@@ -8858,10 +8847,10 @@ class CoachHome extends StatelessWidget {
         const SizedBox(height: 18),
         Row(children: [
           Expanded(child: Text('Les morceaux à faire avancer', style: Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
-          Text('Coach · top ${coachPieces.length}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          Text('Coach · top ${coachPieces.length}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
         ]),
         const SizedBox(height: 5),
-        Text('Cette liste est calculée à partir du besoin réel du morceau, de sa progression, de la régularité et du ressenti.', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.3)),
+        Text('Cette liste est calculée à partir du besoin réel du morceau, de sa progression, de la régularité et du ressenti.', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.3)),
         const SizedBox(height: 8),
         ...coachPieces.map((item) => Padding(
           padding: const EdgeInsets.only(bottom: 9),
@@ -8877,7 +8866,7 @@ class CoachHome extends StatelessWidget {
                 const SizedBox(height: 5),
                 progress(item.project.progress),
                 const SizedBox(height: 5),
-                Text('${(item.project.progress * 100).round()} % · ${workFocusEmoji(_focusFor(item.project))} ${_focusFor(item.project)}', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Text('${(item.project.progress * 100).round()} % · ${workFocusEmoji(_focusFor(item.project))} ${_focusFor(item.project)}', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
               ])),
             ],),
             const SizedBox(height: 9),
@@ -8889,34 +8878,24 @@ class CoachHome extends StatelessWidget {
                 color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.62),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('POURQUOI ?', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: .8, color: Theme.of(c).colorScheme.primary)),
+                Text('POURQUOI ?', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .8, color: Theme.of(c).colorScheme.primary)),
                 const SizedBox(height: 3),
                 Text(item.reason, style: const TextStyle(fontSize: 12.5, height: 1.3)),
                 const SizedBox(height: 6),
-                Text('${workFocusEmoji(_focusFor(item.project))} ${item.action}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
+                Text('${workFocusEmoji(_focusFor(item.project))} ${item.action}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
               ]),
             ),
             const SizedBox(height: 6),
             Row(children: [
-              Expanded(child: Text([item.lastLabel, item.secondarySignal].where((x) => x.isNotEmpty).join(' · '), style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant))),
-              Text('Dans le planning', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
+              Expanded(child: Text([item.lastLabel, item.secondarySignal].where((x) => x.isNotEmpty).join(' · '), style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+              Text('Dans le planning', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
             ]),
           ])),
         )),
       ],
 
       const SizedBox(height: 18),
-      Row(children: [
-          Expanded(child: _action('Bilan', Icons.insights, onOpenBilan)),
-          const SizedBox(width: 6),
-          Expanded(child: _action('Progression', Icons.trending_up, onOpenProgress)),
-          const SizedBox(width: 6),
-          Expanded(child: _action('Planning', Icons.calendar_month, onQuickPlan)),
-          const SizedBox(width: 6),
-          Expanded(child: _action('Badges $badgeCount/${badges.length}', Icons.emoji_events, onOpenBadges)),
-          const SizedBox(width: 6),
-          Expanded(child: _action('Statistiques', Icons.bar_chart, onOpenStats)),
-        ]),
+      _followUpSection(c, badgeCount),
 
       if (challenges.isNotEmpty) ...[
         const SizedBox(height: 18), CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('🎯 Défi de la semaine', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)), const SizedBox(height: 8),
@@ -8935,7 +8914,30 @@ class CoachHome extends StatelessWidget {
   }
 
   Widget _stat(BuildContext c, IconData icon, String label, String value, double ratio) => CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary), const SizedBox(width: 7), Text(label, style: const TextStyle(fontWeight: FontWeight.w700))]), const SizedBox(height: 8), Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)), const SizedBox(height: 7), progress(ratio)]));
-  Widget _action(String label, IconData icon, VoidCallback action) => FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)), onPressed: action, icon: Icon(icon, size: 17), label: Text(label, overflow: TextOverflow.ellipsis));
+  /// V283 : raccourcis de suivi regroupés dans une seule section discrète (au lieu de cinq
+  /// gros boutons empilés après tous les autres contenus de l'accueil).
+  Widget _followUpSection(BuildContext c, int badgeCount) {
+    final scheme = Theme.of(c).colorScheme;
+    Widget chip(String label, IconData icon, VoidCallback onTap) => ActionChip(
+          avatar: Icon(icon, size: 18, color: scheme.primary),
+          label: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          onPressed: onTap,
+        );
+    return CardBox(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('SUIVI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: scheme.onSurfaceVariant)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          chip('Bilan', Icons.insights_outlined, onOpenBilan),
+          chip('Planning', Icons.calendar_month_outlined, onQuickPlan),
+          chip('Progression', Icons.trending_up_outlined, onOpenProgress),
+          chip('Statistiques', Icons.bar_chart_outlined, onOpenStats),
+          chip('Badges $badgeCount/${badges.length}', Icons.emoji_events_outlined, onOpenBadges),
+        ]),
+      ]),
+    );
+  }
 
   void _showSettings(BuildContext c) {
     showDialog<void>(context: c, builder: (dc) => SimpleDialog(title: const Text('Réglages'), children: [
@@ -9093,11 +9095,11 @@ class _SessionsState extends State<Sessions> {
         final value = byDay[d] ?? 0;
         final h = maxValue == 0 ? 2.0 : (110 * value / maxValue).clamp(2.0, 110.0);
         return Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-          Text('$value', style: const TextStyle(fontSize: 11)),
+          Text('$value', style: const TextStyle(fontSize: 12)),
           const SizedBox(height: 3),
           Container(height: h, decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(5))),
           const SizedBox(height: 5),
-          Text(_wd(d.weekday), style: const TextStyle(fontSize: 11)),
+          Text(_wd(d.weekday), style: const TextStyle(fontSize: 12)),
         ])));
       }).toList())),
     ]));
@@ -9215,7 +9217,7 @@ class _SessionsState extends State<Sessions> {
                 ),
                 child: Text(
                   runThroughResultLabel(s, p),
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                 ),
               ),
             ],
@@ -9310,7 +9312,7 @@ class _SessionsState extends State<Sessions> {
         Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary),
         const SizedBox(width: 8),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          Text(label, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 2),
           Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
         ])),
@@ -9359,7 +9361,7 @@ class _SessionsState extends State<Sessions> {
                 children: [
                   Icon(Icons.track_changes_outlined, size: 15, color: Theme.of(c).colorScheme.primary),
                   const SizedBox(width: 6),
-                  Text('Prévu → réel : $realizationRate %', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                  Text('Prévu → réel : $realizationRate %', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                 ],
               ),
             ),
@@ -9384,11 +9386,11 @@ class _SessionsState extends State<Sessions> {
               final maxValue = byDay.values.fold<int>(0, (a, b) => a > b ? a : b);
               final h = maxValue == 0 ? 2.0 : (56 * value / maxValue).clamp(2.0, 56.0);
               return Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-                if (value > 0) Text('$value', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700)),
+                if (value > 0) Text('$value', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Container(height: h, decoration: BoxDecoration(color: Theme.of(c).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(4))),
                 const SizedBox(height: 4),
-                Text(_wd(d.weekday), style: const TextStyle(fontSize: 9.5)),
+                Text(_wd(d.weekday), style: const TextStyle(fontSize: 11)),
               ])));
             }))),
           ])),
@@ -9435,7 +9437,7 @@ class _SessionsState extends State<Sessions> {
             ),
           ])),
           const SizedBox(height: 7),
-          Text('${list.length} session${list.length > 1 ? 's' : ''} · ${_mins(totalMinutes)}', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          Text('${list.length} session${list.length > 1 ? 's' : ''} · ${_mins(totalMinutes)}', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
         ])),
         const SizedBox(height: 12),
         if (list.isEmpty)
@@ -9468,7 +9470,7 @@ class _SessionsState extends State<Sessions> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(color: Theme.of(c).colorScheme.surfaceContainerHighest.withOpacity(.70), borderRadius: BorderRadius.circular(12)),
-                            child: Text('${s.duration} min', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                            child: Text('${s.duration} min', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                           ),
                         ]),
                         const SizedBox(height: 3),
@@ -9477,7 +9479,7 @@ class _SessionsState extends State<Sessions> {
                           runSpacing: 5,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Text('${s.date.day.toString().padLeft(2,'0')}/${s.date.month.toString().padLeft(2,'0')}/${s.date.year}${s.rating > 0 ? ' · ' + ('★' * s.rating) : ''}', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                            Text('${s.date.day.toString().padLeft(2,'0')}/${s.date.month.toString().padLeft(2,'0')}/${s.date.year}${s.rating > 0 ? ' · ' + ('★' * s.rating) : ''}', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                             if (_isToday(s.date))
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -9486,7 +9488,7 @@ class _SessionsState extends State<Sessions> {
                                   borderRadius: BorderRadius.circular(9),
                                   border: Border.all(color: Theme.of(c).colorScheme.primary.withOpacity(.22)),
                                 ),
-                                child: Text("AUJOURD’HUI", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
+                                child: Text("AUJOURD’HUI", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
                               ),
                           ],
                         ),
@@ -9511,7 +9513,7 @@ class _SessionsState extends State<Sessions> {
                                     if (_plannedRealizedLabel(s).isNotEmpty) _plannedRealizedLabel(s),
                                     if (_runThroughLabel(s).isNotEmpty) _runThroughLabel(s),
                                   ].join(' · '),
-                                  style: TextStyle(fontSize: 10.8, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
                                 ),
                               ),
                             ],
@@ -9522,7 +9524,7 @@ class _SessionsState extends State<Sessions> {
                           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Icon(Icons.auto_awesome_rounded, size: 14, color: Theme.of(c).colorScheme.primary),
                             const SizedBox(width: 5),
-                            Expanded(child: Text(s.coachRecommendation!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+                            Expanded(child: Text(s.coachRecommendation!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, height: 1.3, color: Theme.of(c).colorScheme.onSurfaceVariant))),
                           ]),
                         ],
                       ])),
@@ -9813,7 +9815,7 @@ class _SessionDialogState extends State<SessionDialog> {
         maxLines: phone ? 2 : 1,
         overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis,
         softWrap: true,
-        style: TextStyle(fontSize: 11.5, height: 1.2, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
+        style: TextStyle(fontSize: 12, height: 1.2, fontWeight: primary ? FontWeight.w800 : FontWeight.w600),
       ),
     );
   }
@@ -9853,7 +9855,7 @@ class _SessionDialogState extends State<SessionDialog> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Note de séance', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
-              Text('$rating / 5', style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+              Text('$rating / 5', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             ]),
           ),
           for (int i = 1; i <= 5; i++)
@@ -9897,7 +9899,7 @@ class _SessionDialogState extends State<SessionDialog> {
                 Icon(Icons.psychology_outlined, size: 19, color: Theme.of(c).colorScheme.primary),
                 const SizedBox(width: 7),
                 const Expanded(
-                  child: Text('PLAN COACH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                  child: Text('PLAN COACH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
                 ),
               ],
             ),
@@ -9908,9 +9910,9 @@ class _SessionDialogState extends State<SessionDialog> {
                 runSpacing: 4,
                 children: [
                   if (plannedMinutes != null)
-                    Text('⏱ $plannedMinutes min prévu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                    Text('⏱ $plannedMinutes min prévu', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                   if (widget.initialDuration != null && plannedMinutes != null && widget.initialDuration != plannedMinutes)
-                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 11, color: onSurfaceVariant)),
+                    Text('Réel : ${widget.initialDuration} min', style: TextStyle(fontSize: 12, color: onSurfaceVariant)),
                 ],
               ),
             ],
@@ -9920,14 +9922,14 @@ class _SessionDialogState extends State<SessionDialog> {
             ],
             if (widget.initialCoachTempo != null && widget.initialCoachTempo! > 0) ...[
               const SizedBox(height: 4),
-              Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 11.5, height: 1.25)),
+              Text('🎹 Tempo de référence : ${widget.initialCoachTempo} BPM', style: const TextStyle(fontSize: 12, height: 1.25)),
             ],
             if (recommendation.isNotEmpty) ...[
               const SizedBox(height: 7),
               Text(
                 recommendation,
                 softWrap: true,
-                style: TextStyle(fontSize: 11.5, height: 1.35, color: onSurfaceVariant),
+                style: TextStyle(fontSize: 12, height: 1.35, color: onSurfaceVariant),
               ),
             ],
           ],
@@ -10108,7 +10110,7 @@ Color _statusStrongColor(BuildContext c, String status) {
 
 Widget _miniProgress(String label, double value) => Chip(
       visualDensity: VisualDensity.compact,
-      label: Text('$label ${(value * 100).round()}%', style: const TextStyle(fontSize: 11)),
+      label: Text('$label ${(value * 100).round()}%', style: const TextStyle(fontSize: 12)),
       avatar: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(value: value, strokeWidth: 2)),
     );
 
@@ -10253,7 +10255,7 @@ class _ProjectsState extends State<Projects> {
                                     '${projectStatusEmoji(p.effectiveStatus)} ${p.effectiveStatus} · ${_formatProjectDateTime(lastModified)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                    style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant),
                                   ),
                                 ])),
                                 PopupMenuButton<String>(
@@ -10273,7 +10275,7 @@ class _ProjectsState extends State<Projects> {
                               ]),
                               const SizedBox(height: 12),
                               Row(children: [
-                                Text('Progression', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                                Text('Progression', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                                 const SizedBox(width: 8),
                                 Expanded(child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
@@ -10294,7 +10296,7 @@ class _ProjectsState extends State<Projects> {
                                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                                       Text(projectStatusEmoji(p.effectiveStatus), style: TextStyle(color: statusColor, fontSize: 12)),
                                       const SizedBox(width: 5),
-                                      Text(p.effectiveStatus, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                                      Text(p.effectiveStatus, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w800)),
                                     ]),
                                   ),
                                   if (p.currentTempo > 0 || p.targetTempo > 0)
@@ -10318,7 +10320,7 @@ class _ProjectsState extends State<Projects> {
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('Objectif', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
+                                    Text('Objectif', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary)),
                                     const SizedBox(height: 2),
                                     Text(p.goal, maxLines: phone ? 2 : 3, overflow: TextOverflow.ellipsis,
                                       style: TextStyle(fontSize: 12.5, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.3)),
@@ -10329,7 +10331,7 @@ class _ProjectsState extends State<Projects> {
                               Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                                 Icon(Icons.track_changes_outlined, size: 15, color: Theme.of(c).colorScheme.primary),
                                 const SizedBox(width: 6),
-                                Text('À renforcer', style: TextStyle(fontSize: 11.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                                Text('À renforcer', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                                 const SizedBox(width: 7),
                                 Flexible(child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -10338,7 +10340,7 @@ class _ProjectsState extends State<Projects> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(_weakestStepLabel(p), maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onPrimaryContainer)),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onPrimaryContainer)),
                                 )),
                                 if (!compact && (p.method != null || p.targetHours != null)) ...[
                                   const SizedBox(width: 8),
@@ -10346,14 +10348,14 @@ class _ProjectsState extends State<Projects> {
                                     p.method ?? 'Auto · ${p.targetHours!.round()} h',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                    style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant),
                                   )),
                                 ],
                               ]),
                               if (phone) ...[
                                 const SizedBox(height: 10),
                                 Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                                  Text('Ouvrir la fiche', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
+                                  Text('Ouvrir la fiche', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.primary)),
                                   const SizedBox(width: 3),
                                   Icon(Icons.chevron_right_rounded, size: 17, color: Theme.of(c).colorScheme.primary),
                                 ]),
@@ -10381,7 +10383,7 @@ Widget _mobileFilterButton(BuildContext c, IconData icon, String label, {bool ac
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, size: 15, color: active ? scheme.primary : scheme.onSurfaceVariant),
       const SizedBox(width: 6),
-      Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: active ? scheme.primary : scheme.onSurface)),
+      Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: active ? scheme.primary : scheme.onSurface)),
       const SizedBox(width: 3),
       Icon(Icons.expand_more_rounded, size: 15, color: scheme.onSurfaceVariant),
     ]),
@@ -10410,7 +10412,7 @@ Widget _sessionMetaPill(BuildContext c, IconData icon, String label) {
       const SizedBox(width: 4),
       ConstrainedBox(
         constraints: BoxConstraints(maxWidth: phone ? 178 : 155),
-        child: Text(label, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, softWrap: true, style: TextStyle(fontSize: 10.5, height: 1.2, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+        child: Text(label, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, softWrap: true, style: TextStyle(fontSize: 12, height: 1.2, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
       ),
     ]),
   );
@@ -10427,8 +10429,8 @@ Widget _projectStageMini(BuildContext c, String label, double value, IconData ic
         Icon(icon, size: 14, color: scheme.primary),
         const SizedBox(width: 5),
         Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant))),
-        Text('$pct%', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: scheme.primary)),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant))),
+        Text('$pct%', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: scheme.primary)),
       ]),
       const SizedBox(height: 4),
       ClipRRect(
@@ -10473,13 +10475,13 @@ Widget _projectEditSummary(BuildContext c, Project p) {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(color: scheme.primaryContainer.withOpacity(.62), borderRadius: BorderRadius.circular(12)),
-              child: Text(p.effectiveStatus, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer)),
+              child: Text(p.effectiveStatus, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer)),
             ),
             if (p.priority)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: Colors.amber.withOpacity(.18), borderRadius: BorderRadius.circular(12)),
-                child: const Text('★ Priorité', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
+                child: const Text('★ Priorité', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
               ),
           ]),
         ])),
@@ -10508,7 +10510,7 @@ Widget _projectEditSummary(BuildContext c, Project p) {
         _sessionMetaPill(c, Icons.track_changes_outlined, p.workFocus),
       ]),
       const SizedBox(height: 7),
-      Text('Dernière mise à jour : ${_formatProjectDateTime(p.lastModified)}', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
+      Text('Dernière mise à jour : ${_formatProjectDateTime(p.lastModified)}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
     ]),
   );
 }
@@ -10686,7 +10688,7 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
                   const Text('Progression des étapes', style: TextStyle(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 3),
                   Text('Ajuste uniquement les étapes qui ont changé.',
-                    style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                 ])),
               ]),
             ),
@@ -10720,7 +10722,7 @@ class _DetailedProgressDialogState extends State<_DetailedProgressDialog> {
                   Text(
                     tempoProgress >= 1 ? '🎯 Objectif de tempo atteint' : '${targetTempo - currentTempo} BPM restants',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: tempoProgress >= 1 ? FontWeight.w700 : FontWeight.normal,
                       color: tempoProgress >= 1 ? Colors.green.shade700 : scheme.onSurfaceVariant,
                     ),
@@ -10919,16 +10921,16 @@ class _ProjectCoachDashboard extends StatelessWidget {
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SizedBox(width: 44, height: 44, child: Stack(alignment: Alignment.center, children: [
           CircularProgressIndicator(value: masteryPercent / 100, strokeWidth: 4),
-          Text('$masteryPercent%', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+          Text('$masteryPercent%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
         ])),
         const SizedBox(width: 11),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('MAÎTRISE DU MORCEAU · ${masteryLabel(pieceMastery)}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: masteryColor, letterSpacing: .5)),
+          Text('MAÎTRISE DU MORCEAU · ${masteryLabel(pieceMastery)}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: masteryColor, letterSpacing: .5)),
           const SizedBox(height: 4),
-          Text(masteryAdvice, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant, height: 1.28)),
+          Text(masteryAdvice, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.28)),
           if (runPercent != null) ...[
             const SizedBox(height: 4),
-            Text('Run-through : $runPercent %', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
+            Text('Run-through : $runPercent %', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
           ],
         ])),
       ]),
@@ -11046,7 +11048,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
             Icon(Icons.psychology_outlined, size: 19, color: scheme.primary),
             const SizedBox(width: 7),
             const Expanded(child: Text('Analyse & conseil du morceau', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-            if (last != null) Text(_feeling(last.coachFeeling), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+            if (last != null) Text(_feeling(last.coachFeeling), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
           ]),
           const SizedBox(height: 9),
           _CoachInsightTile(icon: Icons.trending_up, title: 'Ce qui progresse', text: progressText, color: scheme.primary),
@@ -11064,25 +11066,25 @@ class _ProjectCoachDashboard extends StatelessWidget {
                 Row(children: [
                   Icon(Icons.play_circle_outline, size: 18, color: scheme.secondary),
                   const SizedBox(width: 7),
-                  const Expanded(child: Text('RUN-THROUGH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .4)),),
-                  Text('${completedRunThroughs.length}/${runThroughs.where((s) => s.runThroughCompleted != null).length} renseignés', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: scheme.secondary)),
+                  const Expanded(child: Text('RUN-THROUGH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .4)),),
+                  Text('${completedRunThroughs.length}/${runThroughs.where((s) => s.runThroughCompleted != null).length} renseignés', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.secondary)),
                 ]),
                 const SizedBox(height: 5),
                 Wrap(spacing: 8, runSpacing: 5, children: [
                   if (latestRunThrough != null)
                     Chip(avatar: const Icon(Icons.history, size: 13), label: Text(
                       latestRunThrough.runThroughCompleted == true ? 'Dernier : ✅ terminé' : (latestRunThrough.runThroughCompleted == false ? 'Dernier : ⏹️ interrompu' : 'Dernier : 🕘 ancien'),
-                      style: const TextStyle(fontSize: 10),
+                      style: const TextStyle(fontSize: 12),
                     ), visualDensity: VisualDensity.compact),
                   if (bestMeasuredRunTempo != null)
                     Chip(avatar: const Icon(Icons.speed_outlined, size: 13), label: Text(
                       'Meilleur : $bestMeasuredRunTempo BPM${targetTempo != null ? ' / $targetTempo' : ''}',
-                      style: const TextStyle(fontSize: 10),
+                      style: const TextStyle(fontSize: 12),
                     ), visualDensity: VisualDensity.compact),
                   if (runTempoRatio != null)
                     Chip(avatar: const Icon(Icons.track_changes, size: 13), label: Text(
                       '${(runTempoRatio * 100).round()} % de la cible (meilleur)',
-                      style: const TextStyle(fontSize: 10),
+                      style: const TextStyle(fontSize: 12),
                     ), visualDensity: VisualDensity.compact),
                 ]),
                 if (latestMeasuredRun != null) ...[
@@ -11100,14 +11102,14 @@ class _ProjectCoachDashboard extends StatelessWidget {
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(
                           'ÉVOLUTION DU TEMPO',
-                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           latestRunEndTempo != null && previousRunEndTempo != null
                               ? '${previousRunEndTempo} → ${latestRunEndTempo} BPM${runTempoDelta! >= 0 ? ' · +$runTempoDelta' : ' · $runTempoDelta'} BPM depuis le run précédent'
                               : '${latestRunEndTempo} BPM · premier Run-through mesuré',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                         ),
                         if (runTempoTargetPercent != null) ...[
                           const SizedBox(height: 5),
@@ -11116,17 +11118,17 @@ class _ProjectCoachDashboard extends StatelessWidget {
                             child: LinearProgressIndicator(value: runTempoTargetPercent / 100, minHeight: 5),
                           ),
                           const SizedBox(height: 3),
-                          Text('$runTempoTargetPercent % de la cible sur le dernier run', style: TextStyle(fontSize: 9.5, color: scheme.onSurfaceVariant)),
+                          Text('$runTempoTargetPercent % de la cible sur le dernier run', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
                         ],
                         const SizedBox(height: 5),
-                        Text('💡 $runThroughCoachAdvice', style: TextStyle(fontSize: 9.8, color: scheme.onSurfaceVariant, height: 1.25)),
+                        Text('💡 $runThroughCoachAdvice', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.25)),
                       ])),
                     ]),
                   ),
                 ],
                 if (measuredCompletedRuns.length > 1) ...[
                   const SizedBox(height: 7),
-                  Text('Historique récent', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.onSurface)),
+                  Text('Historique récent', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: scheme.onSurface)),
                   const SizedBox(height: 4),
                   ...measuredCompletedRuns.take(4).map((s) {
                     final idx = measuredCompletedRuns.indexOf(s);
@@ -11140,10 +11142,10 @@ class _ProjectCoachDashboard extends StatelessWidget {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 3),
                       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        SizedBox(width: 42, child: Text(dateLabel, style: TextStyle(fontSize: 9.5, color: scheme.onSurfaceVariant))),
-                        Expanded(child: Text('$statusLabel ${s.runThroughStartTempo ?? '—'} → ${s.runThroughEndTempo ?? '—'} BPM${targetPercent != null ? ' · $targetPercent % cible' : ''}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                        SizedBox(width: 42, child: Text(dateLabel, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant))),
+                        Expanded(child: Text('$statusLabel ${s.runThroughStartTempo ?? '—'} → ${s.runThroughEndTempo ?? '—'} BPM${targetPercent != null ? ' · $targetPercent % cible' : ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
                         if (delta != null)
-                          Text('${delta >= 0 ? '+' : ''}$delta', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: delta >= 0 ? scheme.primary : scheme.error))
+                          Text('${delta >= 0 ? '+' : ''}$delta', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: delta >= 0 ? scheme.primary : scheme.error))
                         else
                           const SizedBox(width: 22),
                       ]),
@@ -11166,7 +11168,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
               Icon(Icons.play_circle_outline, size: 20, color: scheme.primary),
               const SizedBox(width: 8),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .4)),
+                Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .4)),
                 const SizedBox(height: 3),
                 Text(concretePlan, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
@@ -11183,9 +11185,9 @@ class _ProjectCoachDashboard extends StatelessWidget {
                       Icon(Icons.flag_outlined, size: 16, color: scheme.secondary),
                       const SizedBox(width: 7),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('QUOI', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.secondary, letterSpacing: .35)),
+                        Text('QUOI', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.secondary, letterSpacing: .35)),
                         const SizedBox(height: 1),
-                        Text(coachAction, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.2)),
+                        Text(coachAction, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, height: 1.2)),
                       ])),
                     ]),
                     const SizedBox(height: 6),
@@ -11193,9 +11195,9 @@ class _ProjectCoachDashboard extends StatelessWidget {
                       Icon(Icons.timer_outlined, size: 16, color: scheme.primary),
                       const SizedBox(width: 7),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('COMBIEN / TEMPO', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35)),
+                        Text('COMBIEN / TEMPO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.primary, letterSpacing: .35)),
                         const SizedBox(height: 1),
-                        Text('$recommendedMinutes min · $coachTempo', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.2)),
+                        Text('$recommendedMinutes min · $coachTempo', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, height: 1.2)),
                       ])),
                     ]),
                     const SizedBox(height: 6),
@@ -11203,16 +11205,16 @@ class _ProjectCoachDashboard extends StatelessWidget {
                       Icon(Icons.lightbulb_outline, size: 16, color: scheme.tertiary),
                       const SizedBox(width: 7),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('POURQUOI', style: TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: scheme.tertiary, letterSpacing: .35)),
+                        Text('POURQUOI', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: scheme.tertiary, letterSpacing: .35)),
                         const SizedBox(height: 1),
-                        Text(coachWhy, style: TextStyle(fontSize: 10.2, color: scheme.onSurfaceVariant, height: 1.22)),
+                        Text(coachWhy, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.22)),
                       ])),
                     ]),
                   ]),
                 ),
                 if (_durationAdjustmentHint().isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('🧠 ${_durationAdjustmentHint()}', style: TextStyle(fontSize: 10.2, color: scheme.onSurfaceVariant, height: 1.25)),
+                  Text('🧠 ${_durationAdjustmentHint()}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.25)),
                 ],
                 const SizedBox(height: 8),
                 if (scheduledCoachSessions.isNotEmpty)
@@ -11222,7 +11224,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'Présente dans le planning — ${scheduledCoachSessions.first.date.day}/${scheduledCoachSessions.first.date.month} · ${scheduledCoachSessions.first.duration} min. Le coach ajuste directement le planning à partir de tes séances.',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.primary, height: 1.3),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.primary, height: 1.3),
                       ),
                     ),
                   ])
@@ -11233,7 +11235,7 @@ class _ProjectCoachDashboard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'Le coach ne crée pas une deuxième séance ici : ses ajustements apparaissent directement dans le planning.',
-                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.3),
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.3),
                       ),
                     ),
                   ])
@@ -11243,11 +11245,11 @@ class _ProjectCoachDashboard extends StatelessWidget {
           if (sessions.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 5, children: [
-              Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
+              Chip(avatar: const Icon(Icons.event_note_outlined, size: 14), label: Text('${sessions.length} séance${sessions.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 12)), visualDensity: VisualDensity.compact),
               if (sessions.any((s) => s.type == 'Run-through'))
-                Chip(avatar: const Icon(Icons.play_circle_outline, size: 14), label: Text('${sessions.where((s) => s.type == 'Run-through' && s.runThroughCompleted == true).length}/${sessions.where((s) => s.type == 'Run-through').length} run-through terminé${sessions.where((s) => s.type == 'Run-through').length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
-              if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact),
+                Chip(avatar: const Icon(Icons.play_circle_outline, size: 14), label: Text('${sessions.where((s) => s.type == 'Run-through' && s.runThroughCompleted == true).length}/${sessions.where((s) => s.type == 'Run-through').length} run-through terminé${sessions.where((s) => s.type == 'Run-through').length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 12)), visualDensity: VisualDensity.compact),
+              if (last != null) Chip(avatar: const Icon(Icons.timer_outlined, size: 14), label: Text('${last.duration} min', style: const TextStyle(fontSize: 12)), visualDensity: VisualDensity.compact),
+              if (project.currentTempo > 0) Chip(avatar: const Icon(Icons.speed_outlined, size: 14), label: Text('${project.currentTempo} BPM', style: const TextStyle(fontSize: 12)), visualDensity: VisualDensity.compact),
             ]),
             if (runMastery != null) ...[
               const SizedBox(height: 8),
@@ -11263,9 +11265,9 @@ class _ProjectCoachDashboard extends StatelessWidget {
                   Icon(Icons.insights_outlined, size: 18, color: scheme.primary),
                   const SizedBox(width: 7),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('MAÎTRISE EN RUN-THROUGH', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900)),
+                    const Text('MAÎTRISE EN RUN-THROUGH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 2),
-                    Text('$runMastery% de maîtrise · meilleur run-through ${bestRunTempo} BPM', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
+                    Text('$runMastery% de maîtrise · meilleur run-through ${bestRunTempo} BPM', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                   ])),
                   Text('$runMastery%', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: scheme.primary)),
                 ]),
@@ -11294,9 +11296,9 @@ class _CoachInsightTile extends StatelessWidget {
         Icon(icon, size: 18, color: color),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: scheme.onSurface)),
+          Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onSurface)),
           const SizedBox(height: 2),
-          Text(text, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant, height: 1.25)),
+          Text(text, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.25)),
         ])),
       ]),
     );
@@ -11345,13 +11347,13 @@ class _ProjectEvolutionSectionState extends State<_ProjectEvolutionSection> {
             Icon(Icons.show_chart, size: 18, color: scheme.primary),
             const SizedBox(width: 7),
             const Expanded(child: Text('Évolution du morceau', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-            Text('${ordered.length} séances', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text('${ordered.length} séances', style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ]),
           const SizedBox(height: 4),
-          const Text('Clique sur un point pour afficher le détail de la séance.', style: TextStyle(fontSize: 10, color: Colors.grey)),
+          const Text('Clique sur un point pour afficher le détail de la séance.', style: TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 9),
           if (hasStageData) ...[
-            const Text('4 étapes', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+            const Text('4 étapes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             SizedBox(
               height: 150,
@@ -11373,9 +11375,9 @@ class _ProjectEvolutionSectionState extends State<_ProjectEvolutionSection> {
           if (hasTempo) ...[
             const SizedBox(height: 12),
             Row(children: [
-              const Text('Tempo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+              const Text('Tempo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               const Spacer(),
-              if (widget.project.targetTempo > 0) Text('cible ${widget.project.targetTempo} BPM', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              if (widget.project.targetTempo > 0) Text('cible ${widget.project.targetTempo} BPM', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]),
             const SizedBox(height: 4),
             SizedBox(
@@ -11399,27 +11401,27 @@ class _ProjectEvolutionSectionState extends State<_ProjectEvolutionSection> {
                   const SizedBox(width: 6),
                   Expanded(child: Text(
                     '${selected.date.day.toString().padLeft(2, '0')}/${selected.date.month.toString().padLeft(2, '0')}/${selected.date.year}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
                   )),
-                  Text('${selected.duration} min', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11)),
+                  Text('${selected.duration} min', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
                 ]),
                 const SizedBox(height: 5),
                 Wrap(spacing: 12, runSpacing: 4, children: [
-                  Text('Ressenti : ${_feelingLabel(selected.coachFeeling)}', style: const TextStyle(fontSize: 10)),
-                  Text('Note : ${selected.rating}/5', style: const TextStyle(fontSize: 10)),
-                  if ((selected.newTempo ?? 0) > 0) Text('${selected.newTempo} BPM', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                  Text('Ressenti : ${_feelingLabel(selected.coachFeeling)}', style: const TextStyle(fontSize: 12)),
+                  Text('Note : ${selected.rating}/5', style: const TextStyle(fontSize: 12)),
+                  if ((selected.newTempo ?? 0) > 0) Text('${selected.newTempo} BPM', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 ]),
                 if (selected.coachFocus != null || selected.coachRecommendation != null) ...[
                   const SizedBox(height: 4),
-                  if (selected.coachFocus != null) Text('Focus : ${selected.coachFocus}', style: const TextStyle(fontSize: 10)),
-                  if (selected.coachRecommendation != null) Text('Coach : ${selected.coachRecommendation}', style: const TextStyle(fontSize: 10)),
+                  if (selected.coachFocus != null) Text('Focus : ${selected.coachFocus}', style: const TextStyle(fontSize: 12)),
+                  if (selected.coachRecommendation != null) Text('Coach : ${selected.coachRecommendation}', style: const TextStyle(fontSize: 12)),
                 ],
               ]),
             ),
           ],
           if (feelings.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text('Ressenti séance après séance', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+            const Text('Ressenti séance après séance', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             SizedBox(
               height: 34,
@@ -11466,7 +11468,7 @@ class _LegendDot extends StatelessWidget {
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
     Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
     const SizedBox(width: 4),
-    Text(label, style: const TextStyle(fontSize: 9, color: Colors.grey)),
+    Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
   ]);
 }
 
@@ -12268,7 +12270,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                 Icon(Icons.play_circle_outline, color: Theme.of(c).colorScheme.secondary, size: 22),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('RUN-THROUGH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .6)),
+                  const Text('RUN-THROUGH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .6)),
                   const SizedBox(height: 3),
                   const Text('Jouer le morceau en continu du début à la fin pour vérifier ce qui tient réellement.', style: TextStyle(fontSize: 12, height: 1.3)),
                   const SizedBox(height: 8),
@@ -12318,7 +12320,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                                 Icon(Icons.insights_outlined, size: 18, color: Theme.of(summaryContext).colorScheme.primary),
                                 const SizedBox(width: 7),
                                 const Expanded(child: Text('Les 3 dernières séances', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                                Text('${recent.length} séance${recent.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                Text('${recent.length} séance${recent.length > 1 ? 's' : ''}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -12341,7 +12343,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
                                         : recent.first.coachFeeling == 'correct'
                                             ? '🎯 Dernière séance correcte : poursuivre le travail ciblé.'
                                             : '📈 Historique récent disponible pour suivre l’évolution.',
-                                style: TextStyle(fontSize: 11, color: Theme.of(summaryContext).colorScheme.onSurfaceVariant),
+                                style: TextStyle(fontSize: 12, color: Theme.of(summaryContext).colorScheme.onSurfaceVariant),
                               ),
                             ],
                           ],
@@ -12384,19 +12386,19 @@ class _ProjectDialogState extends State<ProjectDialog> {
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Row(children: [
                                 Expanded(child: Text(s.plannedDuration != null ? '${s.plannedDuration} → ${s.duration} min · ${s.type}' : '${s.duration} min · ${s.type}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: phoneSession ? 12.5 : 12, fontWeight: FontWeight.w800))),
-                                if (s.rating > 0) Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 10.5)),
+                                if (s.rating > 0) Text('★' * s.rating, style: const TextStyle(color: Colors.amber, fontSize: 12)),
                               ]),
                               const SizedBox(height: 3),
                               Wrap(spacing: 7, runSpacing: 3, children: [
-                                Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year}', style: TextStyle(fontSize: 10.5, color: scheme.onSurfaceVariant)),
-                                if (feelingLabel.isNotEmpty) Text(feelingLabel, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: feelingColor)),
-                                if (s.newTempo != null) Text('${s.newTempo} BPM', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: scheme.primary)),
+                                Text('${s.date.day.toString().padLeft(2, '0')}/${s.date.month.toString().padLeft(2, '0')}/${s.date.year}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                                if (feelingLabel.isNotEmpty) Text(feelingLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: feelingColor)),
+                                if (s.newTempo != null) Text('${s.newTempo} BPM', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.primary)),
                                 if (s.type == 'Run-through' && s.runThroughCompleted != null)
-                                  Text(s.runThroughCompleted! ? '✅ Terminé' : '⏹️ Interrompu', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: s.runThroughCompleted! ? scheme.primary : scheme.error)),
+                                  Text(s.runThroughCompleted! ? '✅ Terminé' : '⏹️ Interrompu', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: s.runThroughCompleted! ? scheme.primary : scheme.error)),
                               ]),
                               if (s.coachFocus != null && s.coachFocus!.trim().isNotEmpty) ...[
                                 const SizedBox(height: 3),
-                                Text('Focus · ${s.coachFocus}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+                                Text('Focus · ${s.coachFocus}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                               ],
                             ])),
                             const SizedBox(width: 6),
@@ -12800,10 +12802,10 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             Expanded(
               child: Text(
                 'Planning ajusté par le coach · $adjusted modification${adjusted > 1 ? 's' : ''}',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurface),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.onSurface),
               ),
             ),
-            Text(unseen ? 'Voir' : 'Détail', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
+            Text(unseen ? 'Voir' : 'Détail', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Theme.of(c).colorScheme.primary)),
           ]),
         ),
       ),
@@ -12836,7 +12838,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             if (unseen) const SizedBox(width: 7),
             Icon(Icons.auto_awesome, size: 14, color: Theme.of(c).colorScheme.primary),
             const SizedBox(width: 5),
-            Flexible(child: Text(text, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary))),
+            Flexible(child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Theme.of(c).colorScheme.primary))),
           ]),
         ),
       ),
@@ -12856,7 +12858,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 13, color: color),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color)),
+        Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
       ]),
     );
   }
@@ -12894,11 +12896,11 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.play_arrow_rounded, size: 14, color: scheme.primary),
                   const SizedBox(width: 4),
-                  Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: .45, color: scheme.primary)),
+                  Text('PROCHAINE SÉANCE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .45, color: scheme.primary)),
                 ]),
               ),
               const Spacer(),
-              Text(dateLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
+              Text(dateLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant)),
             ],
           ),
           const SizedBox(height: 9),
@@ -12914,7 +12916,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.auto_awesome, size: 15, color: scheme.primary),
               const SizedBox(width: 6),
-              Expanded(child: Text(reason, style: TextStyle(fontSize: 10.5, height: 1.25, color: scheme.onSurfaceVariant))),
+              Expanded(child: Text(reason, style: TextStyle(fontSize: 12, height: 1.25, color: scheme.onSurfaceVariant))),
             ]),
           ],
         ],
@@ -12957,12 +12959,12 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
             const SizedBox(width: 5),
             Expanded(child: Text(
               '$planned min prévues → $realized min réalisées',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
             )),
-            Text('${(ratio * 100).round()} %', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color)),
+            Text('${(ratio * 100).round()} %', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color)),
           ]),
           const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10, color: color)),
+          Text(label, style: TextStyle(fontSize: 12, color: color)),
         ]),
       ),
     );
@@ -13071,7 +13073,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                     const SizedBox(height: 10),
                     Text(
                       'Ce compteur mesure le temps réellement joué, indépendamment du planning.',
-                      style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                      style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 12),
                     progress((widget.minutes / widget.weeklyTarget).clamp(0, 1).toDouble()),
@@ -13106,9 +13108,9 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                                   Icon(categoryIcon(cat), size: 14, color: categoryColor(cat)),
                                   const SizedBox(width: 5),
-                                  Text(cat, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                  Text(cat, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                                   const SizedBox(width: 5),
-                                  Text('$plannedMin/$recommendedMin min', style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                                  Text('$plannedMin/$recommendedMin min', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                                 ]),
                               ),
                             );
@@ -13243,7 +13245,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                 Text(
                                   'COACH',
                                   style: TextStyle(
-                                    fontSize: 8.5,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: .5,
                                     color: Theme.of(c).colorScheme.primary,
@@ -13324,7 +13326,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(_emptyDayLabel(entry.key), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
                                   const SizedBox(height: 2),
-                                  Text(_emptyDayHint(entry.key), style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.25)),
+                                  Text(_emptyDayHint(entry.key), style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant, height: 1.25)),
                                 ]),
                               ),
                               if (widget.dailyCapacity[entry.key.weekday - 1] > 0)
@@ -13403,7 +13405,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                       const SizedBox(width: 4),
                                                       Text(
                                                         _planLifecycleLabel(x),
-                                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: lifecycleColor),
+                                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: lifecycleColor),
                                                       ),
                                                     ]),
                                                   );
@@ -13469,7 +13471,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                   return Text(
                                                     '🎹 $name',
                                                     style: TextStyle(
-                                                      fontSize: 11.5,
+                                                      fontSize: 12,
                                                       fontWeight: FontWeight.w700,
                                                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                     ),
@@ -13494,7 +13496,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                             visualDensity: VisualDensity.compact,
                                                             avatar: Icon(Icons.timer_outlined, size: 14, color: x.completed ? Colors.grey : null),
                                                             label: Text('${x.duration} min', style: TextStyle(
-                                                              fontSize: 11,
+                                                              fontSize: 12,
                                                               color: x.completed ? Colors.grey : null,
                                                               decoration: x.completed ? TextDecoration.lineThrough : null,
                                                             )),
@@ -13506,7 +13508,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                             visualDensity: VisualDensity.compact,
                                                             avatar: Icon(Icons.smartphone, size: 14, color: x.completed ? Colors.grey : null),
                                                             label: Text(x.method!, style: TextStyle(
-                                                              fontSize: 11,
+                                                              fontSize: 12,
                                                               color: x.completed ? Colors.grey : null,
                                                               decoration: x.completed ? TextDecoration.lineThrough : null,
                                                             )),
@@ -13538,7 +13540,7 @@ class _WeekState extends State<Week> with SingleTickerProviderStateMixin {
                                                 children: x.motsCles
                                                     .map((tag) => Chip(
                                                           visualDensity: VisualDensity.compact,
-                                                          label: Text(tag, style: const TextStyle(fontSize: 11)),
+                                                          label: Text(tag, style: const TextStyle(fontSize: 12)),
                                                         ))
                                                     .toList(),
                                               ),
@@ -13778,7 +13780,7 @@ class _BadgeCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(b.title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: b.earned ? Colors.brown.shade800 : Colors.grey.shade700)),
             const SizedBox(height: 5),
-            Expanded(child: Text(b.description, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 11))),
+            Expanded(child: Text(b.description, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 12))),
             const SizedBox(height: 7),
             ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: ratio, minHeight: 7, backgroundColor: Colors.grey.shade300)),
             const SizedBox(height: 5),
@@ -13865,7 +13867,7 @@ class _BilanScreenState extends State<BilanScreen> {
         decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
       ),
       const SizedBox(width: 5),
-      Text(label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+      Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
     ]);
   }
 
@@ -13903,24 +13905,24 @@ class _BilanScreenState extends State<BilanScreen> {
                   width: 58,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                    Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                    Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                   ]),
                 ),
                 const SizedBox(width: 8),
                 Expanded(child: Text(item.projectName, style: const TextStyle(fontWeight: FontWeight.w700))),
                 const SizedBox(width: 8),
-                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: accent)),
+                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: accent)),
               ]),
               const SizedBox(height: 5),
               Row(children: [
-                Expanded(child: Text('Prévu : $planned', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant))),
-                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Expanded(child: Text('Prévu : $planned', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant))),
+                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
               ]),
               if (item.coachAdjusted) ...[
                 const SizedBox(height: 3),
                 Text(
                   item.coachAdjustmentType == 'focus' ? '🧠 Focus ajusté par le coach' : '🧠 Durée ajustée par le coach',
-                  style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
                 ),
               ],
             ],
@@ -13932,23 +13934,23 @@ class _BilanScreenState extends State<BilanScreen> {
                 width: 54,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                  Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                  Text(_weekdayNamesFull[item.date.weekday - 1], style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                 ]),
               ),
               const SizedBox(width: 8),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(item.projectName, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
-                Text('Prévu : $planned', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Text('Prévu : $planned', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                 if (item.coachAdjusted) Text(
                   item.coachAdjustmentType == 'focus' ? '🧠 Focus ajusté par le coach' : '🧠 Durée ajustée par le coach',
-                  style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700),
                 ),
               ])),
               const SizedBox(width: 8),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: accent)),
-                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 10, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                Text(statusText, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: accent)),
+                if (deltaText.isNotEmpty) Text(deltaText, style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
               ]),
             ],
           );
@@ -14021,7 +14023,7 @@ class _BilanScreenState extends State<BilanScreen> {
               Text(topPiece.key.emoji, style: const TextStyle(fontSize: 18)),
               const SizedBox(width: 7),
               Expanded(child: Text('Morceau le plus travaillé : ${topPiece.key.name}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-              Text('${topPiece.value} min', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accent)),
+              Text('${topPiece.value} min', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accent)),
             ]),
           ],
         ],
@@ -14039,7 +14041,7 @@ class _BilanScreenState extends State<BilanScreen> {
         Row(
           children: [
             Expanded(child: Text('${start.day}/${start.month} → ${end.day}/${end.month}', style: const TextStyle(color: Colors.grey))),
-            Text('${bilan.daysPracticed}/7 jours pratiqués', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+            Text('${bilan.daysPracticed}/7 jours pratiqués', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
           ],
         ),
         const SizedBox(height: 12),
@@ -14122,14 +14124,14 @@ class _BilanScreenState extends State<BilanScreen> {
                 return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
                     Expanded(child: Text('Adhérence des séances échues : $pct %', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color))),
-                    Text(deltaText, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+                    Text(deltaText, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant)),
                   ]),
                   const SizedBox(height: 6),
                   progress(ratio.clamp(0, 1).toDouble()),
                   const SizedBox(height: 4),
                   Text(
                     'Le pourcentage compare uniquement les séances dont la date est passée ou celle d’aujourd’hui. Les séances à venir restent hors du calcul.',
-                    style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                    style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant),
                   ),
                 ]);
               }),
@@ -14137,7 +14139,7 @@ class _BilanScreenState extends State<BilanScreen> {
               const SizedBox(height: 10),
               Text(
                 'Aucune séance planifiée n’est échue pour le moment : le taux prévu → réalisé apparaîtra après la première séance due.',
-                style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant),
               ),
             ],
           ]),
@@ -14706,7 +14708,7 @@ class ProgressDashboardScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'La maîtrise combine progression, tempo, Run-through et régularité récente. Aucun morceau n’est masqué par défaut.',
-              style: TextStyle(fontSize: 11.5, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 12, height: 1.35, color: Theme.of(c).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
             Builder(builder: (context) {
@@ -14879,7 +14881,7 @@ class ProgressDashboardScreen extends StatelessWidget {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(icon, size: 13, color: base),
                     const SizedBox(width: 4),
-                    Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: base)),
+                    Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: base)),
                   ]),
                 );
               }
@@ -14929,7 +14931,7 @@ class ProgressDashboardScreen extends StatelessWidget {
                   const SizedBox(height: 10),
                   Text(
                     '$shownCount morceau${shownCount > 1 ? 'x' : ''} affiché${shownCount > 1 ? 's' : ''} sur ${projects.length}',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(c).colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 10),
                   if (entries.isEmpty)
@@ -15097,11 +15099,11 @@ class ProgressDashboardScreen extends StatelessWidget {
                                   Icon(Icons.flag_outlined, size: 16, color: Theme.of(c).colorScheme.primary),
                                   const SizedBox(width: 8),
                                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('POINT À TRAVAILLER', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: .45, color: Theme.of(c).colorScheme.primary)),
+                                    Text('POINT À TRAVAILLER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .45, color: Theme.of(c).colorScheme.primary)),
                                     const SizedBox(height: 2),
                                     Text(
                                       '$limiting${latestRun != null ? ' · Dernier Run-through : ${_formatProjectDateTime(latestRun.date)}' : ''}',
-                                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.3),
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, height: 1.3),
                                     ),
                                   ])),
                                 ]),
@@ -15164,9 +15166,9 @@ class ProgressDashboardScreen extends StatelessWidget {
                       const SizedBox(height: 5),
                       progress(ratio),
                       const SizedBox(height: 4),
-                      Text(delta == null ? 'Dernier Run-through : ${lastTempo ?? e.value} BPM' : 'Dernier : $lastTempo BPM · évolution ${delta >= 0 ? '+' : ''}$delta BPM', style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      Text(delta == null ? 'Dernier Run-through : ${lastTempo ?? e.value} BPM' : 'Dernier : $lastTempo BPM · évolution ${delta >= 0 ? '+' : ''}$delta BPM', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       const SizedBox(height: 3),
-                      Text(advice, style: TextStyle(fontSize: 10.2, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
+                      Text(advice, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 7),
                     ])),
                   );
@@ -15206,7 +15208,7 @@ class ProgressDashboardScreen extends StatelessWidget {
             ]),
           ])),
           const SizedBox(height: 12),
-          Text('Cette vue complète le bilan hebdomadaire : elle regarde l’ensemble des morceaux et non uniquement la semaine en cours.', style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant)),
+          Text('Cette vue complète le bilan hebdomadaire : elle regarde l’ensemble des morceaux et non uniquement la semaine en cours.', style: TextStyle(fontSize: 12, color: Theme.of(c).colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -16270,7 +16272,7 @@ class _StatsAchievementsCardState extends State<_StatsAchievementsCard> {
                 ),
                 child: Text(
                   '${_statsWeekdays[_statsDay(s.date).weekday - 1].substring(0, 3)}. ${_statsDay(s.date).day} · ${_statsDuration(s.duration)}',
-                  style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
               ),
           ],
@@ -16321,7 +16323,7 @@ class _StatsAchievementsCardState extends State<_StatsAchievementsCard> {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text(_subText(r)!, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                        child: Text(_subText(r)!, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                       ),
                   ]),
                 ),
@@ -17696,7 +17698,7 @@ class _PlanDialogState extends State<PlanDialog> {
                     Icon(Icons.calendar_month_outlined, size: 20, color: Theme.of(c).colorScheme.primary),
                     const SizedBox(width: 10),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Date de la séance', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      const Text('Date de la séance', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
                       Text('${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                     ])),
