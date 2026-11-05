@@ -1,3 +1,4 @@
+// V284 — iPhone : « Défi de la semaine » et « Le coach a remarqué » ajoutés à l'accueil téléphone (ils n'existaient que sur grand écran) ; le groupe Suivi devient une seule rangée compacte.
 // V283 — Lisibilité iPhone : tailles de texte relevées (plancher 12 pt pour le texte courant, 11 pt pour les petites étiquettes en capitales), raccourcis de l'accueil regroupés dans une section « Suivi » plus discrète.
 // V282 — Une session créée à la main est rattachée au planning du jour : elle valide le créneau prévu du même morceau, ou apparaît comme séance « hors plan » ; supprimer la session retire ce créneau hors plan.
 // V281 — Calendrier : cases plus claires (icônes visibles) ; icône de morceau : le libellé est conservé, seule l'image change (+ icônes de styles de musique) ; Statistiques : liste « Par morceau » fusionnée dans le camembert, filtre Semaine et Dates.
@@ -30,7 +31,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '283.0';
+const String appVersion = '284.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -8629,6 +8630,9 @@ class CoachHome extends StatelessWidget {
           ])))),
         ],
 
+        ..._challengeBlock(c),
+        ..._coachNoticedBlock(c),
+
         const SizedBox(height: 16),
         _followUpSection(c, badgeCount),
       ],
@@ -8897,27 +8901,108 @@ class CoachHome extends StatelessWidget {
       const SizedBox(height: 18),
       _followUpSection(c, badgeCount),
 
-      if (challenges.isNotEmpty) ...[
-        const SizedBox(height: 18), CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('🎯 Défi de la semaine', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)), const SizedBox(height: 8),
-          ...challenges.take(2).map((ch) { final current = challengeProgress(ch); final done = current >= ch.target; return Padding(padding: const EdgeInsets.only(bottom: 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${done ? '✅' : '◻️'} ${ch.description}', style: TextStyle(fontWeight: FontWeight.w600, decoration: done ? TextDecoration.lineThrough : null)), const SizedBox(height: 5), progress((current / ch.target).clamp(0.0, 1.0).toDouble())])); }),
-        ])),
-      ],
-
-      if (suggestions.isNotEmpty) ...[
-        const SizedBox(height: 18), Text('💡 Le coach a remarqué', style: Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 8),
-        CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ...suggestions.take(2).map((s) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(s.icon, size: 18, color: s.color), const SizedBox(width: 9), Expanded(child: Text(s.text, style: const TextStyle(fontSize: 13)))]))),
-          if (suggestions.first.instruction != null) ...[const Divider(), Wrap(spacing: 4, children: [TextButton.icon(onPressed: () => onOrientSuggestion(suggestions.first.instruction!), icon: const Icon(Icons.event_repeat, size: 16), label: const Text('Semaine prochaine')), TextButton.icon(onPressed: () async { final i = suggestions.first.instruction; if (i != null) await onOrientSuggestionThisWeek(i); }, icon: const Icon(Icons.today, size: 16), label: const Text('Cette semaine'))])],
-        ])),
-      ],
+      ..._challengeBlock(c),
+      ..._coachNoticedBlock(c),
     ]);
   }
 
   Widget _stat(BuildContext c, IconData icon, String label, String value, double ratio) => CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, size: 18, color: Theme.of(c).colorScheme.primary), const SizedBox(width: 7), Text(label, style: const TextStyle(fontWeight: FontWeight.w700))]), const SizedBox(height: 8), Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)), const SizedBox(height: 7), progress(ratio)]));
+  /// Défi de la semaine (accueil téléphone et grand écran). Vide s'il n'y a aucun défi.
+  List<Widget> _challengeBlock(BuildContext c) {
+    if (challenges.isEmpty) return const [];
+    return [
+      const SizedBox(height: 18),
+      CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('🎯 Défi de la semaine', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+        const SizedBox(height: 8),
+        ...challenges.take(2).map((ch) {
+          final current = challengeProgress(ch);
+          final done = current >= ch.target;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${done ? '✅' : '◻️'} ${ch.description}', style: TextStyle(fontWeight: FontWeight.w600, decoration: done ? TextDecoration.lineThrough : null)),
+              const SizedBox(height: 5),
+              progress((current / ch.target).clamp(0.0, 1.0).toDouble()),
+            ]),
+          );
+        }),
+      ])),
+    ];
+  }
+
+  /// « Le coach a remarqué » : suggestions du moteur (accueil téléphone et grand écran).
+  List<Widget> _coachNoticedBlock(BuildContext c) {
+    if (suggestions.isEmpty) return const [];
+    return [
+      const SizedBox(height: 18),
+      Text('💡 Le coach a remarqué', style: Theme.of(c).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ...suggestions.take(2).map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(s.icon, size: 18, color: s.color),
+                const SizedBox(width: 9),
+                Expanded(child: Text(s.text, style: const TextStyle(fontSize: 13))),
+              ]),
+            )),
+        if (suggestions.first.instruction != null) ...[
+          const Divider(),
+          Wrap(spacing: 4, children: [
+            TextButton.icon(
+              onPressed: () => onOrientSuggestion(suggestions.first.instruction!),
+              icon: const Icon(Icons.event_repeat, size: 16),
+              label: const Text('Semaine prochaine'),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final i = suggestions.first.instruction;
+                if (i != null) await onOrientSuggestionThisWeek(i);
+              },
+              icon: const Icon(Icons.today, size: 16),
+              label: const Text('Cette semaine'),
+            ),
+          ]),
+        ],
+      ])),
+    ];
+  }
+
   /// V283 : raccourcis de suivi regroupés dans une seule section discrète (au lieu de cinq
   /// gros boutons empilés après tous les autres contenus de l'accueil).
   Widget _followUpSection(BuildContext c, int badgeCount) {
     final scheme = Theme.of(c).colorScheme;
+    // iPhone : une seule rangée d'icônes avec libellé (≈ 60 px de haut), sans titre ni pastilles.
+    if (_isPhoneLayout(c)) {
+      Widget tab(String label, IconData icon, VoidCallback onTap) => Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 22, color: scheme.primary),
+                  const SizedBox(height: 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label, maxLines: 1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ]),
+              ),
+            ),
+          );
+      return CardBox(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(children: [
+          tab('Bilan', Icons.insights_outlined, onOpenBilan),
+          tab('Planning', Icons.calendar_month_outlined, onQuickPlan),
+          tab('Progression', Icons.trending_up_outlined, onOpenProgress),
+          tab('Stats', Icons.bar_chart_outlined, onOpenStats),
+          tab('Badges $badgeCount', Icons.emoji_events_outlined, onOpenBadges),
+        ]),
+      );
+    }
     Widget chip(String label, IconData icon, VoidCallback onTap) => ActionChip(
           avatar: Icon(icon, size: 18, color: scheme.primary),
           label: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
