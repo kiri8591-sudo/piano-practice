@@ -1,3 +1,4 @@
+// V285 — iPhone : tuile Coach sur une ligne (icônes), « À faire avancer » avec Pourquoi ? et actions (ajouter / démarrer), titre d'accueil réduit + message du coach, Journal de bord & régularité dans Sessions ; planning : après changement de durée d'un créneau, proposition d'ajuster la journée.
 // V284 — iPhone : « Défi de la semaine » et « Le coach a remarqué » ajoutés à l'accueil téléphone (ils n'existaient que sur grand écran) ; le groupe Suivi devient une seule rangée compacte.
 // V283 — Lisibilité iPhone : tailles de texte relevées (plancher 12 pt pour le texte courant, 11 pt pour les petites étiquettes en capitales), raccourcis de l'accueil regroupés dans une section « Suivi » plus discrète.
 // V282 — Une session créée à la main est rattachée au planning du jour : elle valide le créneau prévu du même morceau, ou apparaît comme séance « hors plan » ; supprimer la session retire ce créneau hors plan.
@@ -31,7 +32,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '284.0';
+const String appVersion = '285.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -5670,6 +5671,50 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
     }
   }
 
+  /// V285 : depuis « À faire avancer » (accueil) : ajoute le morceau au planning d'aujourd'hui
+  /// (créneau de 20 min signé Coach) s'il n'y est pas déjà, puis le démarre si [startNow].
+  Future<void> planPieceToday(Project p, {required bool startNow}) async {
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    PlanItem? item;
+    for (final x in plan) {
+      if (!x.completed && x.projectId == p.id && _sameDay(x.date, day) && x.lifecycleStatus == 'pending') {
+        item = x;
+        break;
+      }
+    }
+    var added = false;
+    if (item == null) {
+      final baseDetails = _methodPlanningDetails(p);
+      final prefix = baseDetails.isEmpty ? '' : '$baseDetails · ';
+      final created = PlanItem(
+        id: newId(),
+        date: day,
+        duration: 20,
+        title: p.name,
+        details: '${prefix}Coach : morceau à faire avancer',
+        projectId: p.id,
+        category: p.weakestCategory,
+        method: p.method,
+        motsCles: ['Coach'],
+      );
+      setState(() => plan.add(created));
+      await _persist();
+      item = created;
+      added = true;
+    }
+    if (startNow) {
+      await startPracticeTimer(item);
+      return;
+    }
+    final ctx = navKey.currentContext;
+    if (ctx != null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+        content: Text(added ? '« ${p.name} » ajouté au planning d’aujourd’hui (20 min).' : '« ${p.name} » est déjà au planning d’aujourd’hui.'),
+      ));
+    }
+  }
+
   /// V282 : rattache au planning du jour une session créée à la main.
   /// • Si un créneau non réalisé du même morceau est prévu ce jour-là, il est validé et lié à la
   ///   session : la durée réalisée remplace la durée du créneau (la durée prévue reste conservée dans
@@ -6186,7 +6231,152 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         plan[plan.indexWhere((x) => x.id == existing.id)] = r;
       }
     });
-    _persist();
+    await _persist();
+    // V285 : durée modifiée sur un créneau non réalisé, même jour → on propose d'ajuster la journée.
+    if (existing != null && !existing.completed && _sameDay(existing.date, r.date) && existing.duration != r.duration) {
+      await _reviewDayAfterDurationChange(r, existing.duration);
+    }
+  }
+
+  /// V285 : après changement de durée d'un créneau non réalisé, propose de revoir la journée.
+  /// • Séance raccourcie (≥ 10 min libérées) : ajouter le temps sur le morceau qui en a le plus
+  ///   besoin cette semaine, le répartir sur les autres séances du jour, ou le garder libre.
+  /// • Séance allongée (≥ 10 min) : proposer d'alléger les autres séances du jour.
+  Future<void> _reviewDayAfterDurationChange(PlanItem edited, int oldDuration) async {
+    final delta = oldDuration - edited.duration; // > 0 : minutes libérées ; < 0 : minutes ajoutées
+    if (delta.abs() < 10 || edited.completed) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(edited.date.year, edited.date.month, edited.date.day);
+    if (day.isBefore(today)) return;
+    final ctx = navKey.currentContext;
+    if (ctx == null) return;
+    final dayLabel = day == today ? 'aujourd’hui' : 'ce jour-là';
+    final name = projectById(edited.projectId)?.name ?? edited.title;
+    final others = plan
+        .where((x) =>
+            x.id != edited.id &&
+            !x.completed &&
+            x.duration > 0 &&
+            x.lifecycleStatus == 'pending' &&
+            x.category != 'Run-through' &&
+            _sameDay(x.date, day))
+        .toList();
+
+    if (delta > 0) {
+      // Morceau qui a le plus besoin de temps cette semaine (hors morceaux déjà prévus ce jour-là).
+      final weekStart = startOfWeek(day);
+      final weekEnd = DateTime(weekStart.year, weekStart.month, weekStart.day + 7);
+      final plannedByProject = <String, int>{};
+      for (final x in plan) {
+        final id = x.projectId;
+        if (id == null || x.date.isBefore(weekStart) || !x.date.isBefore(weekEnd)) continue;
+        plannedByProject[id] = (plannedByProject[id] ?? 0) + x.duration;
+      }
+      final recommended = recommendedMinutesByProject(multipliers: null);
+      final scheduledToday = plan.where((x) => _sameDay(x.date, day) && x.projectId != null).map((x) => x.projectId!).toSet();
+      Project? best;
+      var bestNeed = 9;
+      for (final pr in projects) {
+        if (pr.progress >= 1 || scheduledToday.contains(pr.id)) continue;
+        final need = (recommended[pr.id] ?? 0) - (plannedByProject[pr.id] ?? 0);
+        if (need > bestNeed) {
+          bestNeed = need;
+          best = pr;
+        }
+      }
+      final candidate = best;
+      final addMinutes = math.min(delta, 45);
+      if (candidate == null && others.isEmpty) return;
+      final choice = await showDialog<String>(
+        context: ctx,
+        builder: (d) => SimpleDialog(
+          title: const Text('Temps libéré'),
+          contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 12),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text('« $name » passe de $oldDuration à ${edited.duration} min : $delta min se libèrent $dayLabel. Que veux-tu en faire ?'),
+            ),
+            if (candidate != null)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(d, 'add'),
+                child: Text('Ajouter $addMinutes min sur « ${candidate.name} »'),
+              ),
+            if (others.isNotEmpty)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(d, 'spread'),
+                child: const Text('Répartir sur les autres séances du jour'),
+              ),
+            SimpleDialogOption(onPressed: () => Navigator.pop(d, 'keep'), child: const Text('Garder ce temps libre')),
+          ],
+        ),
+      );
+      if (choice == 'add' && candidate != null) {
+        final baseDetails = _methodPlanningDetails(candidate);
+        final prefix = baseDetails.isEmpty ? '' : '$baseDetails · ';
+        setState(() => plan.add(PlanItem(
+              id: newId(),
+              date: day,
+              duration: addMinutes,
+              title: candidate.name,
+              details: '${prefix}Coach : temps libéré par une séance raccourcie',
+              projectId: candidate.id,
+              category: candidate.weakestCategory,
+              method: candidate.method,
+              motsCles: ['Coach'],
+            )));
+        await _persist();
+      } else if (choice == 'spread') {
+        final total = others.fold<int>(0, (a, x) => a + x.duration);
+        var left = delta;
+        setState(() {
+          for (final x in others) {
+            var share = ((delta * x.duration / total) / 5).round() * 5;
+            share = math.min(math.min(share, 20), left);
+            if (share <= 0) continue;
+            x.duration += share;
+            left -= share;
+          }
+        });
+        await _persist();
+      }
+      return;
+    }
+
+    // Séance allongée : proposer d'alléger les autres séances du jour.
+    final extra = -delta;
+    final reducible = others.fold<int>(0, (a, x) => a + math.max(0, x.duration - 10));
+    if (reducible < 5) return;
+    final choice = await showDialog<String>(
+      context: ctx,
+      builder: (d) => SimpleDialog(
+        title: const Text('Séance allongée'),
+        contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 12),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text('« $name » passe de $oldDuration à ${edited.duration} min (+$extra min) $dayLabel. Alléger les autres séances du jour pour garder la même durée totale ?'),
+          ),
+          SimpleDialogOption(onPressed: () => Navigator.pop(d, 'trim'), child: const Text('Alléger les autres séances')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(d, 'keep'), child: const Text('Garder la journée plus longue')),
+        ],
+      ),
+    );
+    if (choice == 'trim') {
+      final total = others.fold<int>(0, (a, x) => a + x.duration);
+      var left = extra;
+      setState(() {
+        for (final x in others) {
+          var share = ((extra * x.duration / total) / 5).round() * 5;
+          share = math.min(math.min(share, math.max(0, x.duration - 10)), left);
+          if (share <= 0) continue;
+          x.duration -= share;
+          left -= share;
+        }
+      });
+      await _persist();
+    }
   }
 
   void _recordPlanRemoval(PlanItem x, {String reason = 'user_removed', DateTime? scheduledDateOverride}) {
@@ -6421,6 +6611,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
         now: _clockNow,
         onOrientSuggestion: orientSuggestion,
         onOrientSuggestionThisWeek: orientSuggestionThisWeek,
+        onPlanPiece: planPieceToday,
         latestCoachDecision: coachDecisionLog.where((d) => d.isActive).isEmpty
             ? null
             : coachDecisionLog.where((d) => d.isActive).reduce((a, b) => a.date.isAfter(b.date) ? a : b),
@@ -7992,6 +8183,96 @@ class _CoachPieceCandidate {
   final String secondarySignal;
 }
 
+/// V285 : carte « À faire avancer » (accueil iPhone) : le morceau, « Pourquoi ? » dépliable
+/// (raison du coach + action proposée) et deux actions : ajouter au planning d'aujourd'hui,
+/// ou démarrer tout de suite.
+class _CoachPieceCard extends StatefulWidget {
+  const _CoachPieceCard({required this.item, required this.focus, required this.onAddToday, required this.onStartNow});
+  final _CoachPieceCandidate item;
+  final String focus;
+  final Future<void> Function() onAddToday;
+  final Future<void> Function() onStartNow;
+
+  @override
+  State<_CoachPieceCard> createState() => _CoachPieceCardState();
+}
+
+class _CoachPieceCardState extends State<_CoachPieceCard> {
+  bool _why = false;
+
+  @override
+  Widget build(BuildContext c) {
+    final scheme = Theme.of(c).colorScheme;
+    final p = widget.item.project;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: CardBox(
+        padding: const EdgeInsets.fromLTRB(12, 11, 8, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, height: 1.2))),
+                  if (p.priority) const Padding(padding: EdgeInsets.only(left: 4, right: 4), child: Icon(Icons.star, size: 16, color: Colors.amber)),
+                ]),
+                const SizedBox(height: 4),
+                progress(p.progress),
+                const SizedBox(height: 3),
+                Text('${(p.progress * 100).round()} % · ${workFocusEmoji(widget.focus)} ${widget.focus}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              ]),
+            ),
+          ]),
+          if (_why) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: scheme.surfaceContainerHighest.withOpacity(.62),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('POURQUOI ?', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: .8, color: scheme.primary)),
+                const SizedBox(height: 3),
+                Text(widget.item.reason, style: const TextStyle(fontSize: 13, height: 1.3)),
+                const SizedBox(height: 6),
+                Text('${workFocusEmoji(widget.focus)} ${widget.item.action}', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: scheme.primary)),
+                if ([widget.item.lastLabel, widget.item.secondarySignal].any((x) => x.isNotEmpty)) ...[
+                  const SizedBox(height: 6),
+                  Text([widget.item.lastLabel, widget.item.secondarySignal].where((x) => x.isNotEmpty).join(' · '), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                ],
+              ]),
+            ),
+          ],
+          Row(children: [
+            TextButton.icon(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 6)),
+              onPressed: () => setState(() => _why = !_why),
+              icon: Icon(_why ? Icons.expand_less : Icons.help_outline, size: 18),
+              label: const Text('Pourquoi ?', style: TextStyle(fontSize: 13)),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Ajouter au planning d’aujourd’hui',
+              onPressed: widget.onAddToday,
+              icon: const Icon(Icons.playlist_add_rounded),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Démarrer maintenant',
+              onPressed: widget.onStartNow,
+              icon: const Icon(Icons.play_arrow_rounded),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
 class CoachHome extends StatelessWidget {
   const CoachHome({
     super.key,
@@ -8005,7 +8286,7 @@ class CoachHome extends StatelessWidget {
     required this.darkMode, required this.onToggleDarkMode, required this.onImport,
     required this.onResetPracticeBase,
     required this.projectById, required this.now, required this.onOrientSuggestion, required this.onOrientSuggestionThisWeek,
-    required this.latestCoachDecision, required this.onOpenCoachLog,
+    required this.latestCoachDecision, required this.onOpenCoachLog, required this.onPlanPiece,
   });
   final List<Project> projects; final List<Session> sessions; final List<PlanItem> plan;
   final int minutes; final int weeklyTarget; final int streak;
@@ -8019,6 +8300,8 @@ class CoachHome extends StatelessWidget {
   final Future<void> Function() onResetPracticeBase;
   final Project? Function(String?) projectById; final DateTime now; final void Function(String) onOrientSuggestion;
   final Future<void> Function(String) onOrientSuggestionThisWeek;
+  /// V285 : ajoute un morceau « à faire avancer » au planning d'aujourd'hui (et le démarre si [startNow]).
+  final Future<void> Function(Project project, {required bool startNow}) onPlanPiece;
   final CoachDecision? latestCoachDecision;
   final VoidCallback onOpenCoachLog;
 
@@ -8468,8 +8751,13 @@ class CoachHome extends StatelessWidget {
       children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_greeting(now, streak), style: Theme.of(c).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -.3)),
+            Text(_greeting(now, streak), maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(c).textTheme.titleLarge?.copyWith(fontSize: 20, height: 1.2, fontWeight: FontWeight.w800, letterSpacing: -.2)),
             const SizedBox(height: 3),
+            Text(
+              'Ton coach piano · ${todayItems.isEmpty ? 'séance libre possible' : '${pending.length} séance${pending.length > 1 ? 's' : ''} à faire aujourd’hui'}',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 2),
             Text(_formatDateTimeFr(now), style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
           ])),
           IconButton.filledTonal(onPressed: () => _showSettings(c), icon: const Icon(Icons.settings_outlined), tooltip: 'Réglages'),
@@ -8617,17 +8905,12 @@ class CoachHome extends StatelessWidget {
           const SizedBox(height: 16),
           Row(children: [Expanded(child: Text('À faire avancer', style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))), Text('Top ${coachPieces.length}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700))]),
           const SizedBox(height: 7),
-          ...coachPieces.take(3).map((item) => Padding(padding: const EdgeInsets.only(bottom: 7), child: CardBox(padding: const EdgeInsets.fromLTRB(12, 11, 12, 11), child: Row(children: [
-            Text(item.project.emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 9),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.project.name, maxLines: phone ? 2 : 1, overflow: phone ? TextOverflow.clip : TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, height: 1.2)),
-              const SizedBox(height: 4),
-              progress(item.project.progress),
-              const SizedBox(height: 3),
-              Text('${(item.project.progress * 100).round()} % · ${_focusFor(item.project)}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-            ])),
-          ])))),
+          ...coachPieces.take(3).map((item) => _CoachPieceCard(
+                item: item,
+                focus: _focusFor(item.project),
+                onAddToday: () => onPlanPiece(item.project, startNow: false),
+                onStartNow: () => onPlanPiece(item.project, startNow: true),
+              )),
         ],
 
         ..._challengeBlock(c),
@@ -8949,19 +9232,26 @@ class CoachHome extends StatelessWidget {
             )),
         if (suggestions.first.instruction != null) ...[
           const Divider(),
-          Wrap(spacing: 4, children: [
-            TextButton.icon(
-              onPressed: () => onOrientSuggestion(suggestions.first.instruction!),
-              icon: const Icon(Icons.event_repeat, size: 16),
-              label: const Text('Semaine prochaine'),
+          // Une seule ligne : légende + deux boutons-icônes (infobulles « Semaine prochaine » / « Cette semaine »).
+          Row(children: [
+            Expanded(
+              child: Text('Orienter le planning', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(c).colorScheme.onSurfaceVariant)),
             ),
-            TextButton.icon(
+            IconButton.filledTonal(
+              tooltip: 'Semaine prochaine',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => onOrientSuggestion(suggestions.first.instruction!),
+              icon: const Icon(Icons.event_repeat, size: 20),
+            ),
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
+              tooltip: 'Cette semaine',
+              visualDensity: VisualDensity.compact,
               onPressed: () async {
                 final i = suggestions.first.instruction;
                 if (i != null) await onOrientSuggestionThisWeek(i);
               },
-              icon: const Icon(Icons.today, size: 16),
-              label: const Text('Cette semaine'),
+              icon: const Icon(Icons.today, size: 20),
             ),
           ]),
         ],
@@ -9479,6 +9769,9 @@ class _SessionsState extends State<Sessions> {
               ])));
             }))),
           ])),
+          const SizedBox(height: 8),
+          // V285 : « Journal de bord & régularité » (séries + calendrier des 12 dernières semaines) aussi sur iPhone.
+          _journal(c, byDay),
           const SizedBox(height: 8),
         ],
         CardBox(padding: EdgeInsets.all(phone ? 13 : 18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
