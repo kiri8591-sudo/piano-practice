@@ -1,3 +1,4 @@
+// V286 — Planning : complément de journée (2ᵉ bloc court sous un autre angle de travail quand le budget du jour n'est pas épuisé alors que chaque morceau a déjà eu son bloc).
 // V285 — iPhone : tuile Coach sur une ligne (icônes), « À faire avancer » avec Pourquoi ? et actions (ajouter / démarrer), titre d'accueil réduit + message du coach, Journal de bord & régularité dans Sessions ; planning : après changement de durée d'un créneau, proposition d'ajuster la journée.
 // V284 — iPhone : « Défi de la semaine » et « Le coach a remarqué » ajoutés à l'accueil téléphone (ils n'existaient que sur grand écran) ; le groupe Suivi devient une seule rangée compacte.
 // V283 — Lisibilité iPhone : tailles de texte relevées (plancher 12 pt pour le texte courant, 11 pt pour les petites étiquettes en capitales), raccourcis de l'accueil regroupés dans une section « Suivi » plus discrète.
@@ -32,7 +33,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // V264 — audit des données : validation et réparation prudente des références et valeurs persistées.
 // V263 — correction de compilation : SizedBox non-const pour hauteur conditionnelle.
 // V209 — audit de cohérence fonctionnelle : liens planning/sessions, restauration et édition des sessions fiabilisés.
-const String appVersion = '285.0';
+const String appVersion = '286.0';
 const String buildTrack = 'release_1_0_field_test';
 
 void main() => runApp(const PianoPracticeApp());
@@ -3460,6 +3461,9 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
           for (final e in rec.entries.where((e) => e.value > 0)) e.key: e.value,
         };
         final itemByDayAndProject = <String, PlanItem>{};
+        // V286 : angle de travail du 1er bloc de chaque morceau et de chaque jour, et budget non utilisé par jour.
+        final focusByDayAndProject = <String, String>{};
+        final unusedByDay = <DateTime, int>{};
         final lastProjectByDay = <DateTime, String>{};
         // V72 : mémoire de rotation sur les jours déjà construits. Elle permet
         // d'éviter de remettre le même morceau trop souvent, sans bloquer un
@@ -3884,6 +3888,7 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
               method: project.method,
             );
             itemByDayAndProject[key] = item;
+            focusByDayAndProject[key] = focus;
             plan.add(item);
 
             remainingByProject[bestId] =
@@ -3908,6 +3913,54 @@ class _PianoPracticeAppState extends State<PianoPracticeApp> {
             if (remainingByProject[bestId]! <= 0) {
               remainingByProject.remove(bestId);
             }
+          }
+          unusedByDay[day] = activeDayBudget;
+        }
+
+        // V286 : complément de journée. Un morceau n'a qu'un bloc par jour (20 à 30 min selon l'angle de
+        // travail) et la génération préférait « garder le temps libre » : avec peu de morceaux actifs,
+        // une journée de 60 min restait à moitié vide. Quand le budget du jour (journées allégées et
+        // charge lissée comprises) n'est pas épuisé, on ajoute un 2ᵉ bloc court sur le morceau qui a le
+        // plus de temps restant à placer, sous un AUTRE angle de travail que son 1er bloc du jour
+        // (jamais deux fois le même angle le même jour, jamais plus de 2 blocs par morceau et par jour).
+        for (final day in days) {
+          if (day.isBefore(today)) continue;
+          var leftover = unusedByDay[day] ?? 0;
+          final ids = remainingByProject.keys.where((id) => remainingByProject[id]! > 0).toList()
+            ..sort((a, b) => remainingByProject[b]!.compareTo(remainingByProject[a]!));
+          for (final id in ids) {
+            if (leftover < 15) break;
+            final firstKey = '${day.toIso8601String()}|$id';
+            final firstFocus = focusByDayAndProject[firstKey];
+            if (firstFocus == null) continue; // morceau non planifié ce jour-là : on ne l'impose pas
+            final extraKey = '$firstKey|2';
+            if (itemByDayAndProject.containsKey(extraKey)) continue;
+            final extraProject = projectById(id);
+            if (extraProject == null || extraProject.effectiveStatus == 'Répertoire d’entretien') continue;
+            final extraFocus = automaticAlternateFocus(extraProject, firstFocus);
+            if (extraFocus == firstFocus) continue; // réglage manuel de l'angle : pas de 2ᵉ bloc identique
+            final extraChunk = math.min(
+              math.min(remainingByProject[id]!, leftover),
+              math.min(workFocusMaxMinutes(extraFocus), 30),
+            );
+            if (extraChunk < workFocusMinMinutes(extraFocus)) continue;
+            final extraBase = _methodPlanningDetails(extraProject);
+            final extraPrefix = extraBase.isEmpty ? '' : '$extraBase · ';
+            final extraItem = PlanItem(
+              id: newId(),
+              date: day,
+              duration: extraChunk,
+              title: extraProject.name,
+              details: '${extraPrefix}2ᵉ bloc du jour · ${workFocusEmoji(extraFocus)} $extraFocus · complète le temps disponible',
+              projectId: extraProject.id,
+              category: extraProject.weakestCategory,
+              method: extraProject.method,
+            );
+            itemByDayAndProject[extraKey] = extraItem;
+            plan.add(extraItem);
+            remainingByProject[id] = remainingByProject[id]! - extraChunk;
+            remainingByDay[day] = remainingByDay[day]! - extraChunk;
+            leftover -= extraChunk;
           }
         }
       }
